@@ -43,6 +43,12 @@ body {
   display: flex;
   align-items: center;
   gap: 14px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.brand-wrap:hover {
+  opacity: 0.95;
 }
 
 .brand-logo {
@@ -63,10 +69,41 @@ body {
   opacity: 0.92;
 }
 
+.header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
 .session-bar {
   display: flex;
   gap: 10px;
   align-items: center;
+}
+
+.session-bar:not(.hidden) {
+  display: flex;
+}
+
+.theme-toggle {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.theme-toggle:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.last-refreshed-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+#lastRefreshed {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .app-shell {
@@ -167,6 +204,24 @@ body {
 .login-panel {
   max-width: 420px;
   margin: 24px auto;
+}
+
+.login-logo-wrap {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.login-logo {
+  width: 80px;
+  height: 80px;
+  border-radius: 16px;
+  background: #fff;
+  padding: 6px;
+}
+
+.login-logo-wrap h2 {
+  margin: 12px 0 0;
+  font-size: 18px;
 }
 
 .panel h2 {
@@ -287,6 +342,88 @@ th {
 
 .toast.error {
   background: #bb2222;
+}
+
+/* Dark mode */
+body.dark-mode {
+  --bg: #1a1f2e;
+  --panel: #252b3b;
+  --text: #e8ecf4;
+  --muted: #8b95a8;
+  --primary: #3b82f6;
+  --primary-dark: #2563eb;
+  --border: #3d4556;
+  --ok: #22c55e;
+  --danger: #ef4444;
+  --warn: #f59e0b;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+body.dark-mode {
+  background: radial-gradient(circle at top right, #1e2540 0%, var(--bg) 45%);
+}
+
+body.dark-mode .section-nav {
+  background: rgba(37, 43, 59, 0.9);
+  border-color: var(--border);
+}
+
+body.dark-mode .nav-btn {
+  background: var(--panel);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+body.dark-mode .nav-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+body.dark-mode th {
+  background: #2d3548;
+}
+
+/* Print styles */
+@media print {
+  .site-header,
+  .section-nav,
+  .login-panel,
+  form,
+  button,
+  .actions,
+  .slip-btn,
+  input,
+  select,
+  .last-refreshed-wrap,
+  #employeeSearchInput,
+  #truckSearchInput,
+  #attendanceMonthInput,
+  .row .row {
+    display: none !important;
+  }
+
+  .app-shell {
+    padding: 0;
+  }
+
+  .panel {
+    break-inside: avoid;
+    box-shadow: none;
+    border: 1px solid #ccc;
+  }
+
+  .table-wrap {
+    overflow: visible;
+  }
+
+  table {
+    font-size: 12px;
+  }
+
+  th, td {
+    white-space: normal;
+  }
 }
 
 @media (max-width: 760px) {

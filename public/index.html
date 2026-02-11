@@ -4,25 +4,32 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Narayan Enterprises</title>
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <header class="site-header">
-      <div class="brand-wrap">
+      <a href="#" id="brandLink" class="brand-wrap" title="Go to Overview" aria-label="Narayan Enterprises - Go to Overview">
         <img src="/logo.svg" alt="Narayan Enterprises Logo" class="brand-logo" />
         <div>
           <h1>Narayan Enterprises</h1>
           <p>Operations Control Center</p>
         </div>
-      </div>
-      <div id="sessionBar" class="session-bar hidden">
-        <span id="userMeta"></span>
-        <button id="logoutBtn" class="small danger">Logout</button>
+      </a>
+      <div class="header-actions">
+        <button id="darkModeToggle" class="small theme-toggle" title="Toggle dark mode" aria-label="Toggle dark mode">☀</button>
+        <div id="sessionBar" class="session-bar hidden">
+          <span id="userMeta"></span>
+          <button id="logoutBtn" class="small danger">Logout</button>
+        </div>
       </div>
     </header>
 
     <section id="loginPanel" class="panel login-panel">
-      <h2>Login</h2>
+      <div class="login-logo-wrap">
+        <img src="/logo.svg" alt="Narayan Enterprises" class="login-logo" />
+        <h2>Operations Control Center</h2>
+      </div>
       <form id="loginForm">
         <input name="username" placeholder="Username" required />
         <input name="password" type="password" placeholder="Password" required />
@@ -42,6 +49,10 @@
       </nav>
 
       <section id="overviewSection" class="section-view active-view">
+        <div id="lastRefreshedWrap" class="last-refreshed-wrap hidden">
+          <span id="lastRefreshed">Last refreshed: —</span>
+          <button id="manualRefreshBtn" class="small">Refresh</button>
+        </div>
         <section class="cards" id="cards"></section>
       </section>
 

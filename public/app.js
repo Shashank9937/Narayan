@@ -29,6 +29,11 @@ const refreshAttendanceReportBtn = document.getElementById('refreshAttendanceRep
 const attendanceMonthInput = document.getElementById('attendanceMonthInput');
 const employeeSearchInput = document.getElementById('employeeSearchInput');
 const truckSearchInput = document.getElementById('truckSearchInput');
+const brandLink = document.getElementById('brandLink');
+const darkModeToggle = document.getElementById('darkModeToggle');
+const lastRefreshedWrap = document.getElementById('lastRefreshedWrap');
+const lastRefreshedEl = document.getElementById('lastRefreshed');
+const manualRefreshBtn = document.getElementById('manualRefreshBtn');
 
 let me = null;
 let employeesCache = [];
@@ -51,6 +56,16 @@ function token() {
 function setToken(value) {
   if (!value) localStorage.removeItem('ops_token');
   else localStorage.setItem('ops_token', value);
+}
+
+function initDarkMode() {
+  const isDark = localStorage.getItem('ops_dark') === '1';
+  document.body.classList.toggle('dark-mode', isDark);
+  darkModeToggle.textContent = isDark ? '☀' : '🌙';
+}
+
+function formatLastRefreshed() {
+  return new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 function todayISO() {
@@ -356,8 +371,14 @@ async function refresh() {
 
   const [dashboard, employees, salary, trucks, attendanceReport] = await Promise.all(requests);
 
-  if (dashboard) renderCards(dashboard);
-  else cardsEl.innerHTML = '';
+  if (dashboard) {
+    renderCards(dashboard);
+    lastRefreshedEl.textContent = `Last refreshed: ${formatLastRefreshed()}`;
+    lastRefreshedWrap.classList.toggle('hidden', !hasPermission('dashboard:view'));
+  } else {
+    cardsEl.innerHTML = '';
+    lastRefreshedWrap.classList.add('hidden');
+  }
 
   employeesCache = employees || [];
   trucksCache = trucks || [];
@@ -599,4 +620,22 @@ downloadAttendanceCsvBtn.addEventListener('click', () => {
 
 activateSection('overviewSection');
 setDefaultDates();
+initDarkMode();
+
+brandLink.addEventListener('click', (e) => {
+  e.preventDefault();
+  if (token()) activateSection('overviewSection');
+});
+
+darkModeToggle.addEventListener('click', () => {
+  const isDark = !document.body.classList.contains('dark-mode');
+  document.body.classList.toggle('dark-mode', isDark);
+  darkModeToggle.textContent = isDark ? '☀' : '🌙';
+  localStorage.setItem('ops_dark', isDark ? '1' : '0');
+});
+
+if (manualRefreshBtn) {
+  manualRefreshBtn.addEventListener('click', () => refresh().catch((err) => showToast(err.message, 'error')));
+}
+
 bootstrapSession().catch((err) => showToast(err.message, 'error'));
