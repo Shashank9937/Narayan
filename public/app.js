@@ -11,6 +11,8 @@ const loginPanel = document.getElementById('loginPanel');
 const appContent = document.getElementById('appContent');
 const sessionBar = document.getElementById('sessionBar');
 const userMeta = document.getElementById('userMeta');
+const sectionNav = document.getElementById('sectionNav');
+const toastEl = document.getElementById('toast');
 
 const loginForm = document.getElementById('loginForm');
 const logoutBtn = document.getElementById('logoutBtn');
@@ -33,12 +35,13 @@ let employeesCache = [];
 let trucksCache = [];
 let autoRefreshTimer = null;
 
-function ensureAutoRefresh() {
-  if (autoRefreshTimer) return;
-  autoRefreshTimer = setInterval(() => {
-    if (!token()) return;
-    refresh().catch(() => {});
-  }, 30000);
+function showToast(message, type = 'ok') {
+  toastEl.textContent = message;
+  toastEl.classList.remove('error');
+  if (type === 'error') toastEl.classList.add('error');
+  toastEl.classList.add('show');
+  clearTimeout(showToast.tid);
+  showToast.tid = setTimeout(() => toastEl.classList.remove('show'), 2200);
 }
 
 function token() {
@@ -62,12 +65,19 @@ function money(n) {
   return `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
+function ensureAutoRefresh() {
+  if (autoRefreshTimer) return;
+  autoRefreshTimer = setInterval(() => {
+    if (!token()) return;
+    refresh().catch(() => {});
+  }, 30000);
+}
+
 function setDefaultDates() {
   [attendanceForm, advanceForm, truckForm].forEach((form) => {
     const dateInput = form.querySelector('input[type="date"]');
     if (dateInput) dateInput.value = todayISO();
   });
-
   attendanceMonthInput.value = monthISO();
 }
 
@@ -210,8 +220,9 @@ function renderEmployeeRows(rows) {
             monthlySalary: Number(salaryRaw)
           });
           await refresh();
+          showToast('Employee updated');
         } catch (err) {
-          alert(err.message);
+          showToast(err.message, 'error');
         }
       });
     });
@@ -226,8 +237,9 @@ function renderEmployeeRows(rows) {
         try {
           await api(`/api/employees/${id}`, 'DELETE');
           await refresh();
+          showToast('Employee deleted');
         } catch (err) {
-          alert(err.message);
+          showToast(err.message, 'error');
         }
       });
     });
@@ -320,6 +332,15 @@ function urlWithAuth(url) {
   return `${url}${delim}token=${encodeURIComponent(t)}`;
 }
 
+function activateSection(sectionId) {
+  document.querySelectorAll('.section-view').forEach((el) => {
+    el.classList.toggle('active-view', el.id === sectionId);
+  });
+  document.querySelectorAll('.nav-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.getAttribute('data-target') === sectionId);
+  });
+}
+
 async function refresh() {
   const month = monthISO();
 
@@ -361,7 +382,7 @@ async function bootstrapSession() {
     await refresh();
     ensureAutoRefresh();
   } catch (err) {
-    alert(err.message);
+    showToast(err.message, 'error');
     setVisibility(false);
   }
 }
@@ -385,8 +406,9 @@ loginForm.addEventListener('submit', async (e) => {
     await refresh();
     ensureAutoRefresh();
     loginForm.reset();
+    showToast('Welcome to Narayan Enterprises dashboard');
   } catch (err) {
-    alert(err.message);
+    showToast(err.message, 'error');
   }
 });
 
@@ -406,6 +428,7 @@ logoutBtn.addEventListener('click', async () => {
     autoRefreshTimer = null;
   }
   setVisibility(false);
+  showToast('Logged out');
 });
 
 changePasswordForm.addEventListener('submit', async (e) => {
@@ -418,9 +441,9 @@ changePasswordForm.addEventListener('submit', async (e) => {
       newPassword: fd.get('newPassword')
     });
     changePasswordForm.reset();
-    alert('Password updated successfully.');
+    showToast('Password updated successfully');
   } catch (err) {
-    alert(err.message);
+    showToast(err.message, 'error');
   }
 });
 
@@ -436,8 +459,9 @@ employeeForm.addEventListener('submit', async (e) => {
     });
     employeeForm.reset();
     await refresh();
+    showToast('Employee added');
   } catch (err) {
-    alert(err.message);
+    showToast(err.message, 'error');
   }
 });
 
@@ -452,8 +476,9 @@ attendanceForm.addEventListener('submit', async (e) => {
       status: fd.get('status')
     });
     await refresh();
+    showToast('Attendance saved');
   } catch (err) {
-    alert(err.message);
+    showToast(err.message, 'error');
   }
 });
 
@@ -471,8 +496,9 @@ advanceForm.addEventListener('submit', async (e) => {
     advanceForm.reset();
     setDefaultDates();
     await refresh();
+    showToast('Advance recorded');
   } catch (err) {
-    alert(err.message);
+    showToast(err.message, 'error');
   }
 });
 
@@ -494,8 +520,9 @@ truckForm.addEventListener('submit', async (e) => {
     truckForm.reset();
     setDefaultDates();
     await refresh();
+    showToast('Truck entry added');
   } catch (err) {
-    alert(err.message);
+    showToast(err.message, 'error');
   }
 });
 
@@ -504,8 +531,9 @@ refreshAttendanceReportBtn.addEventListener('click', async () => {
     const month = attendanceMonthInput.value || monthISO();
     const report = await api(`/api/attendance-report?month=${month}`);
     renderAttendanceReportRows(report.rows || []);
+    showToast('Attendance report loaded');
   } catch (err) {
-    alert(err.message);
+    showToast(err.message, 'error');
   }
 });
 
@@ -515,7 +543,7 @@ attendanceMonthInput.addEventListener('change', async () => {
     const report = await api(`/api/attendance-report?month=${month}`);
     renderAttendanceReportRows(report.rows || []);
   } catch (err) {
-    alert(err.message);
+    showToast(err.message, 'error');
   }
 });
 
@@ -525,6 +553,12 @@ employeeSearchInput.addEventListener('input', () => {
 
 truckSearchInput.addEventListener('input', () => {
   renderTruckRows(filterTrucks(trucksCache).sort((a, b) => (a.date < b.date ? 1 : -1)));
+});
+
+sectionNav.addEventListener('click', (e) => {
+  const btn = e.target.closest('.nav-btn');
+  if (!btn) return;
+  activateSection(btn.getAttribute('data-target'));
 });
 
 function downloadWithAuth(url) {
@@ -548,7 +582,7 @@ function downloadWithAuth(url) {
       a.remove();
       URL.revokeObjectURL(objUrl);
     })
-    .catch((err) => alert(err.message));
+    .catch((err) => showToast(err.message, 'error'));
 }
 
 downloadSalaryCsvBtn.addEventListener('click', () => {
@@ -563,5 +597,6 @@ downloadAttendanceCsvBtn.addEventListener('click', () => {
   downloadWithAuth(`/api/export/attendance.csv?month=${attendanceMonthInput.value || monthISO()}`);
 });
 
+activateSection('overviewSection');
 setDefaultDates();
-bootstrapSession().catch((err) => alert(err.message));
+bootstrapSession().catch((err) => showToast(err.message, 'error'));

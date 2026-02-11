@@ -1,13 +1,15 @@
 :root {
-  --bg: #f6f7fb;
+  --bg: #f2f5fb;
   --panel: #ffffff;
-  --text: #202733;
+  --text: #1a2538;
   --muted: #5d6a7e;
   --primary: #1f6feb;
+  --primary-dark: #0f3c8a;
   --border: #d6deeb;
   --ok: #0f9d58;
   --danger: #bb2222;
   --warn: #cc7a00;
+  --shadow: 0 10px 30px rgba(18, 36, 69, 0.08);
 }
 
 * {
@@ -18,47 +20,121 @@ body {
   margin: 0;
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   color: var(--text);
-  background: var(--bg);
+  background: radial-gradient(circle at top right, #dfe9ff 0%, var(--bg) 45%);
 }
 
 .hidden {
   display: none;
 }
 
-header {
-  padding: 24px;
-  background: linear-gradient(120deg, #0e3a8a, #1f6feb);
+.site-header {
+  padding: 18px 24px;
+  background: linear-gradient(110deg, var(--primary-dark), var(--primary));
   color: #fff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  box-shadow: var(--shadow);
 }
 
-header h1 {
+.brand-wrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.brand-logo {
+  width: 54px;
+  height: 54px;
+  border-radius: 12px;
+  background: #fff;
+  padding: 3px;
+}
+
+.site-header h1 {
   margin: 0;
+  font-size: 24px;
 }
 
-header p {
-  margin: 8px 0 0;
-  opacity: 0.95;
+.site-header p {
+  margin: 2px 0 0;
+  opacity: 0.92;
 }
 
 .session-bar {
-  margin-top: 12px;
   display: flex;
   gap: 10px;
   align-items: center;
 }
 
+.app-shell {
+  padding: 16px;
+}
+
+.section-nav {
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  backdrop-filter: blur(6px);
+}
+
+.nav-btn {
+  width: auto;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  padding: 8px 14px;
+}
+
+.nav-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.section-view {
+  display: none;
+}
+
+.section-view.active-view {
+  display: block;
+  animation: sectionFade 0.2s ease;
+}
+
+@keyframes sectionFade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .cards {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  padding: 16px 24px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
 }
 
 .card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px;
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: var(--shadow);
 }
 
 .card .label {
@@ -68,23 +144,24 @@ header p {
 
 .card .value {
   margin-top: 8px;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
 }
 
 .grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  padding: 0 24px 16px;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  margin-bottom: 10px;
 }
 
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 14px;
   padding: 16px;
-  margin: 0 24px 16px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow);
 }
 
 .login-panel {
@@ -107,8 +184,8 @@ header p {
   flex-wrap: wrap;
 }
 
-.row input[type='text'] {
-  min-width: 240px;
+.table-wrap {
+  overflow-x: auto;
 }
 
 form {
@@ -122,20 +199,20 @@ button {
   width: 100%;
   padding: 10px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   font-size: 14px;
 }
 
 button {
   background: var(--primary);
   border-color: var(--primary);
-  color: white;
+  color: #fff;
   cursor: pointer;
   font-weight: 600;
 }
 
 button:hover {
-  opacity: 0.92;
+  opacity: 0.93;
 }
 
 button.small {
@@ -164,6 +241,7 @@ td {
   border: 1px solid var(--border);
   padding: 8px;
   text-align: left;
+  white-space: nowrap;
 }
 
 th {
@@ -172,7 +250,7 @@ th {
 
 .money {
   color: var(--ok);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .actions {
@@ -185,16 +263,51 @@ th {
   font-size: 13px;
 }
 
-@media (max-width: 700px) {
-  .panel,
-  .grid,
-  .cards {
-    margin: 0;
-    padding: 12px;
+.toast {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  min-width: 220px;
+  max-width: 340px;
+  padding: 11px 13px;
+  color: #fff;
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  background: #1f6feb;
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+  transition: all 0.2s ease;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.toast.error {
+  background: #bb2222;
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    padding: 10px;
   }
 
   .row {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .section-nav {
+    top: 4px;
+  }
+
+  .site-header {
+    padding: 14px;
+  }
+
+  .site-header h1 {
+    font-size: 21px;
   }
 }
