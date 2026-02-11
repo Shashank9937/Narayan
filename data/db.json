@@ -1,0 +1,27 @@
+{
+  "employees": [],
+  "attendance": [],
+  "salaryAdvances": [],
+  "trucks": [],
+  "users": [
+    {
+      "id": "user_admin",
+      "username": "admin",
+      "password": "admin123",
+      "role": "admin"
+    },
+    {
+      "id": "user_acc",
+      "username": "accountant",
+      "password": "account123",
+      "role": "accountant"
+    },
+    {
+      "id": "user_mgr",
+      "username": "manager",
+      "password": "manager123",
+      "role": "manager"
+    }
+  ],
+  "sessions": []
+}

@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: company-ops-dashboard
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: STORAGE_MODE
+        value: postgres
+      - key: DATABASE_URL
+        fromDatabase:
+          name: company-ops-db
+          property: connectionString
+
+databases:
+  - name: company-ops-db
+    plan: free

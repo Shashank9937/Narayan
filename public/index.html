@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Company Operations Dashboard</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Company Operations Dashboard</h1>
+      <p>Attendance, Salary Advances, and Truck Reporting</p>
+      <div id="sessionBar" class="session-bar hidden">
+        <span id="userMeta"></span>
+        <button id="logoutBtn" class="small danger">Logout</button>
+      </div>
+    </header>
+
+    <section id="loginPanel" class="panel login-panel">
+      <h2>Login</h2>
+      <form id="loginForm">
+        <input name="username" placeholder="Username" required />
+        <input name="password" type="password" placeholder="Password" required />
+        <button type="submit">Login</button>
+      </form>
+      <p class="hint">Demo users: admin/admin123, accountant/account123, manager/manager123</p>
+    </section>
+
+    <section id="appContent" class="hidden">
+      <section class="cards" id="cards"></section>
+
+      <main class="grid">
+        <section class="panel" id="employeePanel">
+          <h2>Add Employee</h2>
+          <form id="employeeForm">
+            <input name="name" placeholder="Employee Name" required />
+            <input name="role" placeholder="Role" required />
+            <input name="monthlySalary" type="number" min="1" step="0.01" placeholder="Monthly Salary" required />
+            <button type="submit">Add Employee</button>
+          </form>
+        </section>
+
+        <section class="panel" id="attendancePanel">
+          <h2>Mark Attendance</h2>
+          <form id="attendanceForm">
+            <select name="employeeId" id="attendanceEmployee" required></select>
+            <input name="date" type="date" required />
+            <select name="status" required>
+              <option value="present">Present</option>
+              <option value="absent">Absent</option>
+            </select>
+            <button type="submit">Save Attendance</button>
+          </form>
+        </section>
+
+        <section class="panel" id="advancePanel">
+          <h2>Salary Advance</h2>
+          <form id="advanceForm">
+            <select name="employeeId" id="advanceEmployee" required></select>
+            <input name="date" type="date" required />
+            <input name="amount" type="number" min="1" step="0.01" placeholder="Advance Amount" required />
+            <input name="note" placeholder="Note (optional)" />
+            <button type="submit">Add Advance</button>
+          </form>
+        </section>
+
+        <section class="panel" id="truckPanel">
+          <h2>Truck / Raw Material Entry</h2>
+          <form id="truckForm">
+            <input name="date" type="date" required />
+            <input name="truckNumber" placeholder="Truck Number" required />
+            <input name="driverName" placeholder="Driver Name" />
+            <input name="rawMaterial" placeholder="Raw Material" required />
+            <input name="quantity" type="number" min="0.01" step="0.01" placeholder="Quantity" required />
+            <input name="origin" placeholder="Origin" />
+            <input name="destination" placeholder="Destination" />
+            <input name="notes" placeholder="Notes" />
+            <button type="submit">Add Truck Entry</button>
+          </form>
+        </section>
+      </main>
+
+      <section class="panel" id="changePasswordPanel">
+        <h2>Change Password</h2>
+        <form id="changePasswordForm">
+          <input name="currentPassword" type="password" placeholder="Current Password" required />
+          <input name="newPassword" type="password" placeholder="New Password (min 8 chars)" required />
+          <button type="submit">Update Password</button>
+        </form>
+      </section>
+
+      <section class="panel" id="employeeListPanel">
+        <h2>Employee Management</h2>
+        <table id="employeeTable">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Role</th>
+              <th>Monthly Salary</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <section class="panel" id="salaryPanel">
+        <div class="row">
+          <h2>Salary Summary (Current Month)</h2>
+          <button id="downloadSalaryCsv" class="small">Download Salary CSV</button>
+        </div>
+        <table id="salaryTable">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Role</th>
+              <th>Salary</th>
+              <th>Advances</th>
+              <th>Remaining</th>
+              <th>Slip</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <section class="panel" id="attendanceReportPanel">
+        <div class="row wrap">
+          <h2>Monthly Attendance Report</h2>
+          <div class="row">
+            <input id="attendanceMonthInput" type="month" />
+            <button id="refreshAttendanceReport" class="small">Load</button>
+            <button id="downloadAttendanceCsv" class="small">Download Attendance CSV</button>
+          </div>
+        </div>
+        <table id="attendanceReportTable">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Role</th>
+              <th>Present Days</th>
+              <th>Absent Days</th>
+              <th>Total Marked</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <section class="panel" id="truckReportPanel">
+        <div class="row">
+          <h2>Truck Report</h2>
+          <button id="downloadTruckCsv" class="small">Download Truck CSV</button>
+        </div>
+        <table id="truckTable">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Truck</th>
+              <th>Driver</th>
+              <th>Material</th>
+              <th>Quantity</th>
+              <th>Origin</th>
+              <th>Destination</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </section>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
