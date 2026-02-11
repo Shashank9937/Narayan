@@ -10,6 +10,7 @@ const PORT = process.env.PORT || 3000;
 const DB_PATH = path.join(__dirname, 'data', 'db.json');
 const STORAGE_MODE = process.env.STORAGE_MODE === 'postgres' ? 'postgres' : 'json';
 const DATABASE_URL = process.env.DATABASE_URL;
+const APP_NAME = 'Narayan Enterprises';
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -1060,8 +1061,11 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     const doc = new PDFDocument({ margin: 40 });
     doc.pipe(res);
 
-    doc.fontSize(18).text('Salary Slip', { underline: true });
+    doc.fontSize(18).text(APP_NAME);
+    doc.fontSize(16).text('Salary Slip', { underline: true });
     doc.moveDown(1);
+    doc.fontSize(11).text(`Generated: ${new Date().toISOString()}`);
+    doc.moveDown(0.5);
     doc.fontSize(12).text(`Month: ${month}`);
     doc.text(`Employee: ${employee.name}`);
     doc.text(`Role: ${employee.role}`);

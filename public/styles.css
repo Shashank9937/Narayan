@@ -107,6 +107,10 @@ header p {
   flex-wrap: wrap;
 }
 
+.row input[type='text'] {
+  min-width: 240px;
+}
+
 form {
   display: grid;
   gap: 8px;

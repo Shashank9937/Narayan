@@ -25,9 +25,21 @@ const downloadTruckCsvBtn = document.getElementById('downloadTruckCsv');
 const downloadAttendanceCsvBtn = document.getElementById('downloadAttendanceCsv');
 const refreshAttendanceReportBtn = document.getElementById('refreshAttendanceReport');
 const attendanceMonthInput = document.getElementById('attendanceMonthInput');
+const employeeSearchInput = document.getElementById('employeeSearchInput');
+const truckSearchInput = document.getElementById('truckSearchInput');
 
 let me = null;
 let employeesCache = [];
+let trucksCache = [];
+let autoRefreshTimer = null;
+
+function ensureAutoRefresh() {
+  if (autoRefreshTimer) return;
+  autoRefreshTimer = setInterval(() => {
+    if (!token()) return;
+    refresh().catch(() => {});
+  }, 30000);
+}
 
 function token() {
   return localStorage.getItem('ops_token');
@@ -285,6 +297,22 @@ function renderTruckRows(rows) {
     .join('');
 }
 
+function filterEmployees(rows) {
+  const q = (employeeSearchInput.value || '').trim().toLowerCase();
+  if (!q) return rows;
+  return rows.filter((e) => `${e.name} ${e.role}`.toLowerCase().includes(q));
+}
+
+function filterTrucks(rows) {
+  const q = (truckSearchInput.value || '').trim().toLowerCase();
+  if (!q) return rows;
+  return rows.filter((t) =>
+    `${t.truckNumber} ${t.driverName || ''} ${t.rawMaterial} ${t.origin || ''} ${t.destination || ''}`
+      .toLowerCase()
+      .includes(q)
+  );
+}
+
 function urlWithAuth(url) {
   const t = token();
   if (!t) return url;
@@ -311,10 +339,11 @@ async function refresh() {
   else cardsEl.innerHTML = '';
 
   employeesCache = employees || [];
+  trucksCache = trucks || [];
   renderEmployeeOptions(employeesCache);
-  renderEmployeeRows(employeesCache);
+  renderEmployeeRows(filterEmployees(employeesCache));
   renderSalaryRows((salary && salary.rows) || []);
-  renderTruckRows((trucks || []).sort((a, b) => (a.date < b.date ? 1 : -1)));
+  renderTruckRows(filterTrucks(trucksCache).sort((a, b) => (a.date < b.date ? 1 : -1)));
   renderAttendanceReportRows((attendanceReport && attendanceReport.rows) || []);
 }
 
@@ -330,6 +359,7 @@ async function bootstrapSession() {
     applyRoleUI();
     setDefaultDates();
     await refresh();
+    ensureAutoRefresh();
   } catch (err) {
     alert(err.message);
     setVisibility(false);
@@ -353,6 +383,7 @@ loginForm.addEventListener('submit', async (e) => {
     applyRoleUI();
     setDefaultDates();
     await refresh();
+    ensureAutoRefresh();
     loginForm.reset();
   } catch (err) {
     alert(err.message);
@@ -369,6 +400,11 @@ logoutBtn.addEventListener('click', async () => {
   setToken('');
   me = null;
   employeesCache = [];
+  trucksCache = [];
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer);
+    autoRefreshTimer = null;
+  }
   setVisibility(false);
 });
 
@@ -471,6 +507,24 @@ refreshAttendanceReportBtn.addEventListener('click', async () => {
   } catch (err) {
     alert(err.message);
   }
+});
+
+attendanceMonthInput.addEventListener('change', async () => {
+  try {
+    const month = attendanceMonthInput.value || monthISO();
+    const report = await api(`/api/attendance-report?month=${month}`);
+    renderAttendanceReportRows(report.rows || []);
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+employeeSearchInput.addEventListener('input', () => {
+  renderEmployeeRows(filterEmployees(employeesCache));
+});
+
+truckSearchInput.addEventListener('input', () => {
+  renderTruckRows(filterTrucks(trucksCache).sort((a, b) => (a.date < b.date ? 1 : -1)));
 });
 
 function downloadWithAuth(url) {

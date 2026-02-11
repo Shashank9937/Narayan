@@ -3,12 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Company Operations Dashboard</title>
+    <title>Narayan Enterprises</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <header>
-      <h1>Company Operations Dashboard</h1>
+      <h1>Narayan Enterprises</h1>
       <p>Attendance, Salary Advances, and Truck Reporting</p>
       <div id="sessionBar" class="session-bar hidden">
         <span id="userMeta"></span>
@@ -90,7 +90,10 @@
       </section>
 
       <section class="panel" id="employeeListPanel">
-        <h2>Employee Management</h2>
+        <div class="row wrap">
+          <h2>Employee Management</h2>
+          <input id="employeeSearchInput" type="text" placeholder="Search employee by name or role" />
+        </div>
         <table id="employeeTable">
           <thead>
             <tr>
@@ -148,9 +151,12 @@
       </section>
 
       <section class="panel" id="truckReportPanel">
-        <div class="row">
+        <div class="row wrap">
           <h2>Truck Report</h2>
-          <button id="downloadTruckCsv" class="small">Download Truck CSV</button>
+          <div class="row">
+            <input id="truckSearchInput" type="text" placeholder="Search truck/material/driver" />
+            <button id="downloadTruckCsv" class="small">Download Truck CSV</button>
+          </div>
         </div>
         <table id="truckTable">
           <thead>
