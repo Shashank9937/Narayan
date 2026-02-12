@@ -2,6 +2,8 @@ const cardsEl = document.getElementById('cards');
 const salaryTbody = document.querySelector('#salaryTable tbody');
 const truckTbody = document.querySelector('#truckTable tbody');
 const expenseTbody = document.querySelector('#expenseTable tbody');
+const chiniTbody = document.querySelector('#chiniTable tbody');
+const landTbody = document.querySelector('#landTable tbody');
 const employeeTbody = document.querySelector('#employeeTable tbody');
 const attendanceReportTbody = document.querySelector('#attendanceReportTable tbody');
 
@@ -22,6 +24,8 @@ const attendanceForm = document.getElementById('attendanceForm');
 const advanceForm = document.getElementById('advanceForm');
 const truckForm = document.getElementById('truckForm');
 const expenseForm = document.getElementById('expenseForm');
+const chiniForm = document.getElementById('chiniForm');
+const landForm = document.getElementById('landForm');
 const changePasswordForm = document.getElementById('changePasswordForm');
 
 const downloadSalaryCsvBtn = document.getElementById('downloadSalaryCsv');
@@ -44,6 +48,8 @@ let me = null;
 let employeesCache = [];
 let trucksCache = [];
 let expensesCache = [];
+let chiniExpensesCache = [];
+let landRecordsCache = [];
 let salaryRowsCache = [];
 let autoRefreshTimer = null;
 
@@ -96,7 +102,7 @@ function ensureAutoRefresh() {
 }
 
 function setDefaultDates() {
-  [attendanceForm, advanceForm, truckForm, expenseForm].forEach((form) => {
+  [attendanceForm, advanceForm, truckForm, expenseForm, chiniForm].forEach((form) => {
     if (!form) return;
     const dateInput = form.querySelector('input[type="date"]');
     if (dateInput) dateInput.value = todayISO();
@@ -141,12 +147,16 @@ function applyRoleUI() {
   setFormEnabled('advancePanel', hasPermission('advances:create'));
   setFormEnabled('truckPanel', hasPermission('trucks:create'));
   setFormEnabled('expensePanel', hasPermission('expenses:create'));
+  setFormEnabled('chiniPanel', hasPermission('chini:create'));
+  setFormEnabled('landPanel', hasPermission('land:create'));
 
   setPanelVisible('salaryPanel', hasPermission('salary:view'));
   setPanelVisible('truckReportPanel', hasPermission('trucks:view'));
   setPanelVisible('employeeListPanel', hasPermission('employees:view'));
   setPanelVisible('attendanceReportPanel', hasPermission('attendance:report'));
   setPanelVisible('expenseReportPanel', hasPermission('expenses:view'));
+  setPanelVisible('chiniReportPanel', hasPermission('chini:view'));
+  setPanelVisible('landReportPanel', hasPermission('land:view'));
   setPanelVisible('changePasswordPanel', true);
 
   downloadSalaryCsvBtn.disabled = !hasPermission('export:view');
@@ -531,6 +541,86 @@ function renderExpenseRows(rows) {
   }
 }
 
+function renderChiniRows(rows) {
+  const canDelete = hasPermission('chini:delete');
+  const narayanTotal = rows
+    .filter((r) => r.party === 'narayan')
+    .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  const maaVaishnoTotal = rows
+    .filter((r) => r.party === 'maa_vaishno')
+    .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  const totalsEl = document.getElementById('chiniPartyTotals');
+  if (totalsEl) {
+    totalsEl.innerHTML = `
+      <div class="party-total"><span class="label">Narayan Total</span><div class="value">${money(narayanTotal)}</div></div>
+      <div class="party-total"><span class="label">Maa Vaishno Total</span><div class="value">${money(maaVaishnoTotal)}</div></div>
+    `;
+  }
+
+  chiniTbody.innerHTML = rows
+    .map(
+      (r) => `<tr>
+          <td>${r.date}</td>
+          <td>${partyLabel(r.party)}</td>
+          <td>${r.description || '-'}</td>
+          <td class="money">${money(r.amount)}</td>
+          <td>${canDelete ? `<button class="small danger chi-del" data-id="${r.id}">Delete</button>` : '-'}</td>
+        </tr>`
+    )
+    .join('');
+
+  if (canDelete) {
+    document.querySelectorAll('.chi-del').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        if (!confirm('Delete this chini expense?')) return;
+        try {
+          await api(`/api/chini-expenses/${id}`, 'DELETE');
+          await refresh();
+          showToast('Chini expense deleted');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    });
+  }
+}
+
+function renderLandRows(rows) {
+  const canDelete = hasPermission('land:delete');
+  const totalRemaining = rows.reduce((sum, r) => sum + Number(r.amountToBeGiven || 0), 0);
+  const totalEl = document.getElementById('landTotalRemaining');
+  if (totalEl) totalEl.textContent = money(totalRemaining);
+
+  landTbody.innerHTML = rows
+    .map(
+      (r) => `<tr>
+          <td>${r.area}</td>
+          <td>${r.ownerName}</td>
+          <td class="money">${money(r.amountPaid)}</td>
+          <td class="money">${money(r.amountToBeGiven)}</td>
+          <td>${canDelete ? `<button class="small danger land-del" data-id="${r.id}">Delete</button>` : '-'}</td>
+        </tr>`
+    )
+    .join('');
+
+  if (canDelete) {
+    document.querySelectorAll('.land-del').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        if (!confirm('Delete this land record?')) return;
+        try {
+          await api(`/api/lands/${id}`, 'DELETE');
+          await refresh();
+          showToast('Land record deleted');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    });
+  }
+}
+
 function filterEmployees(rows) {
   const q = (employeeSearchInput.value || '').trim().toLowerCase();
   if (!q) return rows;
@@ -572,12 +662,15 @@ async function refresh() {
     hasPermission('salary:view') ? api(`/api/salary-summary?month=${month}`) : Promise.resolve({ rows: [] }),
     hasPermission('trucks:view') ? api('/api/trucks') : Promise.resolve([]),
     hasPermission('expenses:view') ? api('/api/expenses') : Promise.resolve([]),
+    hasPermission('chini:view') ? api('/api/chini-expenses') : Promise.resolve([]),
+    hasPermission('land:view') ? api('/api/lands') : Promise.resolve([]),
     hasPermission('attendance:report')
       ? api(`/api/attendance-report?month=${attendanceMonthInput.value || month}`)
       : Promise.resolve({ rows: [] })
   ];
 
-  const [dashboard, employees, salary, trucks, expenses, attendanceReport] = await Promise.all(requests);
+  const [dashboard, employees, salary, trucks, expenses, chiniExpenses, landRecords, attendanceReport] =
+    await Promise.all(requests);
 
   if (dashboard) {
     renderCards(dashboard);
@@ -591,6 +684,8 @@ async function refresh() {
   employeesCache = employees || [];
   trucksCache = trucks || [];
   expensesCache = expenses || [];
+  chiniExpensesCache = chiniExpenses || [];
+  landRecordsCache = landRecords || [];
   salaryRowsCache = (salary && salary.rows) || [];
   renderEmployeeOptions(employeesCache);
   renderEmployeeRows(filterEmployees(employeesCache));
@@ -598,6 +693,8 @@ async function refresh() {
   renderSalarySummaries(salaryRowsCache);
   renderTruckRows(filterTrucks(trucksCache).sort((a, b) => (a.date < b.date ? 1 : -1)));
   renderExpenseRows(expensesCache);
+  renderChiniRows(chiniExpensesCache);
+  renderLandRows(landRecordsCache);
   renderAttendanceReportRows((attendanceReport && attendanceReport.rows) || []);
 }
 
@@ -657,6 +754,8 @@ logoutBtn.addEventListener('click', async () => {
   employeesCache = [];
   trucksCache = [];
   expensesCache = [];
+  chiniExpensesCache = [];
+  landRecordsCache = [];
   if (autoRefreshTimer) {
     clearInterval(autoRefreshTimer);
     autoRefreshTimer = null;
@@ -679,6 +778,43 @@ expenseForm.addEventListener('submit', async (e) => {
     setDefaultDates();
     await refresh();
     showToast('Expense added');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+chiniForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(chiniForm);
+  try {
+    await api('/api/chini-expenses', 'POST', {
+      date: fd.get('date'),
+      party: fd.get('party'),
+      description: fd.get('description') || undefined,
+      amount: fd.get('amount')
+    });
+    chiniForm.reset();
+    setDefaultDates();
+    await refresh();
+    showToast('Chini expense added');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+landForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(landForm);
+  try {
+    await api('/api/lands', 'POST', {
+      area: fd.get('area'),
+      ownerName: fd.get('ownerName'),
+      amountPaid: fd.get('amountPaid'),
+      amountToBeGiven: fd.get('amountToBeGiven')
+    });
+    landForm.reset();
+    await refresh();
+    showToast('Land record added');
   } catch (err) {
     showToast(err.message, 'error');
   }

@@ -32,6 +32,12 @@ const ROLE_PERMISSIONS = {
     'expenses:view',
     'expenses:create',
     'expenses:delete',
+    'chini:view',
+    'chini:create',
+    'chini:delete',
+    'land:view',
+    'land:create',
+    'land:delete',
     'export:view',
     'salaryslip:view'
   ],
@@ -45,7 +51,11 @@ const ROLE_PERMISSIONS = {
     'trucks:create',
     'trucks:delete',
     'expenses:view',
-    'expenses:create'
+    'expenses:create',
+    'chini:view',
+    'chini:create',
+    'land:view',
+    'land:create'
   ]
 };
 
@@ -107,6 +117,8 @@ function ensureDbShape(db) {
   if (!Array.isArray(db.salaryAdvances)) db.salaryAdvances = [];
   if (!Array.isArray(db.trucks)) db.trucks = [];
   if (!Array.isArray(db.expenses)) db.expenses = [];
+  if (!Array.isArray(db.chiniExpenses)) db.chiniExpenses = [];
+  if (!Array.isArray(db.landRecords)) db.landRecords = [];
   if (!Array.isArray(db.users) || db.users.length === 0) db.users = defaultUsers();
   if (!Array.isArray(db.sessions)) db.sessions = [];
 
@@ -435,6 +447,64 @@ function jsonStore() {
       writeJsonDb(db);
       return true;
     },
+    async listChiniExpenses(filter) {
+      const db = readJsonDb();
+      let rows = db.chiniExpenses;
+      if (filter?.dateFrom) rows = rows.filter((e) => e.date >= filter.dateFrom);
+      if (filter?.dateTo) rows = rows.filter((e) => e.date <= filter.dateTo);
+      return rows.sort((a, b) => (a.date < b.date ? 1 : -1));
+    },
+    async createChiniExpense(data) {
+      const db = readJsonDb();
+      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
+        ? String(data.party).toLowerCase()
+        : null;
+      const row = {
+        id: uid('chi'),
+        date: data.date,
+        party: party || 'narayan',
+        description: String(data.description || '').trim() || 'Chini Mill Expense',
+        amount: Number(data.amount),
+        createdAt: new Date().toISOString()
+      };
+      db.chiniExpenses.push(row);
+      writeJsonDb(db);
+      return row;
+    },
+    async deleteChiniExpense(id) {
+      const db = readJsonDb();
+      const before = db.chiniExpenses.length;
+      db.chiniExpenses = db.chiniExpenses.filter((e) => e.id !== id);
+      if (before === db.chiniExpenses.length) return false;
+      writeJsonDb(db);
+      return true;
+    },
+    async listLandRecords() {
+      const db = readJsonDb();
+      return db.landRecords.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    },
+    async createLandRecord(data) {
+      const db = readJsonDb();
+      const row = {
+        id: uid('land'),
+        area: String(data.area || '').trim(),
+        ownerName: String(data.ownerName || '').trim(),
+        amountPaid: Number(data.amountPaid),
+        amountToBeGiven: Number(data.amountToBeGiven),
+        createdAt: new Date().toISOString()
+      };
+      db.landRecords.push(row);
+      writeJsonDb(db);
+      return row;
+    },
+    async deleteLandRecord(id) {
+      const db = readJsonDb();
+      const before = db.landRecords.length;
+      db.landRecords = db.landRecords.filter((l) => l.id !== id);
+      if (before === db.landRecords.length) return false;
+      writeJsonDb(db);
+      return true;
+    },
     async dashboard(month, today) {
       const db = readJsonDb();
       const totalSalary = db.employees.reduce((sum, e) => sum + Number(e.monthlySalary), 0);
@@ -542,6 +612,24 @@ function postgresStore() {
           date DATE NOT NULL,
           description TEXT NOT NULL,
           amount NUMERIC(12,2) NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS chini_expenses (
+          id TEXT PRIMARY KEY,
+          date DATE NOT NULL,
+          party TEXT NOT NULL,
+          description TEXT NOT NULL,
+          amount NUMERIC(12,2) NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS land_records (
+          id TEXT PRIMARY KEY,
+          area TEXT NOT NULL,
+          owner_name TEXT NOT NULL,
+          amount_paid NUMERIC(12,2) NOT NULL,
+          amount_to_be_given NUMERIC(12,2) NOT NULL,
           created_at TIMESTAMPTZ NOT NULL
         );
       `);
@@ -952,6 +1040,79 @@ function postgresStore() {
     },
     async deleteExpense(id) {
       const res = await pool.query('DELETE FROM expenses WHERE id = $1', [id]);
+      return res.rowCount > 0;
+    },
+    async listChiniExpenses(filter) {
+      const values = [];
+      let where = 'WHERE 1=1';
+      if (filter?.dateFrom) {
+        values.push(filter.dateFrom);
+        where += ` AND date >= $${values.length}`;
+      }
+      if (filter?.dateTo) {
+        values.push(filter.dateTo);
+        where += ` AND date <= $${values.length}`;
+      }
+      const res = await pool.query(`SELECT * FROM chini_expenses ${where} ORDER BY date DESC`, values);
+      return res.rows.map((r) => ({
+        id: r.id,
+        date: String(r.date).slice(0, 10),
+        party: r.party || 'narayan',
+        description: r.description || '',
+        amount: Number(r.amount),
+        createdAt: r.created_at
+      }));
+    },
+    async createChiniExpense(data) {
+      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
+        ? String(data.party).toLowerCase()
+        : 'narayan';
+      const row = {
+        id: uid('chi'),
+        date: data.date,
+        party,
+        description: String(data.description || '').trim() || 'Chini Mill Expense',
+        amount: Number(data.amount),
+        createdAt: new Date().toISOString()
+      };
+      await pool.query(
+        'INSERT INTO chini_expenses (id, date, party, description, amount, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
+        [row.id, row.date, row.party, row.description, row.amount, row.createdAt]
+      );
+      return row;
+    },
+    async deleteChiniExpense(id) {
+      const res = await pool.query('DELETE FROM chini_expenses WHERE id = $1', [id]);
+      return res.rowCount > 0;
+    },
+    async listLandRecords() {
+      const res = await pool.query('SELECT * FROM land_records ORDER BY created_at DESC');
+      return res.rows.map((r) => ({
+        id: r.id,
+        area: r.area,
+        ownerName: r.owner_name,
+        amountPaid: Number(r.amount_paid),
+        amountToBeGiven: Number(r.amount_to_be_given),
+        createdAt: r.created_at
+      }));
+    },
+    async createLandRecord(data) {
+      const row = {
+        id: uid('land'),
+        area: String(data.area || '').trim(),
+        ownerName: String(data.ownerName || '').trim(),
+        amountPaid: Number(data.amountPaid),
+        amountToBeGiven: Number(data.amountToBeGiven),
+        createdAt: new Date().toISOString()
+      };
+      await pool.query(
+        'INSERT INTO land_records (id, area, owner_name, amount_paid, amount_to_be_given, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
+        [row.id, row.area, row.ownerName, row.amountPaid, row.amountToBeGiven, row.createdAt]
+      );
+      return row;
+    },
+    async deleteLandRecord(id) {
+      const res = await pool.query('DELETE FROM land_records WHERE id = $1', [id]);
       return res.rowCount > 0;
     },
     async dashboard(month, today) {
@@ -1460,6 +1621,88 @@ app.delete('/api/expenses/:id', auth, requirePermission('expenses:delete'), asyn
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to delete expense' });
+  }
+});
+
+app.get('/api/chini-expenses', auth, requirePermission('chini:view'), async (req, res) => {
+  try {
+    const rows = await store.listChiniExpenses({ dateFrom: req.query.dateFrom, dateTo: req.query.dateTo });
+    return res.json(rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to fetch chini expenses' });
+  }
+});
+
+app.post('/api/chini-expenses', auth, requirePermission('chini:create'), async (req, res) => {
+  const { date, party, description, amount } = req.body;
+  if (!date || !party || amount == null) {
+    return res.status(400).json({ error: 'date, party and amount are required' });
+  }
+  const numAmount = Number(amount);
+  if (Number.isNaN(numAmount) || numAmount <= 0) {
+    return res.status(400).json({ error: 'amount must be a positive number' });
+  }
+  if (!['narayan', 'maa_vaishno'].includes(String(party).toLowerCase())) {
+    return res.status(400).json({ error: 'party must be narayan or maa_vaishno' });
+  }
+  try {
+    const row = await store.createChiniExpense({ date, party, description, amount: numAmount });
+    return res.status(201).json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to create chini expense' });
+  }
+});
+
+app.delete('/api/chini-expenses/:id', auth, requirePermission('chini:delete'), async (req, res) => {
+  try {
+    const deleted = await store.deleteChiniExpense(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Chini expense not found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to delete chini expense' });
+  }
+});
+
+app.get('/api/lands', auth, requirePermission('land:view'), async (_req, res) => {
+  try {
+    const rows = await store.listLandRecords();
+    return res.json(rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to fetch land records' });
+  }
+});
+
+app.post('/api/lands', auth, requirePermission('land:create'), async (req, res) => {
+  const { area, ownerName, amountPaid, amountToBeGiven } = req.body;
+  if (!area || !ownerName || amountPaid == null || amountToBeGiven == null) {
+    return res.status(400).json({ error: 'area, ownerName, amountPaid and amountToBeGiven are required' });
+  }
+  const paid = Number(amountPaid);
+  const due = Number(amountToBeGiven);
+  if (Number.isNaN(paid) || paid < 0 || Number.isNaN(due) || due < 0) {
+    return res.status(400).json({ error: 'amountPaid and amountToBeGiven must be valid numbers' });
+  }
+  try {
+    const row = await store.createLandRecord({ area, ownerName, amountPaid: paid, amountToBeGiven: due });
+    return res.status(201).json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to create land record' });
+  }
+});
+
+app.delete('/api/lands/:id', auth, requirePermission('land:delete'), async (req, res) => {
+  try {
+    const deleted = await store.deleteLandRecord(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Land record not found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to delete land record' });
   }
 });
 
