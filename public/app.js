@@ -77,7 +77,7 @@ function monthISO() {
 }
 
 function money(n) {
-  return `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  return `₹${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 }
 
 function ensureAutoRefresh() {
@@ -272,6 +272,10 @@ function renderSalaryRows(rows) {
           <td class="money">${money(r.monthlySalary)}</td>
           <td>${money(r.advances)}</td>
           <td class="money">${money(r.remaining)}</td>
+          <td>${r.monthsWorked ?? '-'}</td>
+          <td class="money">${money(r.totalSalaryAllTime ?? 0)}</td>
+          <td class="money">${money(r.totalAdvancesAllTime ?? 0)}</td>
+          <td class="money">${money(r.totalRemainingAllTime ?? 0)}</td>
           <td>${
             canSeeSlip
               ? `<button class="small slip-btn" data-emp-id="${r.employeeId}">PDF Slip</button>`
@@ -317,6 +321,8 @@ function renderTruckRows(rows) {
           <td>${t.driverName || '-'}</td>
           <td>${t.rawMaterial}</td>
           <td>${t.quantity}</td>
+          <td>${t.pricePerQuintal != null ? money(t.pricePerQuintal) : '-'}</td>
+          <td>${t.totalAmount != null ? money(t.totalAmount) : '-'}</td>
           <td>${t.origin || '-'}</td>
           <td>${t.destination || '-'}</td>
         </tr>`
@@ -523,6 +529,18 @@ advanceForm.addEventListener('submit', async (e) => {
   }
 });
 
+function updateTruckTotal() {
+  const priceEl = document.getElementById('truckPricePerQuintal');
+  const qtyInput = truckForm.querySelector('input[name="quantity"]');
+  const totalEl = document.getElementById('truckTotalAmount');
+  const price = parseFloat(priceEl?.value) || 0;
+  const qty = parseFloat(qtyInput?.value) || 0;
+  totalEl.textContent = price > 0 && qty > 0 ? money(price * qty) : '—';
+}
+
+truckForm.querySelector('input[name="quantity"]')?.addEventListener('input', updateTruckTotal);
+document.getElementById('truckPricePerQuintal')?.addEventListener('input', updateTruckTotal);
+
 truckForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(truckForm);
@@ -534,12 +552,14 @@ truckForm.addEventListener('submit', async (e) => {
       driverName: fd.get('driverName'),
       rawMaterial: fd.get('rawMaterial'),
       quantity: fd.get('quantity'),
+      pricePerQuintal: fd.get('pricePerQuintal') || undefined,
       origin: fd.get('origin'),
       destination: fd.get('destination'),
       notes: fd.get('notes')
     });
     truckForm.reset();
     setDefaultDates();
+    updateTruckTotal();
     await refresh();
     showToast('Truck entry added');
   } catch (err) {

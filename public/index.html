@@ -157,9 +157,13 @@
                 <tr>
                   <th>Name</th>
                   <th>Role</th>
-                  <th>Salary</th>
-                  <th>Advances</th>
-                  <th>Remaining</th>
+                  <th>Monthly</th>
+                  <th>Advances (Month)</th>
+                  <th>Remaining (Month)</th>
+                  <th>Months Worked</th>
+                  <th>Total Earned (All Time)</th>
+                  <th>Total Advances (All Time)</th>
+                  <th>Total Remaining (All Time)</th>
                   <th>Slip</th>
                 </tr>
               </thead>
@@ -178,7 +182,12 @@
               <input name="truckNumber" placeholder="Truck Number" required />
               <input name="driverName" placeholder="Driver Name" />
               <input name="rawMaterial" placeholder="Raw Material" required />
-              <input name="quantity" type="number" min="0.01" step="0.01" placeholder="Quantity" required />
+              <input name="quantity" type="number" min="0.01" step="0.01" placeholder="Quantity (quintals)" required />
+              <input name="pricePerQuintal" type="number" min="0" step="0.01" placeholder="Price per Quintal" id="truckPricePerQuintal" />
+              <div class="truck-total-row">
+                <label for="truckTotalAmount">Total Amount</label>
+                <output id="truckTotalAmount" class="truck-total-output">—</output>
+              </div>
               <input name="origin" placeholder="Origin" />
               <input name="destination" placeholder="Destination" />
               <input name="notes" placeholder="Notes" />
@@ -203,7 +212,9 @@
                   <th>Truck</th>
                   <th>Driver</th>
                   <th>Material</th>
-                  <th>Quantity</th>
+                  <th>Qty (Qntl)</th>
+                  <th>Price/Qntl</th>
+                  <th>Total</th>
                   <th>Origin</th>
                   <th>Destination</th>
                 </tr>

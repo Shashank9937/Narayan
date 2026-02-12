@@ -295,25 +295,50 @@ function jsonStore() {
           .filter((a) => a.employeeId === employee.id && monthOf(a.date) === month)
           .reduce((sum, a) => sum + Number(a.amount), 0);
 
+        const totalAdvancesAllTime = db.salaryAdvances
+          .filter((a) => a.employeeId === employee.id)
+          .reduce((sum, a) => sum + Number(a.amount), 0);
+
+        const startMonth = String(employee.createdAt || new Date().toISOString()).slice(0, 7);
+        const [startY, startM] = startMonth.split('-').map(Number);
+        const [endY, endM] = month.split('-').map(Number);
+        const monthsWorked = Math.max(0, (endY - startY) * 12 + (endM - startM) + 1);
+        const totalSalaryAllTime = Number(employee.monthlySalary) * monthsWorked;
+        const totalRemainingAllTime = Math.max(0, totalSalaryAllTime - totalAdvancesAllTime);
+
         return {
           employeeId: employee.id,
           name: employee.name,
           role: employee.role,
           monthlySalary: Number(employee.monthlySalary),
           advances,
-          remaining: Math.max(0, Number(employee.monthlySalary) - advances)
+          remaining: Math.max(0, Number(employee.monthlySalary) - advances),
+          monthsWorked,
+          totalSalaryAllTime,
+          totalAdvancesAllTime,
+          totalRemainingAllTime
         };
       });
     },
     async createTruck(data) {
       const db = readJsonDb();
+      const quantity = Number(data.quantity);
+      const pricePerQuintal = data.pricePerQuintal != null && data.pricePerQuintal !== ''
+        ? Number(data.pricePerQuintal)
+        : null;
+      const totalAmount = pricePerQuintal != null && !Number.isNaN(pricePerQuintal)
+        ? pricePerQuintal * quantity
+        : null;
+
       const row = {
         id: uid('trk'),
         date: data.date,
         truckNumber: String(data.truckNumber).trim(),
         driverName: data.driverName ? String(data.driverName).trim() : '',
         rawMaterial: String(data.rawMaterial).trim(),
-        quantity: Number(data.quantity),
+        quantity,
+        pricePerQuintal: pricePerQuintal ?? undefined,
+        totalAmount: totalAmount ?? undefined,
         origin: data.origin ? String(data.origin).trim() : '',
         destination: data.destination ? String(data.destination).trim() : '',
         notes: data.notes ? String(data.notes).trim() : '',
@@ -419,11 +444,15 @@ function postgresStore() {
           driver_name TEXT,
           raw_material TEXT NOT NULL,
           quantity NUMERIC(12,2) NOT NULL,
+          price_per_quintal NUMERIC(12,2),
+          total_amount NUMERIC(12,2),
           origin TEXT,
           destination TEXT,
           notes TEXT,
           created_at TIMESTAMPTZ NOT NULL
         );
+        ALTER TABLE trucks ADD COLUMN IF NOT EXISTS price_per_quintal NUMERIC(12,2);
+        ALTER TABLE trucks ADD COLUMN IF NOT EXISTS total_amount NUMERIC(12,2);
       `);
 
       const countRes = await pool.query('SELECT COUNT(*)::int AS c FROM users');
@@ -646,33 +675,56 @@ function postgresStore() {
                 e.name,
                 e.role,
                 e.monthly_salary,
-                COALESCE(SUM(a.amount), 0) AS advances
+                e.created_at,
+                COALESCE(SUM(CASE WHEN TO_CHAR(a.date, 'YYYY-MM') = $1 THEN a.amount ELSE 0 END), 0) AS advances,
+                COALESCE(SUM(a.amount), 0) AS total_advances_all_time
          FROM employees e
-         LEFT JOIN salary_advances a
-           ON a.employee_id = e.id
-          AND TO_CHAR(a.date, 'YYYY-MM') = $1
-         GROUP BY e.id, e.name, e.role, e.monthly_salary
+         LEFT JOIN salary_advances a ON a.employee_id = e.id
+         GROUP BY e.id, e.name, e.role, e.monthly_salary, e.created_at
          ORDER BY e.name`,
         [month]
       );
 
-      return res.rows.map((r) => ({
-        employeeId: r.employee_id,
-        name: r.name,
-        role: r.role,
-        monthlySalary: Number(r.monthly_salary),
-        advances: Number(r.advances),
-        remaining: Math.max(0, Number(r.monthly_salary) - Number(r.advances))
-      }));
+      return res.rows.map((r) => {
+        const startMonth = String(r.created_at).slice(0, 7);
+        const [startY, startM] = startMonth.split('-').map(Number);
+        const [endY, endM] = month.split('-').map(Number);
+        const monthsWorked = Math.max(0, (endY - startY) * 12 + (endM - startM) + 1);
+        const totalSalaryAllTime = Number(r.monthly_salary) * monthsWorked;
+        const totalAdvancesAllTime = Number(r.total_advances_all_time);
+
+        return {
+          employeeId: r.employee_id,
+          name: r.name,
+          role: r.role,
+          monthlySalary: Number(r.monthly_salary),
+          advances: Number(r.advances),
+          remaining: Math.max(0, Number(r.monthly_salary) - Number(r.advances)),
+          monthsWorked,
+          totalSalaryAllTime,
+          totalAdvancesAllTime,
+          totalRemainingAllTime: Math.max(0, totalSalaryAllTime - totalAdvancesAllTime)
+        };
+      });
     },
     async createTruck(data) {
+      const quantity = Number(data.quantity);
+      const pricePerQuintal =
+        data.pricePerQuintal != null && data.pricePerQuintal !== ''
+          ? Number(data.pricePerQuintal)
+          : null;
+      const totalAmount =
+        pricePerQuintal != null && !Number.isNaN(pricePerQuintal) ? pricePerQuintal * quantity : null;
+
       const row = {
         id: uid('trk'),
         date: data.date,
         truckNumber: String(data.truckNumber).trim(),
         driverName: data.driverName ? String(data.driverName).trim() : '',
         rawMaterial: String(data.rawMaterial).trim(),
-        quantity: Number(data.quantity),
+        quantity,
+        pricePerQuintal: pricePerQuintal ?? undefined,
+        totalAmount: totalAmount ?? undefined,
         origin: data.origin ? String(data.origin).trim() : '',
         destination: data.destination ? String(data.destination).trim() : '',
         notes: data.notes ? String(data.notes).trim() : '',
@@ -681,8 +733,8 @@ function postgresStore() {
 
       await pool.query(
         `INSERT INTO trucks (
-          id, date, truck_number, driver_name, raw_material, quantity, origin, destination, notes, created_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          id, date, truck_number, driver_name, raw_material, quantity, price_per_quintal, total_amount, origin, destination, notes, created_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
         [
           row.id,
           row.date,
@@ -690,6 +742,8 @@ function postgresStore() {
           row.driverName,
           row.rawMaterial,
           row.quantity,
+          row.pricePerQuintal ?? null,
+          row.totalAmount ?? null,
           row.origin,
           row.destination,
           row.notes,
@@ -720,6 +774,8 @@ function postgresStore() {
         driverName: r.driver_name || '',
         rawMaterial: r.raw_material,
         quantity: Number(r.quantity),
+        pricePerQuintal: r.price_per_quintal != null ? Number(r.price_per_quintal) : null,
+        totalAmount: r.total_amount != null ? Number(r.total_amount) : null,
         origin: r.origin || '',
         destination: r.destination || '',
         notes: r.notes || ''
@@ -1069,9 +1125,9 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     doc.fontSize(12).text(`Month: ${month}`);
     doc.text(`Employee: ${employee.name}`);
     doc.text(`Role: ${employee.role}`);
-    doc.text(`Monthly Salary: $${Number(employee.monthlySalary).toFixed(2)}`);
-    doc.text(`Total Advance: $${totalAdvance.toFixed(2)}`);
-    doc.text(`Remaining Payable: $${remaining.toFixed(2)}`);
+    doc.text(`Monthly Salary: ₹${Number(employee.monthlySalary).toFixed(2)}`);
+    doc.text(`Total Advance: ₹${totalAdvance.toFixed(2)}`);
+    doc.text(`Remaining Payable: ₹${remaining.toFixed(2)}`);
 
     doc.moveDown(1);
     doc.fontSize(13).text('Advance Details');
@@ -1082,7 +1138,7 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     } else {
       advances.forEach((a, idx) => {
         doc.fontSize(11).text(
-          `${idx + 1}. ${a.date} | Amount: $${Number(a.amount).toFixed(2)}${a.note ? ` | Note: ${a.note}` : ''}`
+          `${idx + 1}. ${a.date} | Amount: ₹${Number(a.amount).toFixed(2)}${a.note ? ` | Note: ${a.note}` : ''}`
         );
       });
     }
@@ -1095,7 +1151,8 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
 });
 
 app.post('/api/trucks', auth, requirePermission('trucks:create'), async (req, res) => {
-  const { date, truckNumber, driverName, rawMaterial, quantity, origin, destination, notes } = req.body;
+  const { date, truckNumber, driverName, rawMaterial, quantity, pricePerQuintal, origin, destination, notes } =
+    req.body;
 
   if (!date || !truckNumber || !rawMaterial || !quantity) {
     return res.status(400).json({ error: 'date, truckNumber, rawMaterial, quantity are required' });
@@ -1113,6 +1170,7 @@ app.post('/api/trucks', auth, requirePermission('trucks:create'), async (req, re
       driverName,
       rawMaterial,
       quantity: qty,
+      pricePerQuintal: pricePerQuintal != null && pricePerQuintal !== '' ? pricePerQuintal : undefined,
       origin,
       destination,
       notes
@@ -1140,10 +1198,34 @@ app.get('/api/export/salary.csv', auth, requirePermission('export:view'), async 
 
   try {
     const rows = await store.salaryRows(month);
-    const header = ['Month', 'Employee', 'Role', 'MonthlySalary', 'Advances', 'Remaining'];
+    const header = [
+      'Month',
+      'Employee',
+      'Role',
+      'MonthlySalary',
+      'Advances',
+      'Remaining',
+      'MonthsWorked',
+      'TotalEarnedAllTime',
+      'TotalAdvancesAllTime',
+      'TotalRemainingAllTime'
+    ];
     const lines = [header.join(',')].concat(
       rows.map((r) =>
-        [month, r.name, r.role, r.monthlySalary, r.advances, r.remaining].map(csvEscape).join(',')
+        [
+          month,
+          r.name,
+          r.role,
+          r.monthlySalary,
+          r.advances,
+          r.remaining,
+          r.monthsWorked ?? '',
+          r.totalSalaryAllTime ?? '',
+          r.totalAdvancesAllTime ?? '',
+          r.totalRemainingAllTime ?? ''
+        ]
+          .map(csvEscape)
+          .join(',')
       )
     );
 
@@ -1166,6 +1248,8 @@ app.get('/api/export/trucks.csv', auth, requirePermission('export:view'), async 
       'DriverName',
       'RawMaterial',
       'Quantity',
+      'PricePerQuintal',
+      'TotalAmount',
       'Origin',
       'Destination',
       'Notes'
@@ -1173,7 +1257,18 @@ app.get('/api/export/trucks.csv', auth, requirePermission('export:view'), async 
 
     const lines = [header.join(',')].concat(
       rows.map((t) =>
-        [t.date, t.truckNumber, t.driverName, t.rawMaterial, t.quantity, t.origin, t.destination, t.notes]
+        [
+          t.date,
+          t.truckNumber,
+          t.driverName,
+          t.rawMaterial,
+          t.quantity,
+          t.pricePerQuintal ?? '',
+          t.totalAmount ?? '',
+          t.origin,
+          t.destination,
+          t.notes
+        ]
           .map(csvEscape)
           .join(',')
       )

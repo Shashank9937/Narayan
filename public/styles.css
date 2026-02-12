@@ -318,6 +318,22 @@ th {
   font-size: 13px;
 }
 
+.truck-total-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.truck-total-row label {
+  flex-shrink: 0;
+}
+
+.truck-total-output {
+  font-weight: 700;
+  color: var(--primary);
+  min-width: 80px;
+}
+
 .toast {
   position: fixed;
   right: 14px;
