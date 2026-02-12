@@ -1709,38 +1709,171 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="salary-slip-${employee.name}-${month}.pdf"`);
 
-    const doc = new PDFDocument({ margin: 40 });
+    const doc = new PDFDocument({ margin: 40, size: 'A4' });
     doc.pipe(res);
 
-    doc.fontSize(18).text(APP_NAME);
-    doc.fontSize(16).text('Salary Slip', { underline: true });
-    doc.moveDown(1);
-    doc.fontSize(11).text(`Generated: ${new Date().toISOString()}`);
-    doc.moveDown(0.5);
-    doc.fontSize(12).text(`Month: ${month}`);
-    doc.text(`Salary Period: ${monthStart} to ${periodEnd}`);
-    doc.text(`Days Counted: ${daysCounted} / ${monthDays}`);
-    doc.text(`Employee: ${employee.name}`);
-    doc.text(`Role: ${employee.role}`);
-    doc.text(`Monthly Salary: ₹${monthlySalary.toFixed(2)}`);
-    doc.text(`Per Day Salary: ₹${perDaySalary.toFixed(2)}`);
-    doc.text(`Prorated Salary (${daysCounted} days): ₹${proratedSalary.toFixed(2)}`);
-    doc.text(`Total Advance: ₹${totalAdvance.toFixed(2)}`);
-    doc.text(`Remaining Payable: ₹${remaining.toFixed(2)}`);
+    const pageWidth = doc.page.width;
+    const pageMargin = 40;
+    const contentWidth = pageWidth - pageMargin * 2;
+    const centerX = pageWidth / 2;
+    const colors = {
+      brand: '#0F3C8A',
+      brandLight: '#EAF2FF',
+      text: '#1A2538',
+      muted: '#5D6A7E',
+      success: '#0F9D58',
+      border: '#D6DEEB'
+    };
 
-    doc.moveDown(1);
-    doc.fontSize(13).text('Advance Details');
-    doc.moveDown(0.4);
+    const moneyText = (n) => `₹${Number(n).toFixed(2)}`;
+    const generatedAt = new Date().toISOString();
+
+    // Header band
+    doc
+      .save()
+      .roundedRect(pageMargin, 30, contentWidth, 82, 12)
+      .fill(colors.brandLight)
+      .restore();
+
+    // Center logo emblem
+    const logoY = 46;
+    doc
+      .save()
+      .circle(centerX, logoY + 20, 20)
+      .fill(colors.brand)
+      .restore();
+    doc
+      .fillColor('#FFFFFF')
+      .fontSize(14)
+      .font('Helvetica-Bold')
+      .text('NE', centerX - 12, logoY + 13, { width: 24, align: 'center' });
+
+    doc
+      .fillColor(colors.brand)
+      .font('Helvetica-Bold')
+      .fontSize(17)
+      .text(APP_NAME, pageMargin, 78, { width: contentWidth, align: 'center' });
+    doc
+      .fillColor(colors.text)
+      .fontSize(12)
+      .font('Helvetica-Bold')
+      .text('Salary Slip', pageMargin, 99, { width: contentWidth, align: 'center' });
+
+    // Employee and period block
+    let y = 130;
+    doc
+      .save()
+      .roundedRect(pageMargin, y, contentWidth, 92, 10)
+      .fill('#FFFFFF')
+      .restore();
+    doc
+      .save()
+      .roundedRect(pageMargin, y, contentWidth, 92, 10)
+      .strokeColor(colors.border)
+      .lineWidth(1)
+      .stroke()
+      .restore();
+
+    doc.fillColor(colors.muted).fontSize(10).font('Helvetica-Bold');
+    doc.text('Month', pageMargin + 14, y + 12);
+    doc.text('Salary Period', pageMargin + 14, y + 38);
+    doc.text('Generated', pageMargin + 14, y + 64);
+
+    doc.text('Employee', pageMargin + contentWidth / 2, y + 12);
+    doc.text('Role', pageMargin + contentWidth / 2, y + 38);
+    doc.text('Days Counted', pageMargin + contentWidth / 2, y + 64);
+
+    doc.fillColor(colors.text).font('Helvetica').fontSize(11);
+    doc.text(month, pageMargin + 90, y + 12);
+    doc.text(`${monthStart} to ${periodEnd}`, pageMargin + 90, y + 38);
+    doc.text(generatedAt, pageMargin + 90, y + 64);
+
+    doc.text(employee.name, pageMargin + contentWidth / 2 + 76, y + 12);
+    doc.text(employee.role, pageMargin + contentWidth / 2 + 76, y + 38);
+    doc.text(`${daysCounted} / ${monthDays}`, pageMargin + contentWidth / 2 + 76, y + 64);
+
+    // Compensation summary cards
+    y += 112;
+    const gap = 10;
+    const cardW = (contentWidth - gap) / 2;
+    const cardH = 98;
+
+    doc.save().roundedRect(pageMargin, y, cardW, cardH, 10).fill('#FFFFFF').restore();
+    doc.save().roundedRect(pageMargin, y, cardW, cardH, 10).strokeColor(colors.border).stroke().restore();
+    doc.save().roundedRect(pageMargin + cardW + gap, y, cardW, cardH, 10).fill('#FFFFFF').restore();
+    doc
+      .save()
+      .roundedRect(pageMargin + cardW + gap, y, cardW, cardH, 10)
+      .strokeColor(colors.border)
+      .stroke()
+      .restore();
+
+    doc.fillColor(colors.brand).font('Helvetica-Bold').fontSize(11);
+    doc.text('Salary Calculation', pageMargin + 12, y + 10);
+    doc.fillColor(colors.text).font('Helvetica').fontSize(10.5);
+    doc.text(`Monthly Salary: ${moneyText(monthlySalary)}`, pageMargin + 12, y + 32);
+    doc.text(`Per Day Salary: ${moneyText(perDaySalary)}`, pageMargin + 12, y + 50);
+    doc.text(`Prorated Salary: ${moneyText(proratedSalary)}`, pageMargin + 12, y + 68);
+
+    doc.fillColor(colors.brand).font('Helvetica-Bold').fontSize(11);
+    doc.text('Payment Status', pageMargin + cardW + gap + 12, y + 10);
+    doc.fillColor(colors.text).font('Helvetica').fontSize(10.5);
+    doc.text(`Total Advance: ${moneyText(totalAdvance)}`, pageMargin + cardW + gap + 12, y + 32);
+    doc.text(`Remaining Payable: ${moneyText(remaining)}`, pageMargin + cardW + gap + 12, y + 50);
+    doc.fillColor(colors.success).font('Helvetica-Bold').fontSize(12);
+    doc.text(`Pending: ${moneyText(remaining)}`, pageMargin + cardW + gap + 12, y + 70);
+
+    // Advance details section
+    y += 120;
+    doc.fillColor(colors.brand).font('Helvetica-Bold').fontSize(12);
+    doc.text('Advance Details', pageMargin, y);
+    y += 18;
+
+    doc
+      .save()
+      .roundedRect(pageMargin, y, contentWidth, 24, 6)
+      .fill(colors.brandLight)
+      .restore();
+    doc.fillColor(colors.brand).font('Helvetica-Bold').fontSize(10);
+    doc.text('No.', pageMargin + 10, y + 7);
+    doc.text('Date', pageMargin + 48, y + 7);
+    doc.text('Amount', pageMargin + 160, y + 7);
+    doc.text('Note', pageMargin + 280, y + 7);
+    y += 30;
 
     if (advances.length === 0) {
-      doc.fontSize(11).text('No advance transactions for this month.');
+      doc.fillColor(colors.muted).font('Helvetica').fontSize(10.5);
+      doc.text('No advance transactions for this period.', pageMargin + 4, y + 2);
     } else {
       advances.forEach((a, idx) => {
-        doc.fontSize(11).text(
-          `${idx + 1}. ${a.date} | Amount: ₹${Number(a.amount).toFixed(2)}${a.note ? ` | Note: ${a.note}` : ''}`
-        );
+        doc
+          .save()
+          .roundedRect(pageMargin, y - 2, contentWidth, 22, 4)
+          .fill(idx % 2 === 0 ? '#FFFFFF' : '#F9FBFF')
+          .restore();
+        doc.fillColor(colors.text).font('Helvetica').fontSize(10);
+        doc.text(String(idx + 1), pageMargin + 10, y + 4);
+        doc.text(a.date, pageMargin + 48, y + 4);
+        doc.text(moneyText(a.amount), pageMargin + 160, y + 4);
+        doc.text(a.note || '-', pageMargin + 280, y + 4, { width: contentWidth - 290, ellipsis: true });
+        y += 24;
       });
     }
+
+    // Footer
+    const footerY = doc.page.height - 46;
+    doc
+      .save()
+      .moveTo(pageMargin, footerY - 8)
+      .lineTo(pageMargin + contentWidth, footerY - 8)
+      .strokeColor(colors.border)
+      .stroke()
+      .restore();
+    doc.fillColor(colors.muted).font('Helvetica').fontSize(9);
+    doc.text(`${APP_NAME} • Generated salary statement`, pageMargin, footerY, {
+      width: contentWidth,
+      align: 'center'
+    });
 
     doc.end();
   } catch (err) {
