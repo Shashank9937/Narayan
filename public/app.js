@@ -368,6 +368,7 @@ function partyLabel(party) {
 }
 
 function renderTruckRows(rows) {
+  const canDelete = hasPermission('trucks:delete');
   const narayanTotal = rows
     .filter((t) => t.party === 'narayan' && t.totalAmount != null)
     .reduce((sum, t) => sum + Number(t.totalAmount), 0);
@@ -397,9 +398,26 @@ function renderTruckRows(rows) {
           <td>${t.totalAmount != null ? money(t.totalAmount) : '-'}</td>
           <td>${t.origin || '-'}</td>
           <td>${t.destination || '-'}</td>
+          <td>${canDelete ? `<button class="small danger truck-del" data-id="${t.id}">Delete</button>` : '-'}</td>
         </tr>`
     )
     .join('');
+
+  if (canDelete) {
+    document.querySelectorAll('.truck-del').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        if (!confirm('Delete this truck entry?')) return;
+        try {
+          await api(`/api/trucks/${id}`, 'DELETE');
+          await refresh();
+          showToast('Truck entry deleted');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    });
+  }
 }
 
 function renderExpenseRows(rows) {

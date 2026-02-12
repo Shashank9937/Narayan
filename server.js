@@ -28,6 +28,7 @@ const ROLE_PERMISSIONS = {
     'salary:view',
     'advances:create',
     'trucks:view',
+    'trucks:delete',
     'expenses:view',
     'expenses:create',
     'expenses:delete',
@@ -42,6 +43,7 @@ const ROLE_PERMISSIONS = {
     'attendance:report',
     'trucks:view',
     'trucks:create',
+    'trucks:delete',
     'expenses:view',
     'expenses:create'
   ]
@@ -378,6 +380,14 @@ function jsonStore() {
       db.trucks.push(row);
       writeJsonDb(db);
       return row;
+    },
+    async deleteTruck(id) {
+      const db = readJsonDb();
+      const before = db.trucks.length;
+      db.trucks = db.trucks.filter((t) => t.id !== id);
+      if (before === db.trucks.length) return false;
+      writeJsonDb(db);
+      return true;
     },
     async listTrucks(filter) {
       const db = readJsonDb();
@@ -852,6 +862,10 @@ function postgresStore() {
       );
 
       return row;
+    },
+    async deleteTruck(id) {
+      const res = await pool.query('DELETE FROM trucks WHERE id = $1', [id]);
+      return res.rowCount > 0;
     },
     async listTrucks(filter) {
       const values = [];
@@ -1362,6 +1376,19 @@ app.get('/api/trucks', auth, requirePermission('trucks:view'), async (req, res) 
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to fetch trucks' });
+  }
+});
+
+app.delete('/api/trucks/:id', auth, requirePermission('trucks:delete'), async (req, res) => {
+  try {
+    const deleted = await store.deleteTruck(req.params.id);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Truck entry not found' });
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to delete truck entry' });
   }
 });
 
