@@ -308,6 +308,18 @@ th {
   font-weight: 700;
 }
 
+.advances-input {
+  width: 100%;
+  max-width: 120px;
+  padding: 6px 8px;
+  text-align: right;
+  font-weight: 600;
+}
+
+.advances-cell {
+  min-width: 100px;
+}
+
 .actions {
   display: flex;
   gap: 6px;
@@ -332,6 +344,30 @@ th {
   font-weight: 700;
   color: var(--primary);
   min-width: 80px;
+}
+
+.truck-party-totals {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding: 12px;
+  background: #eef4ff;
+  border-radius: 10px;
+}
+
+.truck-party-totals .party-total {
+  font-weight: 600;
+}
+
+.truck-party-totals .party-total .label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.truck-party-totals .party-total .value {
+  font-size: 18px;
+  color: var(--primary);
 }
 
 .toast {
@@ -398,6 +434,33 @@ body.dark-mode .nav-btn.active {
 
 body.dark-mode th {
   background: #2d3548;
+}
+
+body.dark-mode .truck-party-totals {
+  background: #2d3548;
+}
+
+.expense-total-wrap {
+  padding: 16px;
+  margin-bottom: 14px;
+  background: linear-gradient(135deg, #1f6feb 0%, #0f3c8a 100%);
+  color: #fff;
+  border-radius: 12px;
+}
+
+.expense-total-label {
+  display: block;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.expense-total-value {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+body.dark-mode .expense-total-wrap {
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
 }
 
 /* Print styles */

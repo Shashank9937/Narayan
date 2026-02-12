@@ -1,6 +1,7 @@
 const cardsEl = document.getElementById('cards');
 const salaryTbody = document.querySelector('#salaryTable tbody');
 const truckTbody = document.querySelector('#truckTable tbody');
+const expenseTbody = document.querySelector('#expenseTable tbody');
 const employeeTbody = document.querySelector('#employeeTable tbody');
 const attendanceReportTbody = document.querySelector('#attendanceReportTable tbody');
 
@@ -20,6 +21,7 @@ const employeeForm = document.getElementById('employeeForm');
 const attendanceForm = document.getElementById('attendanceForm');
 const advanceForm = document.getElementById('advanceForm');
 const truckForm = document.getElementById('truckForm');
+const expenseForm = document.getElementById('expenseForm');
 const changePasswordForm = document.getElementById('changePasswordForm');
 
 const downloadSalaryCsvBtn = document.getElementById('downloadSalaryCsv');
@@ -38,6 +40,7 @@ const manualRefreshBtn = document.getElementById('manualRefreshBtn');
 let me = null;
 let employeesCache = [];
 let trucksCache = [];
+let expensesCache = [];
 let autoRefreshTimer = null;
 
 function showToast(message, type = 'ok') {
@@ -89,7 +92,8 @@ function ensureAutoRefresh() {
 }
 
 function setDefaultDates() {
-  [attendanceForm, advanceForm, truckForm].forEach((form) => {
+  [attendanceForm, advanceForm, truckForm, expenseForm].forEach((form) => {
+    if (!form) return;
     const dateInput = form.querySelector('input[type="date"]');
     if (dateInput) dateInput.value = todayISO();
   });
@@ -130,11 +134,13 @@ function applyRoleUI() {
   setFormEnabled('attendancePanel', hasPermission('attendance:create'));
   setFormEnabled('advancePanel', hasPermission('advances:create'));
   setFormEnabled('truckPanel', hasPermission('trucks:create'));
+  setFormEnabled('expensePanel', hasPermission('expenses:create'));
 
   setPanelVisible('salaryPanel', hasPermission('salary:view'));
   setPanelVisible('truckReportPanel', hasPermission('trucks:view'));
   setPanelVisible('employeeListPanel', hasPermission('employees:view'));
   setPanelVisible('attendanceReportPanel', hasPermission('attendance:report'));
+  setPanelVisible('expenseReportPanel', hasPermission('expenses:view'));
   setPanelVisible('changePasswordPanel', true);
 
   downloadSalaryCsvBtn.disabled = !hasPermission('export:view');
@@ -263,15 +269,25 @@ function renderEmployeeRows(rows) {
 
 function renderSalaryRows(rows) {
   const canSeeSlip = hasPermission('salaryslip:view');
+  const canEditAdvances = hasPermission('advances:create');
+
   salaryTbody.innerHTML = rows
     .map(
-      (r) =>
-        `<tr>
+      (r) => {
+        const advVal = r.advances ?? 0;
+        const salary = r.monthlySalary ?? 0;
+        const remaining = Math.max(0, salary - (advVal || 0));
+        const advancesCell = canEditAdvances
+          ? `<input type="number" min="0" step="0.01" class="advances-input" value="${advVal}" 
+               data-emp-id="${r.employeeId}" data-salary="${salary}" data-original="${advVal}"
+               placeholder="0" />`
+          : `<span class="money">${money(advVal)}</span>`;
+        return `<tr data-emp-id="${r.employeeId}">
           <td>${r.name}</td>
           <td>${r.role}</td>
-          <td class="money">${money(r.monthlySalary)}</td>
-          <td>${money(r.advances)}</td>
-          <td class="money">${money(r.remaining)}</td>
+          <td class="money">${money(salary)}</td>
+          <td class="advances-cell">${advancesCell}</td>
+          <td class="money remaining-cell" data-salary="${salary}">${money(remaining)}</td>
           <td>${r.monthsWorked ?? '-'}</td>
           <td class="money">${money(r.totalSalaryAllTime ?? 0)}</td>
           <td class="money">${money(r.totalAdvancesAllTime ?? 0)}</td>
@@ -281,9 +297,43 @@ function renderSalaryRows(rows) {
               ? `<button class="small slip-btn" data-emp-id="${r.employeeId}">PDF Slip</button>`
               : '-'
           }</td>
-        </tr>`
+        </tr>`;
+      }
     )
     .join('');
+
+  if (canEditAdvances) {
+    document.querySelectorAll('.advances-input').forEach((input) => {
+      input.addEventListener('input', () => {
+        const salary = Number(input.dataset.salary) || 0;
+        const advances = parseFloat(input.value) || 0;
+        const remaining = Math.max(0, salary - advances);
+        const row = input.closest('tr');
+        const remainingCell = row?.querySelector('.remaining-cell');
+        if (remainingCell) remainingCell.textContent = money(remaining);
+      });
+      input.addEventListener('blur', async () => {
+        const empId = input.dataset.empId;
+        const original = Number(input.dataset.original) || 0;
+        const entered = parseFloat(input.value);
+        if (Number.isNaN(entered) || entered < 0 || entered === original) return;
+        try {
+          await api('/api/advances/set', 'PUT', {
+            employeeId: empId,
+            month: monthISO(),
+            totalAdvances: entered
+          });
+          input.dataset.original = String(entered);
+          await refresh();
+          showToast('Advances updated');
+        } catch (err) {
+          showToast(err.message, 'error');
+          input.value = original;
+          input.dataset.original = String(original);
+        }
+      });
+    });
+  }
 
   if (canSeeSlip) {
     document.querySelectorAll('.slip-btn').forEach((btn) => {
@@ -311,12 +361,34 @@ function renderAttendanceReportRows(rows) {
     .join('');
 }
 
+const PARTY_LABELS = { narayan: 'Narayan', maa_vaishno: 'Maa Vaishno' };
+
+function partyLabel(party) {
+  return (party && PARTY_LABELS[party]) || '-';
+}
+
 function renderTruckRows(rows) {
+  const narayanTotal = rows
+    .filter((t) => t.party === 'narayan' && t.totalAmount != null)
+    .reduce((sum, t) => sum + Number(t.totalAmount), 0);
+  const maaVaishnoTotal = rows
+    .filter((t) => t.party === 'maa_vaishno' && t.totalAmount != null)
+    .reduce((sum, t) => sum + Number(t.totalAmount), 0);
+
+  const totalsEl = document.getElementById('truckPartyTotals');
+  if (totalsEl) {
+    totalsEl.innerHTML = `
+      <div class="party-total"><span class="label">Narayan Total</span><div class="value">${money(narayanTotal)}</div></div>
+      <div class="party-total"><span class="label">Maa Vaishno Total</span><div class="value">${money(maaVaishnoTotal)}</div></div>
+    `;
+  }
+
   truckTbody.innerHTML = rows
     .map(
       (t) =>
         `<tr>
           <td>${t.date}</td>
+          <td>${partyLabel(t.party)}</td>
           <td>${t.truckNumber}</td>
           <td>${t.driverName || '-'}</td>
           <td>${t.rawMaterial}</td>
@@ -330,6 +402,44 @@ function renderTruckRows(rows) {
     .join('');
 }
 
+function renderExpenseRows(rows) {
+  const canDelete = hasPermission('expenses:delete');
+  const total = rows.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+  const totalEl = document.getElementById('expenseTotal');
+  if (totalEl) totalEl.textContent = money(total);
+
+  expenseTbody.innerHTML = rows
+    .map(
+      (e) =>
+        `<tr>
+          <td>${e.date}</td>
+          <td>${e.description || '-'}</td>
+          <td class="money">${money(e.amount)}</td>
+          <td>
+            ${canDelete ? `<button class="small danger exp-del" data-id="${e.id}">Delete</button>` : '-'}
+          </td>
+        </tr>`
+    )
+    .join('');
+
+  if (canDelete) {
+    document.querySelectorAll('.exp-del').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        if (!confirm('Delete this expense?')) return;
+        try {
+          await api(`/api/expenses/${id}`, 'DELETE');
+          await refresh();
+          showToast('Expense deleted');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    });
+  }
+}
+
 function filterEmployees(rows) {
   const q = (employeeSearchInput.value || '').trim().toLowerCase();
   if (!q) return rows;
@@ -340,7 +450,7 @@ function filterTrucks(rows) {
   const q = (truckSearchInput.value || '').trim().toLowerCase();
   if (!q) return rows;
   return rows.filter((t) =>
-    `${t.truckNumber} ${t.driverName || ''} ${t.rawMaterial} ${t.origin || ''} ${t.destination || ''}`
+    `${t.truckNumber} ${t.driverName || ''} ${t.rawMaterial} ${partyLabel(t.party)} ${t.origin || ''} ${t.destination || ''}`
       .toLowerCase()
       .includes(q)
   );
@@ -370,12 +480,13 @@ async function refresh() {
     hasPermission('employees:view') ? api('/api/employees') : Promise.resolve([]),
     hasPermission('salary:view') ? api(`/api/salary-summary?month=${month}`) : Promise.resolve({ rows: [] }),
     hasPermission('trucks:view') ? api('/api/trucks') : Promise.resolve([]),
+    hasPermission('expenses:view') ? api('/api/expenses') : Promise.resolve([]),
     hasPermission('attendance:report')
       ? api(`/api/attendance-report?month=${attendanceMonthInput.value || month}`)
       : Promise.resolve({ rows: [] })
   ];
 
-  const [dashboard, employees, salary, trucks, attendanceReport] = await Promise.all(requests);
+  const [dashboard, employees, salary, trucks, expenses, attendanceReport] = await Promise.all(requests);
 
   if (dashboard) {
     renderCards(dashboard);
@@ -388,10 +499,12 @@ async function refresh() {
 
   employeesCache = employees || [];
   trucksCache = trucks || [];
+  expensesCache = expenses || [];
   renderEmployeeOptions(employeesCache);
   renderEmployeeRows(filterEmployees(employeesCache));
   renderSalaryRows((salary && salary.rows) || []);
   renderTruckRows(filterTrucks(trucksCache).sort((a, b) => (a.date < b.date ? 1 : -1)));
+  renderExpenseRows(expensesCache);
   renderAttendanceReportRows((attendanceReport && attendanceReport.rows) || []);
 }
 
@@ -450,12 +563,32 @@ logoutBtn.addEventListener('click', async () => {
   me = null;
   employeesCache = [];
   trucksCache = [];
+  expensesCache = [];
   if (autoRefreshTimer) {
     clearInterval(autoRefreshTimer);
     autoRefreshTimer = null;
   }
   setVisibility(false);
   showToast('Logged out');
+});
+
+expenseForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(expenseForm);
+
+  try {
+    await api('/api/expenses', 'POST', {
+      date: fd.get('date'),
+      description: fd.get('description') || undefined,
+      amount: fd.get('amount')
+    });
+    expenseForm.reset();
+    setDefaultDates();
+    await refresh();
+    showToast('Expense added');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
 });
 
 changePasswordForm.addEventListener('submit', async (e) => {
@@ -548,6 +681,7 @@ truckForm.addEventListener('submit', async (e) => {
   try {
     await api('/api/trucks', 'POST', {
       date: fd.get('date'),
+      party: fd.get('party') || undefined,
       truckNumber: fd.get('truckNumber'),
       driverName: fd.get('driverName'),
       rawMaterial: fd.get('rawMaterial'),

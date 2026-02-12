@@ -28,6 +28,9 @@ const ROLE_PERMISSIONS = {
     'salary:view',
     'advances:create',
     'trucks:view',
+    'expenses:view',
+    'expenses:create',
+    'expenses:delete',
     'export:view',
     'salaryslip:view'
   ],
@@ -38,7 +41,9 @@ const ROLE_PERMISSIONS = {
     'attendance:create',
     'attendance:report',
     'trucks:view',
-    'trucks:create'
+    'trucks:create',
+    'expenses:view',
+    'expenses:create'
   ]
 };
 
@@ -99,6 +104,7 @@ function ensureDbShape(db) {
   if (!Array.isArray(db.attendance)) db.attendance = [];
   if (!Array.isArray(db.salaryAdvances)) db.salaryAdvances = [];
   if (!Array.isArray(db.trucks)) db.trucks = [];
+  if (!Array.isArray(db.expenses)) db.expenses = [];
   if (!Array.isArray(db.users) || db.users.length === 0) db.users = defaultUsers();
   if (!Array.isArray(db.sessions)) db.sessions = [];
 
@@ -288,6 +294,26 @@ function jsonStore() {
       const db = readJsonDb();
       return db.salaryAdvances.filter((a) => a.employeeId === employeeId && monthOf(a.date) === month);
     },
+    async setAdvancesForMonth(employeeId, month, totalAdvances) {
+      const db = readJsonDb();
+      const currentSum = db.salaryAdvances
+        .filter((a) => a.employeeId === employeeId && monthOf(a.date) === month)
+        .reduce((sum, a) => sum + Number(a.amount), 0);
+      const diff = Number(totalAdvances) - currentSum;
+      if (diff === 0) return { ok: true };
+      const adjDate = `${month}-15`;
+      const row = {
+        id: uid('adv'),
+        employeeId,
+        date: adjDate,
+        amount: diff,
+        note: 'Adjustment to match entered total',
+        createdAt: new Date().toISOString()
+      };
+      db.salaryAdvances.push(row);
+      writeJsonDb(db);
+      return { ok: true };
+    },
     async salaryRows(month) {
       const db = readJsonDb();
       return db.employees.map((employee) => {
@@ -330,6 +356,10 @@ function jsonStore() {
         ? pricePerQuintal * quantity
         : null;
 
+      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
+        ? String(data.party).toLowerCase()
+        : null;
+
       const row = {
         id: uid('trk'),
         date: data.date,
@@ -339,6 +369,7 @@ function jsonStore() {
         quantity,
         pricePerQuintal: pricePerQuintal ?? undefined,
         totalAmount: totalAmount ?? undefined,
+        party: party || undefined,
         origin: data.origin ? String(data.origin).trim() : '',
         destination: data.destination ? String(data.destination).trim() : '',
         notes: data.notes ? String(data.notes).trim() : '',
@@ -354,6 +385,34 @@ function jsonStore() {
       if (filter?.dateFrom) rows = rows.filter((t) => t.date >= filter.dateFrom);
       if (filter?.dateTo) rows = rows.filter((t) => t.date <= filter.dateTo);
       return rows;
+    },
+    async listExpenses(filter) {
+      const db = readJsonDb();
+      let rows = db.expenses;
+      if (filter?.dateFrom) rows = rows.filter((e) => e.date >= filter.dateFrom);
+      if (filter?.dateTo) rows = rows.filter((e) => e.date <= filter.dateTo);
+      return rows.sort((a, b) => (a.date < b.date ? 1 : -1));
+    },
+    async createExpense(data) {
+      const db = readJsonDb();
+      const row = {
+        id: uid('exp'),
+        date: data.date,
+        description: String(data.description || '').trim() || 'Expense',
+        amount: Number(data.amount),
+        createdAt: new Date().toISOString()
+      };
+      db.expenses.push(row);
+      writeJsonDb(db);
+      return row;
+    },
+    async deleteExpense(id) {
+      const db = readJsonDb();
+      const before = db.expenses.length;
+      db.expenses = db.expenses.filter((e) => e.id !== id);
+      if (before === db.expenses.length) return false;
+      writeJsonDb(db);
+      return true;
     },
     async dashboard(month, today) {
       const db = readJsonDb();
@@ -453,6 +512,15 @@ function postgresStore() {
         );
         ALTER TABLE trucks ADD COLUMN IF NOT EXISTS price_per_quintal NUMERIC(12,2);
         ALTER TABLE trucks ADD COLUMN IF NOT EXISTS total_amount NUMERIC(12,2);
+        ALTER TABLE trucks ADD COLUMN IF NOT EXISTS party TEXT;
+
+        CREATE TABLE IF NOT EXISTS expenses (
+          id TEXT PRIMARY KEY,
+          date DATE NOT NULL,
+          description TEXT NOT NULL,
+          amount NUMERIC(12,2) NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL
+        );
       `);
 
       const countRes = await pool.query('SELECT COUNT(*)::int AS c FROM users');
@@ -669,6 +737,32 @@ function postgresStore() {
         note: r.note || ''
       }));
     },
+    async setAdvancesForMonth(employeeId, month, totalAdvances) {
+      const sumRes = await pool.query(
+        `SELECT COALESCE(SUM(amount), 0) AS total
+         FROM salary_advances
+         WHERE employee_id = $1 AND TO_CHAR(date, 'YYYY-MM') = $2`,
+        [employeeId, month]
+      );
+      const currentSum = Number(sumRes.rows[0].total);
+      const diff = Number(totalAdvances) - currentSum;
+      if (diff === 0) return { ok: true };
+      const adjDate = `${month}-15`;
+      const row = {
+        id: uid('adv'),
+        employeeId,
+        date: adjDate,
+        amount: diff,
+        note: 'Adjustment to match entered total',
+        createdAt: new Date().toISOString()
+      };
+      await pool.query(
+        `INSERT INTO salary_advances (id, employee_id, date, amount, note, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [row.id, row.employeeId, row.date, row.amount, row.note, row.createdAt]
+      );
+      return { ok: true };
+    },
     async salaryRows(month) {
       const res = await pool.query(
         `SELECT e.id AS employee_id,
@@ -716,6 +810,10 @@ function postgresStore() {
       const totalAmount =
         pricePerQuintal != null && !Number.isNaN(pricePerQuintal) ? pricePerQuintal * quantity : null;
 
+      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
+        ? String(data.party).toLowerCase()
+        : null;
+
       const row = {
         id: uid('trk'),
         date: data.date,
@@ -725,6 +823,7 @@ function postgresStore() {
         quantity,
         pricePerQuintal: pricePerQuintal ?? undefined,
         totalAmount: totalAmount ?? undefined,
+        party: party || undefined,
         origin: data.origin ? String(data.origin).trim() : '',
         destination: data.destination ? String(data.destination).trim() : '',
         notes: data.notes ? String(data.notes).trim() : '',
@@ -733,8 +832,8 @@ function postgresStore() {
 
       await pool.query(
         `INSERT INTO trucks (
-          id, date, truck_number, driver_name, raw_material, quantity, price_per_quintal, total_amount, origin, destination, notes, created_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+          id, date, truck_number, driver_name, raw_material, quantity, price_per_quintal, total_amount, party, origin, destination, notes, created_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [
           row.id,
           row.date,
@@ -744,6 +843,7 @@ function postgresStore() {
           row.quantity,
           row.pricePerQuintal ?? null,
           row.totalAmount ?? null,
+          row.party ?? null,
           row.origin,
           row.destination,
           row.notes,
@@ -776,10 +876,49 @@ function postgresStore() {
         quantity: Number(r.quantity),
         pricePerQuintal: r.price_per_quintal != null ? Number(r.price_per_quintal) : null,
         totalAmount: r.total_amount != null ? Number(r.total_amount) : null,
+        party: r.party || null,
         origin: r.origin || '',
         destination: r.destination || '',
         notes: r.notes || ''
       }));
+    },
+    async listExpenses(filter) {
+      const values = [];
+      let where = 'WHERE 1=1';
+      if (filter?.dateFrom) {
+        values.push(filter.dateFrom);
+        where += ` AND date >= $${values.length}`;
+      }
+      if (filter?.dateTo) {
+        values.push(filter.dateTo);
+        where += ` AND date <= $${values.length}`;
+      }
+      const res = await pool.query(`SELECT * FROM expenses ${where} ORDER BY date DESC`, values);
+      return res.rows.map((r) => ({
+        id: r.id,
+        date: String(r.date).slice(0, 10),
+        description: r.description || '',
+        amount: Number(r.amount),
+        createdAt: r.created_at
+      }));
+    },
+    async createExpense(data) {
+      const row = {
+        id: uid('exp'),
+        date: data.date,
+        description: String(data.description || '').trim() || 'Expense',
+        amount: Number(data.amount),
+        createdAt: new Date().toISOString()
+      };
+      await pool.query(
+        'INSERT INTO expenses (id, date, description, amount, created_at) VALUES ($1, $2, $3, $4, $5)',
+        [row.id, row.date, row.description, row.amount, row.createdAt]
+      );
+      return row;
+    },
+    async deleteExpense(id) {
+      const res = await pool.query('DELETE FROM expenses WHERE id = $1', [id]);
+      return res.rowCount > 0;
     },
     async dashboard(month, today) {
       const employeesRes = await pool.query('SELECT COUNT(*)::int AS c, COALESCE(SUM(monthly_salary), 0) AS total FROM employees');
@@ -1061,6 +1200,28 @@ app.get('/api/attendance-report', auth, requirePermission('attendance:report'), 
   }
 });
 
+app.put('/api/advances/set', auth, requirePermission('advances:create'), async (req, res) => {
+  const { employeeId, month, totalAdvances } = req.body;
+  if (!employeeId || !month) {
+    return res.status(400).json({ error: 'employeeId and month are required' });
+  }
+  const total = Number(totalAdvances);
+  if (Number.isNaN(total) || total < 0) {
+    return res.status(400).json({ error: 'totalAdvances must be a non-negative number' });
+  }
+  try {
+    const employee = await store.getEmployeeById(employeeId);
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+    await store.setAdvancesForMonth(employeeId, month, total);
+    const rows = await store.salaryRows(month);
+    const row = rows.find((r) => r.employeeId === employeeId);
+    return res.json({ ok: true, row: row || null });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to set advances' });
+  }
+});
+
 app.post('/api/advances', auth, requirePermission('advances:create'), async (req, res) => {
   const { employeeId, date, amount, note } = req.body;
 
@@ -1151,8 +1312,18 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
 });
 
 app.post('/api/trucks', auth, requirePermission('trucks:create'), async (req, res) => {
-  const { date, truckNumber, driverName, rawMaterial, quantity, pricePerQuintal, origin, destination, notes } =
-    req.body;
+  const {
+    date,
+    truckNumber,
+    driverName,
+    rawMaterial,
+    quantity,
+    pricePerQuintal,
+    party,
+    origin,
+    destination,
+    notes
+  } = req.body;
 
   if (!date || !truckNumber || !rawMaterial || !quantity) {
     return res.status(400).json({ error: 'date, truckNumber, rawMaterial, quantity are required' });
@@ -1171,6 +1342,7 @@ app.post('/api/trucks', auth, requirePermission('trucks:create'), async (req, re
       rawMaterial,
       quantity: qty,
       pricePerQuintal: pricePerQuintal != null && pricePerQuintal !== '' ? pricePerQuintal : undefined,
+      party,
       origin,
       destination,
       notes
@@ -1190,6 +1362,45 @@ app.get('/api/trucks', auth, requirePermission('trucks:view'), async (req, res) 
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to fetch trucks' });
+  }
+});
+
+app.get('/api/expenses', auth, requirePermission('expenses:view'), async (req, res) => {
+  try {
+    const rows = await store.listExpenses({ dateFrom: req.query.dateFrom, dateTo: req.query.dateTo });
+    return res.json(rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to fetch expenses' });
+  }
+});
+
+app.post('/api/expenses', auth, requirePermission('expenses:create'), async (req, res) => {
+  const { date, description, amount } = req.body;
+  if (!date || amount == null) {
+    return res.status(400).json({ error: 'date and amount are required' });
+  }
+  const numAmount = Number(amount);
+  if (Number.isNaN(numAmount) || numAmount <= 0) {
+    return res.status(400).json({ error: 'amount must be a positive number' });
+  }
+  try {
+    const row = await store.createExpense({ date, description, amount: numAmount });
+    return res.status(201).json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to create expense' });
+  }
+});
+
+app.delete('/api/expenses/:id', auth, requirePermission('expenses:delete'), async (req, res) => {
+  try {
+    const deleted = await store.deleteExpense(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Expense not found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to delete expense' });
   }
 });
 
@@ -1250,6 +1461,7 @@ app.get('/api/export/trucks.csv', auth, requirePermission('export:view'), async 
       'Quantity',
       'PricePerQuintal',
       'TotalAmount',
+      'Party',
       'Origin',
       'Destination',
       'Notes'
@@ -1265,6 +1477,7 @@ app.get('/api/export/trucks.csv', auth, requirePermission('export:view'), async 
           t.quantity,
           t.pricePerQuintal ?? '',
           t.totalAmount ?? '',
+          t.party ?? '',
           t.origin,
           t.destination,
           t.notes
