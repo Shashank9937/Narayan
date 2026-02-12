@@ -31,10 +31,15 @@ const ROLE_PERMISSIONS = {
     'salaryledger:update',
     'advances:create',
     'trucks:view',
+    'trucks:update',
     'trucks:delete',
     'expenses:view',
     'expenses:create',
+    'expenses:update',
     'expenses:delete',
+    'investments:view',
+    'investments:create',
+    'investments:delete',
     'chini:view',
     'chini:create',
     'chini:delete',
@@ -53,9 +58,13 @@ const ROLE_PERMISSIONS = {
     'salaryledger:view',
     'trucks:view',
     'trucks:create',
+    'trucks:update',
     'trucks:delete',
     'expenses:view',
     'expenses:create',
+    'expenses:update',
+    'investments:view',
+    'investments:create',
     'chini:view',
     'chini:create',
     'land:view',
@@ -131,6 +140,7 @@ function ensureDbShape(db) {
   if (!Array.isArray(db.salaryLedgers)) db.salaryLedgers = [];
   if (!Array.isArray(db.trucks)) db.trucks = [];
   if (!Array.isArray(db.expenses)) db.expenses = [];
+  if (!Array.isArray(db.investments)) db.investments = [];
   if (!Array.isArray(db.chiniExpenses)) db.chiniExpenses = [];
   if (!Array.isArray(db.landRecords)) db.landRecords = [];
   if (!Array.isArray(db.users) || db.users.length === 0) db.users = defaultUsers();
@@ -468,6 +478,96 @@ function jsonStore() {
       writeJsonDb(db);
       return row;
     },
+    async updateTruck(id, data) {
+      const quantity = Number(data.quantity);
+      const pricePerQuintal =
+        data.pricePerQuintal != null && data.pricePerQuintal !== ''
+          ? Number(data.pricePerQuintal)
+          : null;
+      const totalAmount =
+        pricePerQuintal != null && !Number.isNaN(pricePerQuintal) ? pricePerQuintal * quantity : null;
+      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
+        ? String(data.party).toLowerCase()
+        : null;
+
+      const res = await pool.query(
+        `UPDATE trucks
+         SET date = $2,
+             truck_number = $3,
+             driver_name = $4,
+             raw_material = $5,
+             quantity = $6,
+             price_per_quintal = $7,
+             total_amount = $8,
+             party = $9,
+             origin = $10,
+             destination = $11,
+             notes = $12
+         WHERE id = $1
+         RETURNING *`,
+        [
+          id,
+          data.date,
+          String(data.truckNumber).trim(),
+          data.driverName ? String(data.driverName).trim() : '',
+          String(data.rawMaterial).trim(),
+          quantity,
+          pricePerQuintal ?? null,
+          totalAmount ?? null,
+          party ?? null,
+          data.origin ? String(data.origin).trim() : '',
+          data.destination ? String(data.destination).trim() : '',
+          data.notes ? String(data.notes).trim() : ''
+        ]
+      );
+      if (!res.rows[0]) return null;
+      const r = res.rows[0];
+      return {
+        id: r.id,
+        date: String(r.date).slice(0, 10),
+        truckNumber: r.truck_number,
+        driverName: r.driver_name || '',
+        rawMaterial: r.raw_material,
+        quantity: Number(r.quantity),
+        pricePerQuintal: r.price_per_quintal != null ? Number(r.price_per_quintal) : null,
+        totalAmount: r.total_amount != null ? Number(r.total_amount) : null,
+        party: r.party || null,
+        origin: r.origin || '',
+        destination: r.destination || '',
+        notes: r.notes || ''
+      };
+    },
+    async updateTruck(id, data) {
+      const db = readJsonDb();
+      const truck = db.trucks.find((t) => t.id === id);
+      if (!truck) return null;
+
+      const quantity = Number(data.quantity);
+      const pricePerQuintal = data.pricePerQuintal != null && data.pricePerQuintal !== ''
+        ? Number(data.pricePerQuintal)
+        : null;
+      const totalAmount = pricePerQuintal != null && !Number.isNaN(pricePerQuintal)
+        ? pricePerQuintal * quantity
+        : null;
+      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
+        ? String(data.party).toLowerCase()
+        : null;
+
+      truck.date = data.date;
+      truck.truckNumber = String(data.truckNumber).trim();
+      truck.driverName = data.driverName ? String(data.driverName).trim() : '';
+      truck.rawMaterial = String(data.rawMaterial).trim();
+      truck.quantity = quantity;
+      truck.pricePerQuintal = pricePerQuintal ?? undefined;
+      truck.totalAmount = totalAmount ?? undefined;
+      truck.party = party || undefined;
+      truck.origin = data.origin ? String(data.origin).trim() : '';
+      truck.destination = data.destination ? String(data.destination).trim() : '';
+      truck.notes = data.notes ? String(data.notes).trim() : '';
+      truck.updatedAt = new Date().toISOString();
+      writeJsonDb(db);
+      return truck;
+    },
     async deleteTruck(id) {
       const db = readJsonDb();
       const before = db.trucks.length;
@@ -503,11 +603,54 @@ function jsonStore() {
       writeJsonDb(db);
       return row;
     },
+    async updateExpense(id, data) {
+      const db = readJsonDb();
+      const expense = db.expenses.find((e) => e.id === id);
+      if (!expense) return null;
+      expense.date = data.date;
+      expense.description = String(data.description || '').trim() || 'Expense';
+      expense.amount = Number(data.amount);
+      expense.updatedAt = new Date().toISOString();
+      writeJsonDb(db);
+      return expense;
+    },
     async deleteExpense(id) {
       const db = readJsonDb();
       const before = db.expenses.length;
       db.expenses = db.expenses.filter((e) => e.id !== id);
       if (before === db.expenses.length) return false;
+      writeJsonDb(db);
+      return true;
+    },
+    async listInvestments(filter) {
+      const db = readJsonDb();
+      let rows = db.investments;
+      if (filter?.dateFrom) rows = rows.filter((i) => i.date >= filter.dateFrom);
+      if (filter?.dateTo) rows = rows.filter((i) => i.date <= filter.dateTo);
+      return rows.sort((a, b) => (a.date < b.date ? 1 : -1));
+    },
+    async createInvestment(data) {
+      const db = readJsonDb();
+      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
+        ? String(data.party).toLowerCase()
+        : null;
+      const row = {
+        id: uid('inv'),
+        date: data.date,
+        party: party || 'narayan',
+        amount: Number(data.amount),
+        note: String(data.note || '').trim(),
+        createdAt: new Date().toISOString()
+      };
+      db.investments.push(row);
+      writeJsonDb(db);
+      return row;
+    },
+    async deleteInvestment(id) {
+      const db = readJsonDb();
+      const before = db.investments.length;
+      db.investments = db.investments.filter((i) => i.id !== id);
+      if (before === db.investments.length) return false;
       writeJsonDb(db);
       return true;
     },
@@ -685,6 +828,15 @@ function postgresStore() {
           date DATE NOT NULL,
           description TEXT NOT NULL,
           amount NUMERIC(12,2) NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS investments (
+          id TEXT PRIMARY KEY,
+          date DATE NOT NULL,
+          party TEXT NOT NULL,
+          amount NUMERIC(12,2) NOT NULL,
+          note TEXT,
           created_at TIMESTAMPTZ NOT NULL
         );
 
@@ -1171,8 +1323,69 @@ function postgresStore() {
       );
       return row;
     },
+    async updateExpense(id, data) {
+      const res = await pool.query(
+        `UPDATE expenses
+         SET date = $2, description = $3, amount = $4
+         WHERE id = $1
+         RETURNING *`,
+        [id, data.date, String(data.description || '').trim() || 'Expense', Number(data.amount)]
+      );
+      if (!res.rows[0]) return null;
+      const r = res.rows[0];
+      return {
+        id: r.id,
+        date: String(r.date).slice(0, 10),
+        description: r.description || '',
+        amount: Number(r.amount),
+        createdAt: r.created_at
+      };
+    },
     async deleteExpense(id) {
       const res = await pool.query('DELETE FROM expenses WHERE id = $1', [id]);
+      return res.rowCount > 0;
+    },
+    async listInvestments(filter) {
+      const values = [];
+      let where = 'WHERE 1=1';
+      if (filter?.dateFrom) {
+        values.push(filter.dateFrom);
+        where += ` AND date >= $${values.length}`;
+      }
+      if (filter?.dateTo) {
+        values.push(filter.dateTo);
+        where += ` AND date <= $${values.length}`;
+      }
+      const res = await pool.query(`SELECT * FROM investments ${where} ORDER BY date DESC`, values);
+      return res.rows.map((r) => ({
+        id: r.id,
+        date: String(r.date).slice(0, 10),
+        party: r.party || 'narayan',
+        amount: Number(r.amount),
+        note: r.note || '',
+        createdAt: r.created_at
+      }));
+    },
+    async createInvestment(data) {
+      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
+        ? String(data.party).toLowerCase()
+        : 'narayan';
+      const row = {
+        id: uid('inv'),
+        date: data.date,
+        party,
+        amount: Number(data.amount),
+        note: String(data.note || '').trim(),
+        createdAt: new Date().toISOString()
+      };
+      await pool.query(
+        'INSERT INTO investments (id, date, party, amount, note, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
+        [row.id, row.date, row.party, row.amount, row.note, row.createdAt]
+      );
+      return row;
+    },
+    async deleteInvestment(id) {
+      const res = await pool.query('DELETE FROM investments WHERE id = $1', [id]);
       return res.rowCount > 0;
     },
     async listChiniExpenses(filter) {
@@ -1936,6 +2149,50 @@ app.get('/api/trucks', auth, requirePermission('trucks:view'), async (req, res) 
   }
 });
 
+app.put('/api/trucks/:id', auth, requirePermission('trucks:update'), async (req, res) => {
+  const {
+    date,
+    truckNumber,
+    driverName,
+    rawMaterial,
+    quantity,
+    pricePerQuintal,
+    party,
+    origin,
+    destination,
+    notes
+  } = req.body;
+
+  if (!date || !truckNumber || !rawMaterial || !quantity) {
+    return res.status(400).json({ error: 'date, truckNumber, rawMaterial, quantity are required' });
+  }
+
+  const qty = Number(quantity);
+  if (Number.isNaN(qty) || qty <= 0) {
+    return res.status(400).json({ error: 'quantity must be a positive number' });
+  }
+
+  try {
+    const row = await store.updateTruck(req.params.id, {
+      date,
+      truckNumber,
+      driverName,
+      rawMaterial,
+      quantity: qty,
+      pricePerQuintal: pricePerQuintal != null && pricePerQuintal !== '' ? pricePerQuintal : undefined,
+      party,
+      origin,
+      destination,
+      notes
+    });
+    if (!row) return res.status(404).json({ error: 'Truck entry not found' });
+    return res.json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to update truck entry' });
+  }
+});
+
 app.delete('/api/trucks/:id', auth, requirePermission('trucks:delete'), async (req, res) => {
   try {
     const deleted = await store.deleteTruck(req.params.id);
@@ -1977,6 +2234,25 @@ app.post('/api/expenses', auth, requirePermission('expenses:create'), async (req
   }
 });
 
+app.put('/api/expenses/:id', auth, requirePermission('expenses:update'), async (req, res) => {
+  const { date, description, amount } = req.body;
+  if (!date || amount == null) {
+    return res.status(400).json({ error: 'date and amount are required' });
+  }
+  const numAmount = Number(amount);
+  if (Number.isNaN(numAmount) || numAmount <= 0) {
+    return res.status(400).json({ error: 'amount must be a positive number' });
+  }
+  try {
+    const row = await store.updateExpense(req.params.id, { date, description, amount: numAmount });
+    if (!row) return res.status(404).json({ error: 'Expense not found' });
+    return res.json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to update expense' });
+  }
+});
+
 app.delete('/api/expenses/:id', auth, requirePermission('expenses:delete'), async (req, res) => {
   try {
     const deleted = await store.deleteExpense(req.params.id);
@@ -1985,6 +2261,48 @@ app.delete('/api/expenses/:id', auth, requirePermission('expenses:delete'), asyn
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to delete expense' });
+  }
+});
+
+app.get('/api/investments', auth, requirePermission('investments:view'), async (req, res) => {
+  try {
+    const rows = await store.listInvestments({ dateFrom: req.query.dateFrom, dateTo: req.query.dateTo });
+    return res.json(rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to fetch investments' });
+  }
+});
+
+app.post('/api/investments', auth, requirePermission('investments:create'), async (req, res) => {
+  const { date, party, amount, note } = req.body;
+  if (!date || !party || amount == null) {
+    return res.status(400).json({ error: 'date, party and amount are required' });
+  }
+  const numAmount = Number(amount);
+  if (Number.isNaN(numAmount) || numAmount <= 0) {
+    return res.status(400).json({ error: 'amount must be a positive number' });
+  }
+  if (!['narayan', 'maa_vaishno'].includes(String(party).toLowerCase())) {
+    return res.status(400).json({ error: 'party must be narayan or maa_vaishno' });
+  }
+  try {
+    const row = await store.createInvestment({ date, party, amount: numAmount, note });
+    return res.status(201).json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to create investment' });
+  }
+});
+
+app.delete('/api/investments/:id', auth, requirePermission('investments:delete'), async (req, res) => {
+  try {
+    const deleted = await store.deleteInvestment(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Investment not found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to delete investment' });
   }
 });
 

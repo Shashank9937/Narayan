@@ -1,8 +1,10 @@
 const cardsEl = document.getElementById('cards');
 const salaryTbody = document.querySelector('#salaryTable tbody');
 const salaryLedgerTbody = document.querySelector('#salaryLedgerTable tbody');
-const truckTbody = document.querySelector('#truckTable tbody');
+const truckNarayanTbody = document.querySelector('#truckTableNarayan tbody');
+const truckMaaVaishnoTbody = document.querySelector('#truckTableMaaVaishno tbody');
 const expenseTbody = document.querySelector('#expenseTable tbody');
+const investmentTbody = document.querySelector('#investmentTable tbody');
 const chiniTbody = document.querySelector('#chiniTable tbody');
 const landTbody = document.querySelector('#landTable tbody');
 const employeeTbody = document.querySelector('#employeeTable tbody');
@@ -26,6 +28,7 @@ const advanceForm = document.getElementById('advanceForm');
 const salaryLedgerForm = document.getElementById('salaryLedgerForm');
 const truckForm = document.getElementById('truckForm');
 const expenseForm = document.getElementById('expenseForm');
+const investmentForm = document.getElementById('investmentForm');
 const chiniForm = document.getElementById('chiniForm');
 const landForm = document.getElementById('landForm');
 const changePasswordForm = document.getElementById('changePasswordForm');
@@ -51,6 +54,7 @@ let me = null;
 let employeesCache = [];
 let trucksCache = [];
 let expensesCache = [];
+let investmentsCache = [];
 let chiniExpensesCache = [];
 let landRecordsCache = [];
 let salaryRowsCache = [];
@@ -106,7 +110,7 @@ function ensureAutoRefresh() {
 }
 
 function setDefaultDates() {
-  [attendanceForm, advanceForm, truckForm, expenseForm, chiniForm].forEach((form) => {
+  [attendanceForm, advanceForm, truckForm, expenseForm, investmentForm, chiniForm].forEach((form) => {
     if (!form) return;
     const dateInput = form.querySelector('input[type="date"]');
     if (dateInput) dateInput.value = todayISO();
@@ -152,6 +156,7 @@ function applyRoleUI() {
   setFormEnabled('salaryLedgerPanel', hasPermission('salaryledger:update'));
   setFormEnabled('truckPanel', hasPermission('trucks:create'));
   setFormEnabled('expensePanel', hasPermission('expenses:create'));
+  setFormEnabled('investmentPanel', hasPermission('investments:create'));
   setFormEnabled('chiniPanel', hasPermission('chini:create'));
   setFormEnabled('landPanel', hasPermission('land:create'));
 
@@ -161,6 +166,7 @@ function applyRoleUI() {
   setPanelVisible('employeeListPanel', hasPermission('employees:view'));
   setPanelVisible('attendanceReportPanel', hasPermission('attendance:report'));
   setPanelVisible('expenseReportPanel', hasPermission('expenses:view'));
+  setPanelVisible('investmentSummaryPanel', hasPermission('investments:view'));
   setPanelVisible('chiniReportPanel', hasPermission('chini:view'));
   setPanelVisible('landReportPanel', hasPermission('land:view'));
   setPanelVisible('changePasswordPanel', true);
@@ -485,6 +491,7 @@ function partyLabel(party) {
 }
 
 function renderTruckRows(rows) {
+  const canEdit = hasPermission('trucks:update');
   const canDelete = hasPermission('trucks:delete');
   const narayanTotal = rows
     .filter((t) => t.party === 'narayan' && t.totalAmount != null)
@@ -501,12 +508,13 @@ function renderTruckRows(rows) {
     `;
   }
 
-  truckTbody.innerHTML = rows
-    .map(
-      (t) =>
-        `<tr>
+  const renderTruckTable = (tbody, partyRows) => {
+    tbody.innerHTML = partyRows
+      .map(
+        (t, idx) =>
+          `<tr>
+          <td>${idx + 1}</td>
           <td>${t.date}</td>
-          <td>${partyLabel(t.party)}</td>
           <td>${t.truckNumber}</td>
           <td>${t.driverName || '-'}</td>
           <td>${t.rawMaterial}</td>
@@ -515,10 +523,68 @@ function renderTruckRows(rows) {
           <td>${t.totalAmount != null ? money(t.totalAmount) : '-'}</td>
           <td>${t.origin || '-'}</td>
           <td>${t.destination || '-'}</td>
-          <td>${canDelete ? `<button class="small danger truck-del" data-id="${t.id}">Delete</button>` : '-'}</td>
+          <td>
+            <div class="actions">
+              ${canEdit ? `<button class="small warn truck-edit" data-id="${t.id}">Edit</button>` : ''}
+              ${canDelete ? `<button class="small danger truck-del" data-id="${t.id}">Delete</button>` : ''}
+              ${!canEdit && !canDelete ? '-' : ''}
+            </div>
+          </td>
         </tr>`
-    )
-    .join('');
+      )
+      .join('');
+  };
+
+  const narayanRows = rows.filter((t) => t.party === 'narayan');
+  const maaVaishnoRows = rows.filter((t) => t.party === 'maa_vaishno');
+  renderTruckTable(truckNarayanTbody, narayanRows);
+  renderTruckTable(truckMaaVaishnoTbody, maaVaishnoRows);
+
+  if (canEdit) {
+    document.querySelectorAll('.truck-edit').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        const current = trucksCache.find((t) => t.id === id);
+        if (!current) return;
+        const date = prompt('Date (YYYY-MM-DD)', current.date || '');
+        if (!date) return;
+        const party = prompt('Party (narayan or maa_vaishno)', current.party || 'narayan');
+        if (!party) return;
+        const truckNumber = prompt('Truck Number', current.truckNumber || '');
+        if (!truckNumber) return;
+        const driverName = prompt('Driver Name', current.driverName || '') || '';
+        const rawMaterial = prompt('Raw Material', current.rawMaterial || '');
+        if (!rawMaterial) return;
+        const quantity = prompt('Quantity (Qntl)', String(current.quantity || ''));
+        if (!quantity) return;
+        const pricePerQuintal = prompt(
+          'Price per Quintal (optional)',
+          current.pricePerQuintal != null ? String(current.pricePerQuintal) : ''
+        );
+        const origin = prompt('Origin', current.origin || '') || '';
+        const destination = prompt('Destination', current.destination || '') || '';
+        const notes = prompt('Notes', current.notes || '') || '';
+        try {
+          await api(`/api/trucks/${id}`, 'PUT', {
+            date,
+            party,
+            truckNumber,
+            driverName,
+            rawMaterial,
+            quantity,
+            pricePerQuintal: pricePerQuintal || undefined,
+            origin,
+            destination,
+            notes
+          });
+          await refresh();
+          showToast('Truck entry updated');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    });
+  }
 
   if (canDelete) {
     document.querySelectorAll('.truck-del').forEach((btn) => {
@@ -538,6 +604,7 @@ function renderTruckRows(rows) {
 }
 
 function renderExpenseRows(rows) {
+  const canEdit = hasPermission('expenses:update');
   const canDelete = hasPermission('expenses:delete');
   const total = rows.reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
@@ -552,11 +619,37 @@ function renderExpenseRows(rows) {
           <td>${e.description || '-'}</td>
           <td class="money">${money(e.amount)}</td>
           <td>
-            ${canDelete ? `<button class="small danger exp-del" data-id="${e.id}">Delete</button>` : '-'}
+            <div class="actions">
+              ${canEdit ? `<button class="small warn exp-edit" data-id="${e.id}">Edit</button>` : ''}
+              ${canDelete ? `<button class="small danger exp-del" data-id="${e.id}">Delete</button>` : ''}
+              ${!canEdit && !canDelete ? '-' : ''}
+            </div>
           </td>
         </tr>`
     )
     .join('');
+
+  if (canEdit) {
+    document.querySelectorAll('.exp-edit').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        const current = expensesCache.find((e) => e.id === id);
+        if (!current) return;
+        const date = prompt('Date (YYYY-MM-DD)', current.date || '');
+        if (!date) return;
+        const description = prompt('Description', current.description || '') || '';
+        const amount = prompt('Amount', String(current.amount || ''));
+        if (!amount) return;
+        try {
+          await api(`/api/expenses/${id}`, 'PUT', { date, description, amount });
+          await refresh();
+          showToast('Expense updated');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    });
+  }
 
   if (canDelete) {
     document.querySelectorAll('.exp-del').forEach((btn) => {
@@ -573,6 +666,56 @@ function renderExpenseRows(rows) {
       });
     });
   }
+}
+
+function renderInvestmentRows(rows) {
+  if (!investmentTbody) return;
+  const canDelete = hasPermission('investments:delete');
+  investmentTbody.innerHTML = rows
+    .map(
+      (r) => `<tr>
+          <td>${r.date}</td>
+          <td>${partyLabel(r.party)}</td>
+          <td class="money">${money(r.amount)}</td>
+          <td>${r.note || '-'}</td>
+          <td>${canDelete ? `<button class="small danger inv-del" data-id="${r.id}">Delete</button>` : '-'}</td>
+        </tr>`
+    )
+    .join('');
+
+  if (canDelete) {
+    document.querySelectorAll('.inv-del').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        if (!confirm('Delete this investment?')) return;
+        try {
+          await api(`/api/investments/${id}`, 'DELETE');
+          await refresh();
+          showToast('Investment deleted');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    });
+  }
+}
+
+function renderInvestmentSummary() {
+  const totalInvestment = investmentsCache.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  const totalExpenses = expensesCache.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  const totalSalaryPending = salaryLedgersCache.reduce((sum, r) => sum + Number(r.pending || 0), 0);
+  const totalTruckSales = trucksCache.reduce((sum, r) => sum + Number(r.totalAmount || 0), 0);
+  const netBalance = totalInvestment - totalExpenses - totalSalaryPending - totalTruckSales;
+
+  const set = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = money(value);
+  };
+  set('invTotalInvestment', totalInvestment);
+  set('invTotalExpenses', totalExpenses);
+  set('invTotalSalaryPending', totalSalaryPending);
+  set('invTotalTruckSales', totalTruckSales);
+  set('invNetBalance', netBalance);
 }
 
 function renderChiniRows(rows) {
@@ -697,6 +840,7 @@ async function refresh() {
     hasPermission('salaryledger:view') ? api('/api/salary-ledgers') : Promise.resolve([]),
     hasPermission('trucks:view') ? api('/api/trucks') : Promise.resolve([]),
     hasPermission('expenses:view') ? api('/api/expenses') : Promise.resolve([]),
+    hasPermission('investments:view') ? api('/api/investments') : Promise.resolve([]),
     hasPermission('chini:view') ? api('/api/chini-expenses') : Promise.resolve([]),
     hasPermission('land:view') ? api('/api/lands') : Promise.resolve([]),
     hasPermission('attendance:report')
@@ -704,7 +848,18 @@ async function refresh() {
       : Promise.resolve({ rows: [] })
   ];
 
-  const [dashboard, employees, salary, salaryLedgers, trucks, expenses, chiniExpenses, landRecords, attendanceReport] =
+  const [
+    dashboard,
+    employees,
+    salary,
+    salaryLedgers,
+    trucks,
+    expenses,
+    investments,
+    chiniExpenses,
+    landRecords,
+    attendanceReport
+  ] =
     await Promise.all(requests);
 
   if (dashboard) {
@@ -719,6 +874,7 @@ async function refresh() {
   employeesCache = employees || [];
   trucksCache = trucks || [];
   expensesCache = expenses || [];
+  investmentsCache = investments || [];
   chiniExpensesCache = chiniExpenses || [];
   landRecordsCache = landRecords || [];
   salaryRowsCache = (salary && salary.rows) || [];
@@ -730,6 +886,8 @@ async function refresh() {
   renderSalaryLedgers(salaryLedgersCache);
   renderTruckRows(filterTrucks(trucksCache).sort((a, b) => (a.date < b.date ? 1 : -1)));
   renderExpenseRows(expensesCache);
+  renderInvestmentRows(investmentsCache);
+  renderInvestmentSummary();
   renderChiniRows(chiniExpensesCache);
   renderLandRows(landRecordsCache);
   renderAttendanceReportRows((attendanceReport && attendanceReport.rows) || []);
@@ -791,6 +949,7 @@ logoutBtn.addEventListener('click', async () => {
   employeesCache = [];
   trucksCache = [];
   expensesCache = [];
+  investmentsCache = [];
   chiniExpensesCache = [];
   landRecordsCache = [];
   salaryLedgersCache = [];
@@ -816,6 +975,26 @@ expenseForm.addEventListener('submit', async (e) => {
     setDefaultDates();
     await refresh();
     showToast('Expense added');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+investmentForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(investmentForm);
+
+  try {
+    await api('/api/investments', 'POST', {
+      date: fd.get('date'),
+      party: fd.get('party'),
+      amount: fd.get('amount'),
+      note: fd.get('note') || undefined
+    });
+    investmentForm.reset();
+    setDefaultDates();
+    await refresh();
+    showToast('Investment added');
   } catch (err) {
     showToast(err.message, 'error');
   }

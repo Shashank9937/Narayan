@@ -416,6 +416,24 @@ th {
   color: var(--primary);
 }
 
+.party-table-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(430px, 1fr));
+}
+
+.party-table-grid h3 {
+  margin: 0 0 8px;
+  color: var(--primary-dark);
+}
+
+.summary-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
 .toast {
   position: fixed;
   right: 14px;
@@ -571,5 +589,9 @@ body.dark-mode .expense-total-wrap {
 
   .site-header h1 {
     font-size: 21px;
+  }
+
+  .party-table-grid {
+    grid-template-columns: 1fr;
   }
 }

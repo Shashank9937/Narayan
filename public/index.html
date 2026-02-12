@@ -46,6 +46,7 @@
         <button class="nav-btn" data-target="salarySection">Salary</button>
         <button class="nav-btn" data-target="truckSection">Trucks</button>
         <button class="nav-btn" data-target="expenseSection">Expenses</button>
+        <button class="nav-btn" data-target="investmentSection">Investments</button>
         <button class="nav-btn" data-target="chiniSection">Chini Mill</button>
         <button class="nav-btn" data-target="landSection">Land</button>
         <button class="nav-btn" data-target="settingsSection">Settings</button>
@@ -253,25 +254,53 @@
             </div>
           </div>
           <div id="truckPartyTotals" class="truck-party-totals"></div>
-          <div class="table-wrap">
-            <table id="truckTable">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Party</th>
-                  <th>Truck</th>
-                  <th>Driver</th>
-                  <th>Material</th>
-                  <th>Qty (Qntl)</th>
-                  <th>Price/Qntl</th>
-                  <th>Total</th>
-                  <th>Origin</th>
-                  <th>Destination</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
+          <div class="party-table-grid">
+            <div>
+              <h3>Narayan Trucks</h3>
+              <div class="table-wrap">
+                <table id="truckTableNarayan">
+                  <thead>
+                    <tr>
+                      <th>No.</th>
+                      <th>Date</th>
+                      <th>Truck</th>
+                      <th>Driver</th>
+                      <th>Material</th>
+                      <th>Qty (Qntl)</th>
+                      <th>Price/Qntl</th>
+                      <th>Total</th>
+                      <th>Origin</th>
+                      <th>Destination</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <h3>Maa Vaishno Trucks</h3>
+              <div class="table-wrap">
+                <table id="truckTableMaaVaishno">
+                  <thead>
+                    <tr>
+                      <th>No.</th>
+                      <th>Date</th>
+                      <th>Truck</th>
+                      <th>Driver</th>
+                      <th>Material</th>
+                      <th>Qty (Qntl)</th>
+                      <th>Price/Qntl</th>
+                      <th>Total</th>
+                      <th>Origin</th>
+                      <th>Destination</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </section>
       </section>
@@ -301,6 +330,64 @@
                   <th>Date</th>
                   <th>Description</th>
                   <th>Amount</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="investmentSection" class="section-view">
+        <div class="grid">
+          <section class="panel" id="investmentPanel">
+            <h2>Add Investment (Narayan / Maa Vaishno)</h2>
+            <form id="investmentForm">
+              <input name="date" type="date" required />
+              <select name="party" required>
+                <option value="">Select Party</option>
+                <option value="narayan">Narayan</option>
+                <option value="maa_vaishno">Maa Vaishno</option>
+              </select>
+              <input name="amount" type="number" min="0.01" step="0.01" placeholder="Investment Amount (₹)" required />
+              <input name="note" placeholder="Note (optional)" />
+              <button type="submit">Add Investment</button>
+            </form>
+          </section>
+        </div>
+
+        <section class="panel" id="investmentSummaryPanel">
+          <div class="summary-stat-grid">
+            <div class="summary-stat">
+              <div class="label">Total Investment</div>
+              <div id="invTotalInvestment" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Total Expenses</div>
+              <div id="invTotalExpenses" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Total Salary Pending</div>
+              <div id="invTotalSalaryPending" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Total Truck Sales</div>
+              <div id="invTotalTruckSales" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Net (Investment - Expenses - Salary Pending - Truck Sales)</div>
+              <div id="invNetBalance" class="value">₹0</div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table id="investmentTable">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Party</th>
+                  <th>Amount</th>
+                  <th>Note</th>
                   <th>Actions</th>
                 </tr>
               </thead>
