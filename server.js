@@ -11,6 +11,7 @@ const DB_PATH = path.join(__dirname, 'data', 'db.json');
 const STORAGE_MODE = process.env.STORAGE_MODE === 'postgres' ? 'postgres' : 'json';
 const DATABASE_URL = process.env.DATABASE_URL;
 const APP_NAME = 'Narayan Enterprises';
+const STARTED_AT = new Date();
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -72,6 +73,15 @@ function monthOf(dateStr) {
 
 function currentMonth() {
   return new Date().toISOString().slice(0, 7);
+}
+
+function daysInMonth(year, monthIndexZeroBased) {
+  return new Date(Date.UTC(year, monthIndexZeroBased + 1, 0)).getUTCDate();
+}
+
+function parseISODate(dateStr) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 function userView(user) {
@@ -175,6 +185,17 @@ function jsonStore() {
     mode: 'json',
     async init() {
       readJsonDb();
+    },
+    async healthCheck() {
+      const db = readJsonDb();
+      return {
+        ok: true,
+        details: {
+          storage: 'json',
+          employees: db.employees.length,
+          sessions: db.sessions.length
+        }
+      };
     },
     async getUserByUsername(username) {
       const db = readJsonDb();
@@ -696,6 +717,15 @@ function postgresStore() {
           );
         }
       }
+    },
+    async healthCheck() {
+      await pool.query('SELECT 1');
+      return {
+        ok: true,
+        details: {
+          storage: 'postgres'
+        }
+      };
     },
     async getUserByUsername(username) {
       const res = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
@@ -1262,6 +1292,27 @@ function postgresStore() {
 
 const store = STORAGE_MODE === 'postgres' ? postgresStore() : jsonStore();
 
+app.get('/healthz', async (_req, res) => {
+  try {
+    const health = await store.healthCheck();
+    return res.json({
+      status: 'ok',
+      app: APP_NAME,
+      storageMode: store.mode,
+      uptimeSeconds: Math.floor((Date.now() - STARTED_AT.getTime()) / 1000),
+      ...health
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(503).json({
+      status: 'degraded',
+      app: APP_NAME,
+      storageMode: store.mode,
+      error: 'Health check failed'
+    });
+  }
+});
+
 function auth(req, res, next) {
   const tokenHeader = req.header('authorization') || '';
   const bearer = tokenHeader.startsWith('Bearer ') ? tokenHeader.slice(7) : '';
@@ -1611,7 +1662,49 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
 
     const advances = await store.getEmployeeAdvances(employee.id, month);
     const totalAdvance = advances.reduce((sum, a) => sum + Number(a.amount), 0);
-    const remaining = Math.max(0, Number(employee.monthlySalary) - totalAdvance);
+    const [year, monthNum] = month.split('-').map(Number);
+    if (!year || !monthNum || monthNum < 1 || monthNum > 12) {
+      return res.status(400).json({ error: 'month must be in YYYY-MM format' });
+    }
+
+    const monthStart = `${month}-01`;
+    const monthDays = daysInMonth(year, monthNum - 1);
+    const monthEnd = `${month}-${String(monthDays).padStart(2, '0')}`;
+
+    const requestedUpto = req.query.uptoDate ? String(req.query.uptoDate) : null;
+    if (requestedUpto && !/^\d{4}-\d{2}-\d{2}$/.test(requestedUpto)) {
+      return res.status(400).json({ error: 'uptoDate must be in YYYY-MM-DD format' });
+    }
+
+    const today = new Date();
+    const todayIso = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(
+      today.getUTCDate()
+    ).padStart(2, '0')}`;
+
+    // Default behavior:
+    // - Current month: count from 1st to today
+    // - Past/future month: count full month unless uptoDate is provided
+    let periodEnd = monthEnd;
+    if (requestedUpto) {
+      periodEnd = requestedUpto;
+    } else if (month === currentMonth()) {
+      periodEnd = todayIso;
+    }
+
+    if (periodEnd < monthStart) periodEnd = monthStart;
+    if (periodEnd > monthEnd) periodEnd = monthEnd;
+
+    const startDate = parseISODate(monthStart);
+    const endDate = parseISODate(periodEnd);
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'Invalid period dates' });
+    }
+
+    const daysCounted = Math.floor((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+    const monthlySalary = Number(employee.monthlySalary);
+    const perDaySalary = monthlySalary / monthDays;
+    const proratedSalary = perDaySalary * daysCounted;
+    const remaining = Math.max(0, proratedSalary - totalAdvance);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="salary-slip-${employee.name}-${month}.pdf"`);
@@ -1625,9 +1718,13 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     doc.fontSize(11).text(`Generated: ${new Date().toISOString()}`);
     doc.moveDown(0.5);
     doc.fontSize(12).text(`Month: ${month}`);
+    doc.text(`Salary Period: ${monthStart} to ${periodEnd}`);
+    doc.text(`Days Counted: ${daysCounted} / ${monthDays}`);
     doc.text(`Employee: ${employee.name}`);
     doc.text(`Role: ${employee.role}`);
-    doc.text(`Monthly Salary: ₹${Number(employee.monthlySalary).toFixed(2)}`);
+    doc.text(`Monthly Salary: ₹${monthlySalary.toFixed(2)}`);
+    doc.text(`Per Day Salary: ₹${perDaySalary.toFixed(2)}`);
+    doc.text(`Prorated Salary (${daysCounted} days): ₹${proratedSalary.toFixed(2)}`);
     doc.text(`Total Advance: ₹${totalAdvance.toFixed(2)}`);
     doc.text(`Remaining Payable: ₹${remaining.toFixed(2)}`);
 
