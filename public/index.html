@@ -190,6 +190,30 @@
             </table>
           </div>
         </section>
+
+        <section class="panel" id="salaryLedgerPanel">
+          <h2>Salary Ledger (Separate From Monthly Advances)</h2>
+          <form id="salaryLedgerForm" class="salary-ledger-form">
+            <select name="employeeId" id="salaryLedgerEmployee" required></select>
+            <input name="totalSalary" type="number" min="0" step="0.01" placeholder="Total Salary (All Time)" required />
+            <input name="amountGiven" type="number" min="0" step="0.01" placeholder="Amount Given (All Time)" required />
+            <button type="submit">Save Salary Ledger</button>
+          </form>
+          <div class="table-wrap">
+            <table id="salaryLedgerTable">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Role</th>
+                  <th>Total Salary</th>
+                  <th>Amount Given</th>
+                  <th>Pending</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
       </section>
 
       <section id="truckSection" class="section-view">

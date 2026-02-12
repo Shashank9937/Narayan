@@ -26,6 +26,8 @@ const ROLE_PERMISSIONS = {
     'attendance:view',
     'attendance:report',
     'salary:view',
+    'salaryledger:view',
+    'salaryledger:update',
     'advances:create',
     'trucks:view',
     'trucks:delete',
@@ -47,6 +49,7 @@ const ROLE_PERMISSIONS = {
     'attendance:view',
     'attendance:create',
     'attendance:report',
+    'salaryledger:view',
     'trucks:view',
     'trucks:create',
     'trucks:delete',
@@ -115,6 +118,7 @@ function ensureDbShape(db) {
   if (!Array.isArray(db.employees)) db.employees = [];
   if (!Array.isArray(db.attendance)) db.attendance = [];
   if (!Array.isArray(db.salaryAdvances)) db.salaryAdvances = [];
+  if (!Array.isArray(db.salaryLedgers)) db.salaryLedgers = [];
   if (!Array.isArray(db.trucks)) db.trucks = [];
   if (!Array.isArray(db.expenses)) db.expenses = [];
   if (!Array.isArray(db.chiniExpenses)) db.chiniExpenses = [];
@@ -338,6 +342,45 @@ function jsonStore() {
       db.salaryAdvances.push(row);
       writeJsonDb(db);
       return { ok: true };
+    },
+    async listSalaryLedgers() {
+      const db = readJsonDb();
+      return db.employees.map((e) => {
+        const ledger = db.salaryLedgers.find((l) => l.employeeId === e.id);
+        const totalSalary = Number(ledger?.totalSalary || 0);
+        const amountGiven = Number(ledger?.amountGiven || 0);
+        return {
+          employeeId: e.id,
+          name: e.name,
+          role: e.role,
+          totalSalary,
+          amountGiven,
+          pending: Math.max(0, totalSalary - amountGiven),
+          updatedAt: ledger?.updatedAt || null
+        };
+      });
+    },
+    async upsertSalaryLedger(employeeId, totalSalary, amountGiven) {
+      const db = readJsonDb();
+      const existing = db.salaryLedgers.find((l) => l.employeeId === employeeId);
+      if (existing) {
+        existing.totalSalary = Number(totalSalary);
+        existing.amountGiven = Number(amountGiven);
+        existing.updatedAt = new Date().toISOString();
+        writeJsonDb(db);
+        return existing;
+      }
+      const row = {
+        id: uid('sld'),
+        employeeId,
+        totalSalary: Number(totalSalary),
+        amountGiven: Number(amountGiven),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      db.salaryLedgers.push(row);
+      writeJsonDb(db);
+      return row;
     },
     async salaryRows(month) {
       const db = readJsonDb();
@@ -587,6 +630,15 @@ function postgresStore() {
           amount NUMERIC(12,2) NOT NULL,
           note TEXT,
           created_at TIMESTAMPTZ NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS salary_ledgers (
+          id TEXT PRIMARY KEY,
+          employee_id TEXT NOT NULL UNIQUE REFERENCES employees(id) ON DELETE CASCADE,
+          total_salary NUMERIC(12,2) NOT NULL DEFAULT 0,
+          amount_given NUMERIC(12,2) NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS trucks (
@@ -878,6 +930,57 @@ function postgresStore() {
         [row.id, row.employeeId, row.date, row.amount, row.note, row.createdAt]
       );
       return { ok: true };
+    },
+    async listSalaryLedgers() {
+      const res = await pool.query(
+        `SELECT e.id AS employee_id,
+                e.name,
+                e.role,
+                COALESCE(sl.total_salary, 0) AS total_salary,
+                COALESCE(sl.amount_given, 0) AS amount_given,
+                sl.updated_at
+         FROM employees e
+         LEFT JOIN salary_ledgers sl ON sl.employee_id = e.id
+         ORDER BY e.name`
+      );
+      return res.rows.map((r) => {
+        const totalSalary = Number(r.total_salary || 0);
+        const amountGiven = Number(r.amount_given || 0);
+        return {
+          employeeId: r.employee_id,
+          name: r.name,
+          role: r.role,
+          totalSalary,
+          amountGiven,
+          pending: Math.max(0, totalSalary - amountGiven),
+          updatedAt: r.updated_at || null
+        };
+      });
+    },
+    async upsertSalaryLedger(employeeId, totalSalary, amountGiven) {
+      const existing = await pool.query('SELECT id FROM salary_ledgers WHERE employee_id = $1', [employeeId]);
+      if (existing.rows[0]) {
+        const id = existing.rows[0].id;
+        await pool.query(
+          'UPDATE salary_ledgers SET total_salary = $2, amount_given = $3, updated_at = NOW() WHERE id = $1',
+          [id, Number(totalSalary), Number(amountGiven)]
+        );
+        return { id, employeeId, totalSalary: Number(totalSalary), amountGiven: Number(amountGiven) };
+      }
+      const row = {
+        id: uid('sld'),
+        employeeId,
+        totalSalary: Number(totalSalary),
+        amountGiven: Number(amountGiven),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      await pool.query(
+        `INSERT INTO salary_ledgers (id, employee_id, total_salary, amount_given, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [row.id, row.employeeId, row.totalSalary, row.amountGiven, row.createdAt, row.updatedAt]
+      );
+      return row;
     },
     async salaryRows(month) {
       const res = await pool.query(
@@ -1463,6 +1566,37 @@ app.get('/api/salary-summary', auth, requirePermission('salary:view'), async (re
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to fetch salary summary' });
+  }
+});
+
+app.get('/api/salary-ledgers', auth, requirePermission('salaryledger:view'), async (_req, res) => {
+  try {
+    const rows = await store.listSalaryLedgers();
+    return res.json(rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to fetch salary ledgers' });
+  }
+});
+
+app.put('/api/salary-ledgers/:employeeId', auth, requirePermission('salaryledger:update'), async (req, res) => {
+  const { totalSalary, amountGiven } = req.body;
+  if (totalSalary == null || amountGiven == null) {
+    return res.status(400).json({ error: 'totalSalary and amountGiven are required' });
+  }
+  const total = Number(totalSalary);
+  const given = Number(amountGiven);
+  if (Number.isNaN(total) || total < 0 || Number.isNaN(given) || given < 0) {
+    return res.status(400).json({ error: 'totalSalary and amountGiven must be valid numbers' });
+  }
+  try {
+    const employee = await store.getEmployeeById(req.params.employeeId);
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+    const row = await store.upsertSalaryLedger(req.params.employeeId, total, given);
+    return res.json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to update salary ledger' });
   }
 });
 

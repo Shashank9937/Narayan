@@ -1,5 +1,6 @@
 const cardsEl = document.getElementById('cards');
 const salaryTbody = document.querySelector('#salaryTable tbody');
+const salaryLedgerTbody = document.querySelector('#salaryLedgerTable tbody');
 const truckTbody = document.querySelector('#truckTable tbody');
 const expenseTbody = document.querySelector('#expenseTable tbody');
 const chiniTbody = document.querySelector('#chiniTable tbody');
@@ -22,6 +23,7 @@ const logoutBtn = document.getElementById('logoutBtn');
 const employeeForm = document.getElementById('employeeForm');
 const attendanceForm = document.getElementById('attendanceForm');
 const advanceForm = document.getElementById('advanceForm');
+const salaryLedgerForm = document.getElementById('salaryLedgerForm');
 const truckForm = document.getElementById('truckForm');
 const expenseForm = document.getElementById('expenseForm');
 const chiniForm = document.getElementById('chiniForm');
@@ -36,6 +38,7 @@ const attendanceMonthInput = document.getElementById('attendanceMonthInput');
 const employeeSearchInput = document.getElementById('employeeSearchInput');
 const truckSearchInput = document.getElementById('truckSearchInput');
 const salaryEmployeeSelect = document.getElementById('salaryEmployeeSelect');
+const salaryLedgerEmployeeSelect = document.getElementById('salaryLedgerEmployee');
 const salaryEmployeeSummaryEl = document.getElementById('salaryEmployeeSummary');
 const salaryOverallSummaryEl = document.getElementById('salaryOverallSummary');
 const brandLink = document.getElementById('brandLink');
@@ -51,6 +54,7 @@ let expensesCache = [];
 let chiniExpensesCache = [];
 let landRecordsCache = [];
 let salaryRowsCache = [];
+let salaryLedgersCache = [];
 let autoRefreshTimer = null;
 
 function showToast(message, type = 'ok') {
@@ -145,12 +149,14 @@ function applyRoleUI() {
   setFormEnabled('employeePanel', hasPermission('employees:create'));
   setFormEnabled('attendancePanel', hasPermission('attendance:create'));
   setFormEnabled('advancePanel', hasPermission('advances:create'));
+  setFormEnabled('salaryLedgerPanel', hasPermission('salaryledger:update'));
   setFormEnabled('truckPanel', hasPermission('trucks:create'));
   setFormEnabled('expensePanel', hasPermission('expenses:create'));
   setFormEnabled('chiniPanel', hasPermission('chini:create'));
   setFormEnabled('landPanel', hasPermission('land:create'));
 
   setPanelVisible('salaryPanel', hasPermission('salary:view'));
+  setPanelVisible('salaryLedgerPanel', hasPermission('salaryledger:view'));
   setPanelVisible('truckReportPanel', hasPermission('trucks:view'));
   setPanelVisible('employeeListPanel', hasPermission('employees:view'));
   setPanelVisible('attendanceReportPanel', hasPermission('attendance:report'));
@@ -212,6 +218,7 @@ function renderEmployeeOptions(employees) {
   const options = employees.map((e) => `<option value="${e.id}">${e.name} (${e.role})</option>`).join('');
   attendanceEmployeeEl.innerHTML = options;
   advanceEmployeeEl.innerHTML = options;
+  if (salaryLedgerEmployeeSelect) salaryLedgerEmployeeSelect.innerHTML = options;
 }
 
 function renderEmployeeRows(rows) {
@@ -427,6 +434,33 @@ function renderSalarySummaries(rows) {
     summaryStat('Total Advances (All Time)', overall.totalAdvancesAllTime, true),
     summaryStat('Total Remaining (All Time)', overall.totalRemainingAllTime, true)
   ].join('');
+}
+
+function renderSalaryLedgers(rows) {
+  if (!salaryLedgerTbody) return;
+  salaryLedgerTbody.innerHTML = (rows || [])
+    .map(
+      (r) => `<tr>
+        <td>${r.name}</td>
+        <td>${r.role}</td>
+        <td class="money">${money(r.totalSalary || 0)}</td>
+        <td class="money">${money(r.amountGiven || 0)}</td>
+        <td class="money">${money(r.pending || 0)}</td>
+      </tr>`
+    )
+    .join('');
+  prefillSalaryLedgerForm();
+}
+
+function prefillSalaryLedgerForm() {
+  if (!salaryLedgerForm || !salaryLedgerEmployeeSelect) return;
+  const employeeId = salaryLedgerEmployeeSelect.value;
+  const row = salaryLedgersCache.find((r) => r.employeeId === employeeId);
+  const totalEl = salaryLedgerForm.querySelector('input[name="totalSalary"]');
+  const givenEl = salaryLedgerForm.querySelector('input[name="amountGiven"]');
+  if (!totalEl || !givenEl) return;
+  totalEl.value = row ? Number(row.totalSalary || 0) : '';
+  givenEl.value = row ? Number(row.amountGiven || 0) : '';
 }
 
 function renderAttendanceReportRows(rows) {
@@ -660,6 +694,7 @@ async function refresh() {
     hasPermission('dashboard:view') ? api(`/api/dashboard?month=${month}&today=${todayISO()}`) : Promise.resolve(null),
     hasPermission('employees:view') ? api('/api/employees') : Promise.resolve([]),
     hasPermission('salary:view') ? api(`/api/salary-summary?month=${month}`) : Promise.resolve({ rows: [] }),
+    hasPermission('salaryledger:view') ? api('/api/salary-ledgers') : Promise.resolve([]),
     hasPermission('trucks:view') ? api('/api/trucks') : Promise.resolve([]),
     hasPermission('expenses:view') ? api('/api/expenses') : Promise.resolve([]),
     hasPermission('chini:view') ? api('/api/chini-expenses') : Promise.resolve([]),
@@ -669,7 +704,7 @@ async function refresh() {
       : Promise.resolve({ rows: [] })
   ];
 
-  const [dashboard, employees, salary, trucks, expenses, chiniExpenses, landRecords, attendanceReport] =
+  const [dashboard, employees, salary, salaryLedgers, trucks, expenses, chiniExpenses, landRecords, attendanceReport] =
     await Promise.all(requests);
 
   if (dashboard) {
@@ -687,10 +722,12 @@ async function refresh() {
   chiniExpensesCache = chiniExpenses || [];
   landRecordsCache = landRecords || [];
   salaryRowsCache = (salary && salary.rows) || [];
+  salaryLedgersCache = salaryLedgers || [];
   renderEmployeeOptions(employeesCache);
   renderEmployeeRows(filterEmployees(employeesCache));
   renderSalaryRows(salaryRowsCache);
   renderSalarySummaries(salaryRowsCache);
+  renderSalaryLedgers(salaryLedgersCache);
   renderTruckRows(filterTrucks(trucksCache).sort((a, b) => (a.date < b.date ? 1 : -1)));
   renderExpenseRows(expensesCache);
   renderChiniRows(chiniExpensesCache);
@@ -756,6 +793,7 @@ logoutBtn.addEventListener('click', async () => {
   expensesCache = [];
   chiniExpensesCache = [];
   landRecordsCache = [];
+  salaryLedgersCache = [];
   if (autoRefreshTimer) {
     clearInterval(autoRefreshTimer);
     autoRefreshTimer = null;
@@ -893,6 +931,22 @@ advanceForm.addEventListener('submit', async (e) => {
   }
 });
 
+salaryLedgerForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(salaryLedgerForm);
+  try {
+    await api(`/api/salary-ledgers/${fd.get('employeeId')}`, 'PUT', {
+      totalSalary: fd.get('totalSalary'),
+      amountGiven: fd.get('amountGiven')
+    });
+    salaryLedgerForm.reset();
+    await refresh();
+    showToast('Salary ledger updated');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
 function updateTruckTotal() {
   const priceEl = document.getElementById('truckPricePerQuintal');
   const qtyInput = truckForm.querySelector('input[name="quantity"]');
@@ -963,6 +1017,10 @@ truckSearchInput.addEventListener('input', () => {
 
 salaryEmployeeSelect?.addEventListener('change', () => {
   renderSalarySummaries(salaryRowsCache);
+});
+
+salaryLedgerEmployeeSelect?.addEventListener('change', () => {
+  prefillSalaryLedgerForm();
 });
 
 sectionNav.addEventListener('click', (e) => {
