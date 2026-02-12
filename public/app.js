@@ -31,6 +31,9 @@ const refreshAttendanceReportBtn = document.getElementById('refreshAttendanceRep
 const attendanceMonthInput = document.getElementById('attendanceMonthInput');
 const employeeSearchInput = document.getElementById('employeeSearchInput');
 const truckSearchInput = document.getElementById('truckSearchInput');
+const salaryEmployeeSelect = document.getElementById('salaryEmployeeSelect');
+const salaryEmployeeSummaryEl = document.getElementById('salaryEmployeeSummary');
+const salaryOverallSummaryEl = document.getElementById('salaryOverallSummary');
 const brandLink = document.getElementById('brandLink');
 const darkModeToggle = document.getElementById('darkModeToggle');
 const lastRefreshedWrap = document.getElementById('lastRefreshedWrap');
@@ -41,6 +44,7 @@ let me = null;
 let employeesCache = [];
 let trucksCache = [];
 let expensesCache = [];
+let salaryRowsCache = [];
 let autoRefreshTimer = null;
 
 function showToast(message, type = 'ok') {
@@ -98,6 +102,8 @@ function setDefaultDates() {
     if (dateInput) dateInput.value = todayISO();
   });
   attendanceMonthInput.value = monthISO();
+  const joiningInput = document.getElementById('employeeJoiningDate');
+  if (joiningInput && !joiningInput.value) joiningInput.value = todayISO();
 }
 
 function hasPermission(permission) {
@@ -233,12 +239,15 @@ function renderEmployeeRows(rows) {
         if (!role) return;
         const salaryRaw = prompt('Monthly salary', String(existing.monthlySalary));
         if (!salaryRaw) return;
+        const joiningDate = prompt('Joining date (YYYY-MM-DD)', existing.joiningDate || todayISO());
+        if (!joiningDate) return;
 
         try {
           await api(`/api/employees/${id}`, 'PUT', {
             name,
             role,
-            monthlySalary: Number(salaryRaw)
+            monthlySalary: Number(salaryRaw),
+            joiningDate
           });
           await refresh();
           showToast('Employee updated');
@@ -285,6 +294,7 @@ function renderSalaryRows(rows) {
         return `<tr data-emp-id="${r.employeeId}">
           <td>${r.name}</td>
           <td>${r.role}</td>
+          <td>${r.joiningDate || '-'}</td>
           <td class="money">${money(salary)}</td>
           <td class="advances-cell">${advancesCell}</td>
           <td class="money remaining-cell" data-salary="${salary}">${money(remaining)}</td>
@@ -344,6 +354,69 @@ function renderSalaryRows(rows) {
       });
     });
   }
+}
+
+function summaryStat(label, value, moneyValue = false) {
+  return `<div class="summary-stat"><div class="label">${label}</div><div class="value">${moneyValue ? money(value) : value}</div></div>`;
+}
+
+function renderSalarySummaries(rows) {
+  if (!salaryEmployeeSelect || !salaryEmployeeSummaryEl || !salaryOverallSummaryEl) return;
+
+  if (!rows || rows.length === 0) {
+    salaryEmployeeSelect.innerHTML = '<option value=\"\">No employees</option>';
+    salaryEmployeeSummaryEl.innerHTML = '';
+    salaryOverallSummaryEl.innerHTML = '';
+    return;
+  }
+
+  const previous = salaryEmployeeSelect.value;
+  salaryEmployeeSelect.innerHTML = rows
+    .map((r) => `<option value="${r.employeeId}">${r.name}</option>`)
+    .join('');
+  salaryEmployeeSelect.value = rows.some((r) => r.employeeId === previous) ? previous : rows[0].employeeId;
+
+  const selected = rows.find((r) => r.employeeId === salaryEmployeeSelect.value) || rows[0];
+
+  salaryEmployeeSummaryEl.innerHTML = [
+    summaryStat('Name', selected.name),
+    summaryStat('Joining Date', selected.joiningDate || '-'),
+    summaryStat('Months Worked', selected.monthsWorked ?? 0),
+    summaryStat('Monthly Salary', selected.monthlySalary ?? 0, true),
+    summaryStat('Total Salary (All Time)', selected.totalSalaryAllTime ?? 0, true),
+    summaryStat('Total Advances (All Time)', selected.totalAdvancesAllTime ?? 0, true),
+    summaryStat('Total Remaining (All Time)', selected.totalRemainingAllTime ?? 0, true)
+  ].join('');
+
+  const overall = rows.reduce(
+    (acc, r) => {
+      acc.monthlySalary += Number(r.monthlySalary || 0);
+      acc.advancesMonth += Number(r.advances || 0);
+      acc.remainingMonth += Number(r.remaining || 0);
+      acc.totalSalaryAllTime += Number(r.totalSalaryAllTime || 0);
+      acc.totalAdvancesAllTime += Number(r.totalAdvancesAllTime || 0);
+      acc.totalRemainingAllTime += Number(r.totalRemainingAllTime || 0);
+      return acc;
+    },
+    {
+      monthlySalary: 0,
+      advancesMonth: 0,
+      remainingMonth: 0,
+      totalSalaryAllTime: 0,
+      totalAdvancesAllTime: 0,
+      totalRemainingAllTime: 0
+    }
+  );
+
+  salaryOverallSummaryEl.innerHTML = [
+    summaryStat('Employees', rows.length),
+    summaryStat('Total Monthly Salary', overall.monthlySalary, true),
+    summaryStat('Advances (This Month)', overall.advancesMonth, true),
+    summaryStat('Remaining (This Month)', overall.remainingMonth, true),
+    summaryStat('Total Salary (All Time)', overall.totalSalaryAllTime, true),
+    summaryStat('Total Advances (All Time)', overall.totalAdvancesAllTime, true),
+    summaryStat('Total Remaining (All Time)', overall.totalRemainingAllTime, true)
+  ].join('');
 }
 
 function renderAttendanceReportRows(rows) {
@@ -518,9 +591,11 @@ async function refresh() {
   employeesCache = employees || [];
   trucksCache = trucks || [];
   expensesCache = expenses || [];
+  salaryRowsCache = (salary && salary.rows) || [];
   renderEmployeeOptions(employeesCache);
   renderEmployeeRows(filterEmployees(employeesCache));
-  renderSalaryRows((salary && salary.rows) || []);
+  renderSalaryRows(salaryRowsCache);
+  renderSalarySummaries(salaryRowsCache);
   renderTruckRows(filterTrucks(trucksCache).sort((a, b) => (a.date < b.date ? 1 : -1)));
   renderExpenseRows(expensesCache);
   renderAttendanceReportRows((attendanceReport && attendanceReport.rows) || []);
@@ -633,9 +708,11 @@ employeeForm.addEventListener('submit', async (e) => {
     await api('/api/employees', 'POST', {
       name: fd.get('name'),
       role: fd.get('role'),
-      monthlySalary: fd.get('monthlySalary')
+      monthlySalary: fd.get('monthlySalary'),
+      joiningDate: fd.get('joiningDate')
     });
     employeeForm.reset();
+    setDefaultDates();
     await refresh();
     showToast('Employee added');
   } catch (err) {
@@ -746,6 +823,10 @@ employeeSearchInput.addEventListener('input', () => {
 
 truckSearchInput.addEventListener('input', () => {
   renderTruckRows(filterTrucks(trucksCache).sort((a, b) => (a.date < b.date ? 1 : -1)));
+});
+
+salaryEmployeeSelect?.addEventListener('change', () => {
+  renderSalarySummaries(salaryRowsCache);
 });
 
 sectionNav.addEventListener('click', (e) => {

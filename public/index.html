@@ -65,6 +65,8 @@
               <input name="name" placeholder="Employee Name" required />
               <input name="role" placeholder="Role" required />
               <input name="monthlySalary" type="number" min="1" step="0.01" placeholder="Monthly Salary" required />
+              <label for="employeeJoiningDate">Joining Date</label>
+              <input id="employeeJoiningDate" name="joiningDate" type="date" required />
               <button type="submit">Add Employee</button>
             </form>
           </section>
@@ -152,12 +154,26 @@
             <h2>Salary Summary (Current Month)</h2>
             <button id="downloadSalaryCsv" class="small">Download Salary CSV</button>
           </div>
+          <div class="salary-summary-grid">
+            <section class="summary-box">
+              <div class="row wrap">
+                <h3>Selected Employee Summary</h3>
+                <select id="salaryEmployeeSelect"></select>
+              </div>
+              <div id="salaryEmployeeSummary" class="summary-stats"></div>
+            </section>
+            <section class="summary-box">
+              <h3>All Employees Summary</h3>
+              <div id="salaryOverallSummary" class="summary-stats"></div>
+            </section>
+          </div>
           <div class="table-wrap">
             <table id="salaryTable">
               <thead>
                 <tr>
                   <th>Name</th>
                   <th>Role</th>
+                  <th>Joining Date</th>
                   <th>Monthly</th>
                   <th>Advances (Month)</th>
                   <th>Remaining (Month)</th>

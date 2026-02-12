@@ -194,21 +194,31 @@ function jsonStore() {
       await this.deleteSession(token);
     },
     async listEmployees() {
-      return readJsonDb().employees;
+      return readJsonDb().employees.map((e) => ({
+        ...e,
+        joiningDate: e.joiningDate || String(e.createdAt || new Date().toISOString()).slice(0, 10)
+      }));
     },
     async getEmployeeById(id) {
       const db = readJsonDb();
-      return db.employees.find((e) => e.id === id) || null;
+      const e = db.employees.find((x) => x.id === id);
+      if (!e) return null;
+      return {
+        ...e,
+        joiningDate: e.joiningDate || String(e.createdAt || new Date().toISOString()).slice(0, 10)
+      };
     },
     async createEmployee(data) {
       const db = readJsonDb();
+      const createdAt = new Date().toISOString();
       const employee = {
         id: uid('emp'),
         name: String(data.name).trim(),
         role: String(data.role).trim(),
         monthlySalary: Number(data.monthlySalary),
+        joiningDate: data.joiningDate || createdAt.slice(0, 10),
         active: true,
-        createdAt: new Date().toISOString()
+        createdAt
       };
       db.employees.push(employee);
       writeJsonDb(db);
@@ -221,6 +231,7 @@ function jsonStore() {
       employee.name = String(data.name).trim();
       employee.role = String(data.role).trim();
       employee.monthlySalary = Number(data.monthlySalary);
+      employee.joiningDate = data.joiningDate || employee.joiningDate || String(employee.createdAt).slice(0, 10);
       employee.updatedAt = new Date().toISOString();
       writeJsonDb(db);
       return employee;
@@ -327,7 +338,7 @@ function jsonStore() {
           .filter((a) => a.employeeId === employee.id)
           .reduce((sum, a) => sum + Number(a.amount), 0);
 
-        const startMonth = String(employee.createdAt || new Date().toISOString()).slice(0, 7);
+        const startMonth = String(employee.joiningDate || employee.createdAt || new Date().toISOString()).slice(0, 7);
         const [startY, startM] = startMonth.split('-').map(Number);
         const [endY, endM] = month.split('-').map(Number);
         const monthsWorked = Math.max(0, (endY - startY) * 12 + (endM - startM) + 1);
@@ -482,10 +493,12 @@ function postgresStore() {
           name TEXT NOT NULL,
           role TEXT NOT NULL,
           monthly_salary NUMERIC(12,2) NOT NULL,
+          joining_date DATE,
           active BOOLEAN NOT NULL DEFAULT TRUE,
           created_at TIMESTAMPTZ NOT NULL,
           updated_at TIMESTAMPTZ
         );
+        ALTER TABLE employees ADD COLUMN IF NOT EXISTS joining_date DATE;
 
         CREATE TABLE IF NOT EXISTS attendance (
           id TEXT PRIMARY KEY,
@@ -592,6 +605,7 @@ function postgresStore() {
         name: r.name,
         role: r.role,
         monthlySalary: Number(r.monthly_salary),
+        joiningDate: r.joining_date ? String(r.joining_date).slice(0, 10) : String(r.created_at).slice(0, 10),
         active: r.active,
         createdAt: r.created_at
       }));
@@ -605,33 +619,36 @@ function postgresStore() {
         name: r.name,
         role: r.role,
         monthlySalary: Number(r.monthly_salary),
+        joiningDate: r.joining_date ? String(r.joining_date).slice(0, 10) : String(r.created_at).slice(0, 10),
         active: r.active,
         createdAt: r.created_at
       };
     },
     async createEmployee(data) {
+      const createdAt = new Date().toISOString();
       const row = {
         id: uid('emp'),
         name: String(data.name).trim(),
         role: String(data.role).trim(),
         monthlySalary: Number(data.monthlySalary),
+        joiningDate: data.joiningDate || createdAt.slice(0, 10),
         active: true,
-        createdAt: new Date().toISOString()
+        createdAt
       };
       await pool.query(
-        `INSERT INTO employees (id, name, role, monthly_salary, active, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [row.id, row.name, row.role, row.monthlySalary, row.active, row.createdAt]
+        `INSERT INTO employees (id, name, role, monthly_salary, joining_date, active, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [row.id, row.name, row.role, row.monthlySalary, row.joiningDate, row.active, row.createdAt]
       );
       return row;
     },
     async updateEmployee(id, data) {
       const res = await pool.query(
         `UPDATE employees
-         SET name = $2, role = $3, monthly_salary = $4, updated_at = NOW()
+         SET name = $2, role = $3, monthly_salary = $4, joining_date = $5, updated_at = NOW()
          WHERE id = $1
          RETURNING *`,
-        [id, String(data.name).trim(), String(data.role).trim(), Number(data.monthlySalary)]
+        [id, String(data.name).trim(), String(data.role).trim(), Number(data.monthlySalary), data.joiningDate]
       );
       if (!res.rows[0]) return null;
       const r = res.rows[0];
@@ -640,6 +657,7 @@ function postgresStore() {
         name: r.name,
         role: r.role,
         monthlySalary: Number(r.monthly_salary),
+        joiningDate: r.joining_date ? String(r.joining_date).slice(0, 10) : String(r.created_at).slice(0, 10),
         active: r.active,
         createdAt: r.created_at
       };
@@ -779,18 +797,19 @@ function postgresStore() {
                 e.name,
                 e.role,
                 e.monthly_salary,
+                e.joining_date,
                 e.created_at,
                 COALESCE(SUM(CASE WHEN TO_CHAR(a.date, 'YYYY-MM') = $1 THEN a.amount ELSE 0 END), 0) AS advances,
                 COALESCE(SUM(a.amount), 0) AS total_advances_all_time
          FROM employees e
          LEFT JOIN salary_advances a ON a.employee_id = e.id
-         GROUP BY e.id, e.name, e.role, e.monthly_salary, e.created_at
+         GROUP BY e.id, e.name, e.role, e.monthly_salary, e.joining_date, e.created_at
          ORDER BY e.name`,
         [month]
       );
 
       return res.rows.map((r) => {
-        const startMonth = String(r.created_at).slice(0, 7);
+        const startMonth = String(r.joining_date || r.created_at).slice(0, 7);
         const [startY, startM] = startMonth.split('-').map(Number);
         const [endY, endM] = month.split('-').map(Number);
         const monthsWorked = Math.max(0, (endY - startY) * 12 + (endM - startM) + 1);
@@ -802,6 +821,7 @@ function postgresStore() {
           name: r.name,
           role: r.role,
           monthlySalary: Number(r.monthly_salary),
+          joiningDate: r.joining_date ? String(r.joining_date).slice(0, 10) : String(r.created_at).slice(0, 10),
           advances: Number(r.advances),
           remaining: Math.max(0, Number(r.monthly_salary) - Number(r.advances)),
           monthsWorked,
@@ -1106,7 +1126,7 @@ app.get('/api/employees', auth, requirePermission('employees:view'), async (_req
 });
 
 app.post('/api/employees', auth, requirePermission('employees:create'), async (req, res) => {
-  const { name, role, monthlySalary } = req.body;
+  const { name, role, monthlySalary, joiningDate } = req.body;
 
   if (!name || !role || !monthlySalary) {
     return res.status(400).json({ error: 'name, role and monthlySalary are required' });
@@ -1116,9 +1136,17 @@ app.post('/api/employees', auth, requirePermission('employees:create'), async (r
   if (Number.isNaN(numericSalary) || numericSalary <= 0) {
     return res.status(400).json({ error: 'monthlySalary must be a positive number' });
   }
+  if (joiningDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(joiningDate))) {
+    return res.status(400).json({ error: 'joiningDate must be in YYYY-MM-DD format' });
+  }
 
   try {
-    const employee = await store.createEmployee({ name, role, monthlySalary: numericSalary });
+    const employee = await store.createEmployee({
+      name,
+      role,
+      monthlySalary: numericSalary,
+      joiningDate: joiningDate || undefined
+    });
     return res.status(201).json(employee);
   } catch (err) {
     console.error(err);
@@ -1127,7 +1155,7 @@ app.post('/api/employees', auth, requirePermission('employees:create'), async (r
 });
 
 app.put('/api/employees/:id', auth, requirePermission('employees:update'), async (req, res) => {
-  const { name, role, monthlySalary } = req.body;
+  const { name, role, monthlySalary, joiningDate } = req.body;
   if (!name || !role || !monthlySalary) {
     return res.status(400).json({ error: 'name, role and monthlySalary are required' });
   }
@@ -1136,12 +1164,16 @@ app.put('/api/employees/:id', auth, requirePermission('employees:update'), async
   if (Number.isNaN(numericSalary) || numericSalary <= 0) {
     return res.status(400).json({ error: 'monthlySalary must be a positive number' });
   }
+  if (joiningDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(joiningDate))) {
+    return res.status(400).json({ error: 'joiningDate must be in YYYY-MM-DD format' });
+  }
 
   try {
     const updated = await store.updateEmployee(req.params.id, {
       name,
       role,
-      monthlySalary: numericSalary
+      monthlySalary: numericSalary,
+      joiningDate: joiningDate || undefined
     });
 
     if (!updated) {
