@@ -765,8 +765,11 @@ function renderChiniRows(rows) {
 
 function renderLandRows(rows) {
   const canDelete = hasPermission('land:delete');
+  const totalPaid = rows.reduce((sum, r) => sum + Number(r.amountPaid || 0), 0);
   const totalRemaining = rows.reduce((sum, r) => sum + Number(r.amountToBeGiven || 0), 0);
+  const totalPaidEl = document.getElementById('landTotalPaid');
   const totalEl = document.getElementById('landTotalRemaining');
+  if (totalPaidEl) totalPaidEl.textContent = money(totalPaid);
   if (totalEl) totalEl.textContent = money(totalRemaining);
 
   landTbody.innerHTML = rows
