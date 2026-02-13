@@ -706,15 +706,16 @@ function renderExpenseRows(rows) {
         const id = btn.getAttribute('data-id');
         const current = expensesCache.find((e) => e.id === id);
         if (!current) return;
-        const date = prompt('Date (YYYY-MM-DD)', current.date || '');
-        if (!date) return;
-        const party = prompt('Party (narayan or maa_vaishno)', current.party || 'narayan');
-        if (!party) return;
         const description = prompt('Description', current.description || '') || '';
-        const amount = prompt('Amount', String(current.amount || ''));
+        const amount = prompt('Amount', String(current.amount || 0));
         if (!amount) return;
         try {
-          await api(`/api/expenses/${id}`, 'PUT', { date, party, description, amount });
+          await api(`/api/expenses/${id}`, 'PUT', {
+            date: current.date,
+            party: current.party || 'narayan',
+            description,
+            amount
+          });
           await refresh();
           showToast('Expense updated');
         } catch (err) {
@@ -888,16 +889,17 @@ function renderLandRows(rows) {
         const id = btn.getAttribute('data-id');
         const current = landRecordsCache.find((r) => r.id === id);
         if (!current) return;
-        const area = prompt('Area', current.area || '');
-        if (!area) return;
-        const ownerName = prompt('Owner Name', current.ownerName || '');
-        if (!ownerName) return;
         const amountPaid = prompt('Amount Paid', String(current.amountPaid || 0));
         if (!amountPaid) return;
         const amountToBeGiven = prompt('Amount To Be Given', String(current.amountToBeGiven || 0));
         if (!amountToBeGiven) return;
         try {
-          await api(`/api/lands/${id}`, 'PUT', { area, ownerName, amountPaid, amountToBeGiven });
+          await api(`/api/lands/${id}`, 'PUT', {
+            area: current.area,
+            ownerName: current.ownerName,
+            amountPaid,
+            amountToBeGiven
+          });
           await refresh();
           showToast('Land record updated');
         } catch (err) {
