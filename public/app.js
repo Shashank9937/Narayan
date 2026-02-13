@@ -757,21 +757,31 @@ function renderInvestmentRows(rows) {
 }
 
 function renderInvestmentSummary() {
-  const totalInvestment = investmentsCache.reduce((sum, r) => sum + Number(r.amount || 0), 0);
-  const totalExpenses = expensesCache.reduce((sum, r) => sum + Number(r.amount || 0), 0);
-  const totalSalaryPending = salaryLedgersCache.reduce((sum, r) => sum + Number(r.pending || 0), 0);
-  const totalTruckSales = trucksCache.reduce((sum, r) => sum + Number(r.totalAmount || 0), 0);
-  const netBalance = totalInvestment - totalExpenses - totalSalaryPending - totalTruckSales;
+  const narayanInvestment = investmentsCache
+    .filter((r) => r.party === 'narayan')
+    .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  const maaInvestment = investmentsCache
+    .filter((r) => r.party === 'maa_vaishno')
+    .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  const narayanTruckSales = trucksCache
+    .filter((r) => r.party === 'narayan')
+    .reduce((sum, r) => sum + Number(r.totalAmount || 0), 0);
+  const maaTruckSales = trucksCache
+    .filter((r) => r.party === 'maa_vaishno')
+    .reduce((sum, r) => sum + Number(r.totalAmount || 0), 0);
+  const narayanNet = narayanInvestment - narayanTruckSales;
+  const maaNet = maaInvestment - maaTruckSales;
 
   const set = (id, value) => {
     const el = document.getElementById(id);
     if (el) el.textContent = money(value);
   };
-  set('invTotalInvestment', totalInvestment);
-  set('invTotalExpenses', totalExpenses);
-  set('invTotalSalaryPending', totalSalaryPending);
-  set('invTotalTruckSales', totalTruckSales);
-  set('invNetBalance', netBalance);
+  set('invNarayanInvestment', narayanInvestment);
+  set('invNarayanTruckSales', narayanTruckSales);
+  set('invNarayanNet', narayanNet);
+  set('invMaaInvestment', maaInvestment);
+  set('invMaaTruckSales', maaTruckSales);
+  set('invMaaNet', maaNet);
 }
 
 function renderChiniRows(rows) {
