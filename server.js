@@ -45,6 +45,7 @@ const ROLE_PERMISSIONS = {
     'chini:delete',
     'land:view',
     'land:create',
+    'land:update',
     'land:delete',
     'export:view',
     'salaryslip:view'
@@ -68,7 +69,8 @@ const ROLE_PERMISSIONS = {
     'chini:view',
     'chini:create',
     'land:view',
-    'land:create'
+    'land:create',
+    'land:update'
   ]
 };
 
@@ -386,17 +388,19 @@ function jsonStore() {
           role: e.role,
           totalSalary,
           amountGiven,
+          note: ledger?.note || '',
           pending: Math.max(0, totalSalary - amountGiven),
           updatedAt: ledger?.updatedAt || null
         };
       });
     },
-    async upsertSalaryLedger(employeeId, totalSalary, amountGiven) {
+    async upsertSalaryLedger(employeeId, totalSalary, amountGiven, note) {
       const db = readJsonDb();
       const existing = db.salaryLedgers.find((l) => l.employeeId === employeeId);
       if (existing) {
         existing.totalSalary = Number(totalSalary);
         existing.amountGiven = Number(amountGiven);
+        existing.note = String(note || '').trim();
         existing.updatedAt = new Date().toISOString();
         writeJsonDb(db);
         return existing;
@@ -406,6 +410,7 @@ function jsonStore() {
         employeeId,
         totalSalary: Number(totalSalary),
         amountGiven: Number(amountGiven),
+        note: String(note || '').trim(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
@@ -588,13 +593,19 @@ function jsonStore() {
       let rows = db.expenses;
       if (filter?.dateFrom) rows = rows.filter((e) => e.date >= filter.dateFrom);
       if (filter?.dateTo) rows = rows.filter((e) => e.date <= filter.dateTo);
-      return rows.sort((a, b) => (a.date < b.date ? 1 : -1));
+      return rows
+        .map((r) => ({ ...r, party: r.party || 'narayan' }))
+        .sort((a, b) => (a.date < b.date ? 1 : -1));
     },
     async createExpense(data) {
       const db = readJsonDb();
+      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
+        ? String(data.party).toLowerCase()
+        : 'narayan';
       const row = {
         id: uid('exp'),
         date: data.date,
+        party,
         description: String(data.description || '').trim() || 'Expense',
         amount: Number(data.amount),
         createdAt: new Date().toISOString()
@@ -607,7 +618,11 @@ function jsonStore() {
       const db = readJsonDb();
       const expense = db.expenses.find((e) => e.id === id);
       if (!expense) return null;
+      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
+        ? String(data.party).toLowerCase()
+        : 'narayan';
       expense.date = data.date;
+      expense.party = party;
       expense.description = String(data.description || '').trim() || 'Expense';
       expense.amount = Number(data.amount);
       expense.updatedAt = new Date().toISOString();
@@ -703,6 +718,18 @@ function jsonStore() {
       db.landRecords.push(row);
       writeJsonDb(db);
       return row;
+    },
+    async updateLandRecord(id, data) {
+      const db = readJsonDb();
+      const record = db.landRecords.find((l) => l.id === id);
+      if (!record) return null;
+      record.area = String(data.area || '').trim();
+      record.ownerName = String(data.ownerName || '').trim();
+      record.amountPaid = Number(data.amountPaid);
+      record.amountToBeGiven = Number(data.amountToBeGiven);
+      record.updatedAt = new Date().toISOString();
+      writeJsonDb(db);
+      return record;
     },
     async deleteLandRecord(id) {
       const db = readJsonDb();
@@ -801,9 +828,11 @@ function postgresStore() {
           employee_id TEXT NOT NULL UNIQUE REFERENCES employees(id) ON DELETE CASCADE,
           total_salary NUMERIC(12,2) NOT NULL DEFAULT 0,
           amount_given NUMERIC(12,2) NOT NULL DEFAULT 0,
+          note TEXT,
           created_at TIMESTAMPTZ NOT NULL,
           updated_at TIMESTAMPTZ NOT NULL
         );
+        ALTER TABLE salary_ledgers ADD COLUMN IF NOT EXISTS note TEXT;
 
         CREATE TABLE IF NOT EXISTS trucks (
           id TEXT PRIMARY KEY,
@@ -826,10 +855,12 @@ function postgresStore() {
         CREATE TABLE IF NOT EXISTS expenses (
           id TEXT PRIMARY KEY,
           date DATE NOT NULL,
+          party TEXT,
           description TEXT NOT NULL,
           amount NUMERIC(12,2) NOT NULL,
           created_at TIMESTAMPTZ NOT NULL
         );
+        ALTER TABLE expenses ADD COLUMN IF NOT EXISTS party TEXT;
 
         CREATE TABLE IF NOT EXISTS investments (
           id TEXT PRIMARY KEY,
@@ -1120,6 +1151,7 @@ function postgresStore() {
                 e.role,
                 COALESCE(sl.total_salary, 0) AS total_salary,
                 COALESCE(sl.amount_given, 0) AS amount_given,
+                COALESCE(sl.note, '') AS note,
                 sl.updated_at
          FROM employees e
          LEFT JOIN salary_ledgers sl ON sl.employee_id = e.id
@@ -1134,33 +1166,41 @@ function postgresStore() {
           role: r.role,
           totalSalary,
           amountGiven,
+          note: r.note || '',
           pending: Math.max(0, totalSalary - amountGiven),
           updatedAt: r.updated_at || null
         };
       });
     },
-    async upsertSalaryLedger(employeeId, totalSalary, amountGiven) {
+    async upsertSalaryLedger(employeeId, totalSalary, amountGiven, note) {
       const existing = await pool.query('SELECT id FROM salary_ledgers WHERE employee_id = $1', [employeeId]);
       if (existing.rows[0]) {
         const id = existing.rows[0].id;
         await pool.query(
-          'UPDATE salary_ledgers SET total_salary = $2, amount_given = $3, updated_at = NOW() WHERE id = $1',
-          [id, Number(totalSalary), Number(amountGiven)]
+          'UPDATE salary_ledgers SET total_salary = $2, amount_given = $3, note = $4, updated_at = NOW() WHERE id = $1',
+          [id, Number(totalSalary), Number(amountGiven), String(note || '').trim()]
         );
-        return { id, employeeId, totalSalary: Number(totalSalary), amountGiven: Number(amountGiven) };
+        return {
+          id,
+          employeeId,
+          totalSalary: Number(totalSalary),
+          amountGiven: Number(amountGiven),
+          note: String(note || '').trim()
+        };
       }
       const row = {
         id: uid('sld'),
         employeeId,
         totalSalary: Number(totalSalary),
         amountGiven: Number(amountGiven),
+        note: String(note || '').trim(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
       await pool.query(
-        `INSERT INTO salary_ledgers (id, employee_id, total_salary, amount_given, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [row.id, row.employeeId, row.totalSalary, row.amountGiven, row.createdAt, row.updatedAt]
+        `INSERT INTO salary_ledgers (id, employee_id, total_salary, amount_given, note, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [row.id, row.employeeId, row.totalSalary, row.amountGiven, row.note, row.createdAt, row.updatedAt]
       );
       return row;
     },
@@ -1304,38 +1344,47 @@ function postgresStore() {
       return res.rows.map((r) => ({
         id: r.id,
         date: String(r.date).slice(0, 10),
+        party: r.party || 'narayan',
         description: r.description || '',
         amount: Number(r.amount),
         createdAt: r.created_at
       }));
     },
     async createExpense(data) {
+      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
+        ? String(data.party).toLowerCase()
+        : 'narayan';
       const row = {
         id: uid('exp'),
         date: data.date,
+        party,
         description: String(data.description || '').trim() || 'Expense',
         amount: Number(data.amount),
         createdAt: new Date().toISOString()
       };
       await pool.query(
-        'INSERT INTO expenses (id, date, description, amount, created_at) VALUES ($1, $2, $3, $4, $5)',
-        [row.id, row.date, row.description, row.amount, row.createdAt]
+        'INSERT INTO expenses (id, date, party, description, amount, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
+        [row.id, row.date, row.party, row.description, row.amount, row.createdAt]
       );
       return row;
     },
     async updateExpense(id, data) {
+      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
+        ? String(data.party).toLowerCase()
+        : 'narayan';
       const res = await pool.query(
         `UPDATE expenses
-         SET date = $2, description = $3, amount = $4
+         SET date = $2, party = $3, description = $4, amount = $5
          WHERE id = $1
          RETURNING *`,
-        [id, data.date, String(data.description || '').trim() || 'Expense', Number(data.amount)]
+        [id, data.date, party, String(data.description || '').trim() || 'Expense', Number(data.amount)]
       );
       if (!res.rows[0]) return null;
       const r = res.rows[0];
       return {
         id: r.id,
         date: String(r.date).slice(0, 10),
+        party: r.party || 'narayan',
         description: r.description || '',
         amount: Number(r.amount),
         createdAt: r.created_at
@@ -1456,6 +1505,25 @@ function postgresStore() {
         [row.id, row.area, row.ownerName, row.amountPaid, row.amountToBeGiven, row.createdAt]
       );
       return row;
+    },
+    async updateLandRecord(id, data) {
+      const res = await pool.query(
+        `UPDATE land_records
+         SET area = $2, owner_name = $3, amount_paid = $4, amount_to_be_given = $5
+         WHERE id = $1
+         RETURNING *`,
+        [id, String(data.area || '').trim(), String(data.ownerName || '').trim(), Number(data.amountPaid), Number(data.amountToBeGiven)]
+      );
+      if (!res.rows[0]) return null;
+      const r = res.rows[0];
+      return {
+        id: r.id,
+        area: r.area,
+        ownerName: r.owner_name,
+        amountPaid: Number(r.amount_paid),
+        amountToBeGiven: Number(r.amount_to_be_given),
+        createdAt: r.created_at
+      };
     },
     async deleteLandRecord(id) {
       const res = await pool.query('DELETE FROM land_records WHERE id = $1', [id]);
@@ -1844,7 +1912,7 @@ app.get('/api/salary-ledgers', auth, requirePermission('salaryledger:view'), asy
 });
 
 app.put('/api/salary-ledgers/:employeeId', auth, requirePermission('salaryledger:update'), async (req, res) => {
-  const { totalSalary, amountGiven } = req.body;
+  const { totalSalary, amountGiven, note } = req.body;
   if (totalSalary == null || amountGiven == null) {
     return res.status(400).json({ error: 'totalSalary and amountGiven are required' });
   }
@@ -1856,7 +1924,7 @@ app.put('/api/salary-ledgers/:employeeId', auth, requirePermission('salaryledger
   try {
     const employee = await store.getEmployeeById(req.params.employeeId);
     if (!employee) return res.status(404).json({ error: 'Employee not found' });
-    const row = await store.upsertSalaryLedger(req.params.employeeId, total, given);
+    const row = await store.upsertSalaryLedger(req.params.employeeId, total, given, note);
     return res.json(row);
   } catch (err) {
     console.error(err);
@@ -2217,16 +2285,19 @@ app.get('/api/expenses', auth, requirePermission('expenses:view'), async (req, r
 });
 
 app.post('/api/expenses', auth, requirePermission('expenses:create'), async (req, res) => {
-  const { date, description, amount } = req.body;
-  if (!date || amount == null) {
-    return res.status(400).json({ error: 'date and amount are required' });
+  const { date, party, description, amount } = req.body;
+  if (!date || !party || amount == null) {
+    return res.status(400).json({ error: 'date, party and amount are required' });
   }
   const numAmount = Number(amount);
   if (Number.isNaN(numAmount) || numAmount <= 0) {
     return res.status(400).json({ error: 'amount must be a positive number' });
   }
+  if (!['narayan', 'maa_vaishno'].includes(String(party).toLowerCase())) {
+    return res.status(400).json({ error: 'party must be narayan or maa_vaishno' });
+  }
   try {
-    const row = await store.createExpense({ date, description, amount: numAmount });
+    const row = await store.createExpense({ date, party, description, amount: numAmount });
     return res.status(201).json(row);
   } catch (err) {
     console.error(err);
@@ -2235,16 +2306,19 @@ app.post('/api/expenses', auth, requirePermission('expenses:create'), async (req
 });
 
 app.put('/api/expenses/:id', auth, requirePermission('expenses:update'), async (req, res) => {
-  const { date, description, amount } = req.body;
-  if (!date || amount == null) {
-    return res.status(400).json({ error: 'date and amount are required' });
+  const { date, party, description, amount } = req.body;
+  if (!date || !party || amount == null) {
+    return res.status(400).json({ error: 'date, party and amount are required' });
   }
   const numAmount = Number(amount);
   if (Number.isNaN(numAmount) || numAmount <= 0) {
     return res.status(400).json({ error: 'amount must be a positive number' });
   }
+  if (!['narayan', 'maa_vaishno'].includes(String(party).toLowerCase())) {
+    return res.status(400).json({ error: 'party must be narayan or maa_vaishno' });
+  }
   try {
-    const row = await store.updateExpense(req.params.id, { date, description, amount: numAmount });
+    const row = await store.updateExpense(req.params.id, { date, party, description, amount: numAmount });
     if (!row) return res.status(404).json({ error: 'Expense not found' });
     return res.json(row);
   } catch (err) {
@@ -2374,6 +2448,26 @@ app.post('/api/lands', auth, requirePermission('land:create'), async (req, res) 
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to create land record' });
+  }
+});
+
+app.put('/api/lands/:id', auth, requirePermission('land:update'), async (req, res) => {
+  const { area, ownerName, amountPaid, amountToBeGiven } = req.body;
+  if (!area || !ownerName || amountPaid == null || amountToBeGiven == null) {
+    return res.status(400).json({ error: 'area, ownerName, amountPaid and amountToBeGiven are required' });
+  }
+  const paid = Number(amountPaid);
+  const due = Number(amountToBeGiven);
+  if (Number.isNaN(paid) || paid < 0 || Number.isNaN(due) || due < 0) {
+    return res.status(400).json({ error: 'amountPaid and amountToBeGiven must be valid numbers' });
+  }
+  try {
+    const row = await store.updateLandRecord(req.params.id, { area, ownerName, amountPaid: paid, amountToBeGiven: due });
+    if (!row) return res.status(404).json({ error: 'Land record not found' });
+    return res.json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to update land record' });
   }
 });
 

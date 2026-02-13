@@ -198,6 +198,7 @@
             <select name="employeeId" id="salaryLedgerEmployee" required></select>
             <input name="totalSalary" type="number" min="0" step="0.01" placeholder="Total Salary (All Time)" required />
             <input name="amountGiven" type="number" min="0" step="0.01" placeholder="Amount Given (All Time)" required />
+            <input name="note" placeholder="Note (optional)" />
             <button type="submit">Save Salary Ledger</button>
           </form>
           <div class="table-wrap">
@@ -209,6 +210,7 @@
                   <th>Total Salary</th>
                   <th>Amount Given</th>
                   <th>Pending</th>
+                  <th>Note</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -311,6 +313,11 @@
             <h2>Add Expense</h2>
             <form id="expenseForm">
               <input name="date" type="date" required />
+              <select name="party" required>
+                <option value="">Select Party</option>
+                <option value="narayan">Narayan</option>
+                <option value="maa_vaishno">Maa Vaishno</option>
+              </select>
               <input name="description" placeholder="Description" />
               <input name="amount" type="number" min="0.01" step="0.01" placeholder="Amount (₹)" required />
               <button type="submit">Add Expense</button>
@@ -319,22 +326,64 @@
         </div>
 
         <section class="panel" id="expenseReportPanel">
-          <div class="expense-total-wrap">
-            <span class="expense-total-label">Total Expense</span>
-            <span id="expenseTotal" class="expense-total-value">₹0</span>
+          <div class="row wrap">
+            <h2>Expense Report (Party + Date Range)</h2>
+            <div class="row">
+              <input id="expenseDateFrom" type="date" />
+              <input id="expenseDateTo" type="date" />
+              <button id="expenseFilterBtn" class="small" type="button">Apply</button>
+              <button id="expenseClearBtn" class="small warn" type="button">Clear</button>
+            </div>
           </div>
-          <div class="table-wrap">
-            <table id="expenseTable">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Description</th>
-                  <th>Amount</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
+          <div class="summary-stat-grid">
+            <div class="summary-stat">
+              <div class="label">Narayan Expense</div>
+              <div id="expenseTotalNarayan" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Maa Vaishno Expense</div>
+              <div id="expenseTotalMaaVaishno" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Total Expense</div>
+              <div id="expenseTotal" class="value">₹0</div>
+            </div>
+          </div>
+          <div class="party-table-grid">
+            <div>
+              <h3>Narayan Expenses</h3>
+              <div class="table-wrap">
+                <table id="expenseTableNarayan">
+                  <thead>
+                    <tr>
+                      <th>No.</th>
+                      <th>Date</th>
+                      <th>Description</th>
+                      <th>Amount</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <h3>Maa Vaishno Expenses</h3>
+              <div class="table-wrap">
+                <table id="expenseTableMaaVaishno">
+                  <thead>
+                    <tr>
+                      <th>No.</th>
+                      <th>Date</th>
+                      <th>Description</th>
+                      <th>Amount</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </section>
       </section>

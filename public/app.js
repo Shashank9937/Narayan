@@ -3,7 +3,8 @@ const salaryTbody = document.querySelector('#salaryTable tbody');
 const salaryLedgerTbody = document.querySelector('#salaryLedgerTable tbody');
 const truckNarayanTbody = document.querySelector('#truckTableNarayan tbody');
 const truckMaaVaishnoTbody = document.querySelector('#truckTableMaaVaishno tbody');
-const expenseTbody = document.querySelector('#expenseTable tbody');
+const expenseNarayanTbody = document.querySelector('#expenseTableNarayan tbody');
+const expenseMaaVaishnoTbody = document.querySelector('#expenseTableMaaVaishno tbody');
 const investmentTbody = document.querySelector('#investmentTable tbody');
 const chiniTbody = document.querySelector('#chiniTable tbody');
 const landTbody = document.querySelector('#landTable tbody');
@@ -49,6 +50,10 @@ const darkModeToggle = document.getElementById('darkModeToggle');
 const lastRefreshedWrap = document.getElementById('lastRefreshedWrap');
 const lastRefreshedEl = document.getElementById('lastRefreshed');
 const manualRefreshBtn = document.getElementById('manualRefreshBtn');
+const expenseDateFromInput = document.getElementById('expenseDateFrom');
+const expenseDateToInput = document.getElementById('expenseDateTo');
+const expenseFilterBtn = document.getElementById('expenseFilterBtn');
+const expenseClearBtn = document.getElementById('expenseClearBtn');
 
 let me = null;
 let employeesCache = [];
@@ -60,6 +65,7 @@ let landRecordsCache = [];
 let salaryRowsCache = [];
 let salaryLedgersCache = [];
 let autoRefreshTimer = null;
+let expenseFilter = { dateFrom: '', dateTo: '' };
 
 function showToast(message, type = 'ok') {
   toastEl.textContent = message;
@@ -116,6 +122,12 @@ function setDefaultDates() {
     if (dateInput) dateInput.value = todayISO();
   });
   attendanceMonthInput.value = monthISO();
+  if (expenseDateToInput && !expenseDateToInput.value) expenseDateToInput.value = todayISO();
+  if (expenseDateFromInput && !expenseDateFromInput.value) {
+    const d = new Date();
+    d.setDate(1);
+    expenseDateFromInput.value = d.toISOString().slice(0, 10);
+  }
   const joiningInput = document.getElementById('employeeJoiningDate');
   if (joiningInput && !joiningInput.value) joiningInput.value = todayISO();
 }
@@ -221,10 +233,24 @@ function renderCards(data) {
 }
 
 function renderEmployeeOptions(employees) {
+  const prevAttendance = attendanceEmployeeEl.value;
+  const prevAdvance = advanceEmployeeEl.value;
+  const prevSalaryLedger = salaryLedgerEmployeeSelect ? salaryLedgerEmployeeSelect.value : '';
   const options = employees.map((e) => `<option value="${e.id}">${e.name} (${e.role})</option>`).join('');
   attendanceEmployeeEl.innerHTML = options;
   advanceEmployeeEl.innerHTML = options;
-  if (salaryLedgerEmployeeSelect) salaryLedgerEmployeeSelect.innerHTML = options;
+  if (salaryLedgerEmployeeSelect) {
+    salaryLedgerEmployeeSelect.innerHTML = `<option value="">Select Employee</option>${options}`;
+  }
+  if (prevAttendance && employees.some((e) => e.id === prevAttendance)) attendanceEmployeeEl.value = prevAttendance;
+  if (prevAdvance && employees.some((e) => e.id === prevAdvance)) advanceEmployeeEl.value = prevAdvance;
+  if (salaryLedgerEmployeeSelect) {
+    if (prevSalaryLedger && employees.some((e) => e.id === prevSalaryLedger)) {
+      salaryLedgerEmployeeSelect.value = prevSalaryLedger;
+    } else if (employees.length > 0) {
+      salaryLedgerEmployeeSelect.value = employees[0].id;
+    }
+  }
 }
 
 function renderEmployeeRows(rows) {
@@ -452,6 +478,7 @@ function renderSalaryLedgers(rows) {
         <td class="money">${money(r.totalSalary || 0)}</td>
         <td class="money">${money(r.amountGiven || 0)}</td>
         <td class="money">${money(r.pending || 0)}</td>
+        <td>${r.note || '-'}</td>
       </tr>`
     )
     .join('');
@@ -460,13 +487,19 @@ function renderSalaryLedgers(rows) {
 
 function prefillSalaryLedgerForm() {
   if (!salaryLedgerForm || !salaryLedgerEmployeeSelect) return;
-  const employeeId = salaryLedgerEmployeeSelect.value;
+  let employeeId = salaryLedgerEmployeeSelect.value;
+  if (!employeeId && employeesCache[0]) {
+    employeeId = employeesCache[0].id;
+    salaryLedgerEmployeeSelect.value = employeeId;
+  }
   const row = salaryLedgersCache.find((r) => r.employeeId === employeeId);
   const totalEl = salaryLedgerForm.querySelector('input[name="totalSalary"]');
   const givenEl = salaryLedgerForm.querySelector('input[name="amountGiven"]');
-  if (!totalEl || !givenEl) return;
+  const noteEl = salaryLedgerForm.querySelector('input[name="note"]');
+  if (!totalEl || !givenEl || !noteEl) return;
   totalEl.value = row ? Number(row.totalSalary || 0) : '';
   givenEl.value = row ? Number(row.amountGiven || 0) : '';
+  noteEl.value = row ? String(row.note || '') : '';
 }
 
 function renderAttendanceReportRows(rows) {
@@ -606,15 +639,32 @@ function renderTruckRows(rows) {
 function renderExpenseRows(rows) {
   const canEdit = hasPermission('expenses:update');
   const canDelete = hasPermission('expenses:delete');
-  const total = rows.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  const filtered = rows.filter((e) => {
+    if (expenseFilter.dateFrom && e.date < expenseFilter.dateFrom) return false;
+    if (expenseFilter.dateTo && e.date > expenseFilter.dateTo) return false;
+    return true;
+  });
+
+  const narayanRows = filtered.filter((e) => e.party === 'narayan');
+  const maaVaishnoRows = filtered.filter((e) => e.party === 'maa_vaishno');
+  const narayanTotal = narayanRows.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  const maaVaishnoTotal = maaVaishnoRows.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  const total = narayanTotal + maaVaishnoTotal;
 
   const totalEl = document.getElementById('expenseTotal');
+  const narayanTotalEl = document.getElementById('expenseTotalNarayan');
+  const maaVaishnoTotalEl = document.getElementById('expenseTotalMaaVaishno');
   if (totalEl) totalEl.textContent = money(total);
+  if (narayanTotalEl) narayanTotalEl.textContent = money(narayanTotal);
+  if (maaVaishnoTotalEl) maaVaishnoTotalEl.textContent = money(maaVaishnoTotal);
 
-  expenseTbody.innerHTML = rows
-    .map(
-      (e) =>
-        `<tr>
+  const renderExpenseTable = (tbody, partyRows) => {
+    if (!tbody) return;
+    tbody.innerHTML = partyRows
+      .map(
+        (e, idx) =>
+          `<tr>
+          <td>${idx + 1}</td>
           <td>${e.date}</td>
           <td>${e.description || '-'}</td>
           <td class="money">${money(e.amount)}</td>
@@ -626,8 +676,12 @@ function renderExpenseRows(rows) {
             </div>
           </td>
         </tr>`
-    )
-    .join('');
+      )
+      .join('');
+  };
+
+  renderExpenseTable(expenseNarayanTbody, narayanRows);
+  renderExpenseTable(expenseMaaVaishnoTbody, maaVaishnoRows);
 
   if (canEdit) {
     document.querySelectorAll('.exp-edit').forEach((btn) => {
@@ -637,11 +691,13 @@ function renderExpenseRows(rows) {
         if (!current) return;
         const date = prompt('Date (YYYY-MM-DD)', current.date || '');
         if (!date) return;
+        const party = prompt('Party (narayan or maa_vaishno)', current.party || 'narayan');
+        if (!party) return;
         const description = prompt('Description', current.description || '') || '';
         const amount = prompt('Amount', String(current.amount || ''));
         if (!amount) return;
         try {
-          await api(`/api/expenses/${id}`, 'PUT', { date, description, amount });
+          await api(`/api/expenses/${id}`, 'PUT', { date, party, description, amount });
           await refresh();
           showToast('Expense updated');
         } catch (err) {
@@ -764,6 +820,7 @@ function renderChiniRows(rows) {
 }
 
 function renderLandRows(rows) {
+  const canEdit = hasPermission('land:update');
   const canDelete = hasPermission('land:delete');
   const totalPaid = rows.reduce((sum, r) => sum + Number(r.amountPaid || 0), 0);
   const totalRemaining = rows.reduce((sum, r) => sum + Number(r.amountToBeGiven || 0), 0);
@@ -779,10 +836,41 @@ function renderLandRows(rows) {
           <td>${r.ownerName}</td>
           <td class="money">${money(r.amountPaid)}</td>
           <td class="money">${money(r.amountToBeGiven)}</td>
-          <td>${canDelete ? `<button class="small danger land-del" data-id="${r.id}">Delete</button>` : '-'}</td>
+          <td>
+            <div class="actions">
+              ${canEdit ? `<button class="small warn land-edit" data-id="${r.id}">Edit</button>` : ''}
+              ${canDelete ? `<button class="small danger land-del" data-id="${r.id}">Delete</button>` : ''}
+              ${!canEdit && !canDelete ? '-' : ''}
+            </div>
+          </td>
         </tr>`
     )
     .join('');
+
+  if (canEdit) {
+    document.querySelectorAll('.land-edit').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        const current = landRecordsCache.find((r) => r.id === id);
+        if (!current) return;
+        const area = prompt('Area', current.area || '');
+        if (!area) return;
+        const ownerName = prompt('Owner Name', current.ownerName || '');
+        if (!ownerName) return;
+        const amountPaid = prompt('Amount Paid', String(current.amountPaid || 0));
+        if (!amountPaid) return;
+        const amountToBeGiven = prompt('Amount To Be Given', String(current.amountToBeGiven || 0));
+        if (!amountToBeGiven) return;
+        try {
+          await api(`/api/lands/${id}`, 'PUT', { area, ownerName, amountPaid, amountToBeGiven });
+          await refresh();
+          showToast('Land record updated');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    });
+  }
 
   if (canDelete) {
     document.querySelectorAll('.land-del').forEach((btn) => {
@@ -971,6 +1059,7 @@ expenseForm.addEventListener('submit', async (e) => {
   try {
     await api('/api/expenses', 'POST', {
       date: fd.get('date'),
+      party: fd.get('party'),
       description: fd.get('description') || undefined,
       amount: fd.get('amount')
     });
@@ -1119,9 +1208,9 @@ salaryLedgerForm?.addEventListener('submit', async (e) => {
   try {
     await api(`/api/salary-ledgers/${fd.get('employeeId')}`, 'PUT', {
       totalSalary: fd.get('totalSalary'),
-      amountGiven: fd.get('amountGiven')
+      amountGiven: fd.get('amountGiven'),
+      note: fd.get('note') || ''
     });
-    salaryLedgerForm.reset();
     await refresh();
     showToast('Salary ledger updated');
   } catch (err) {
@@ -1195,6 +1284,21 @@ employeeSearchInput.addEventListener('input', () => {
 
 truckSearchInput.addEventListener('input', () => {
   renderTruckRows(filterTrucks(trucksCache).sort((a, b) => (a.date < b.date ? 1 : -1)));
+});
+
+expenseFilterBtn?.addEventListener('click', () => {
+  expenseFilter = {
+    dateFrom: expenseDateFromInput?.value || '',
+    dateTo: expenseDateToInput?.value || ''
+  };
+  renderExpenseRows(expensesCache);
+});
+
+expenseClearBtn?.addEventListener('click', () => {
+  expenseFilter = { dateFrom: '', dateTo: '' };
+  if (expenseDateFromInput) expenseDateFromInput.value = '';
+  if (expenseDateToInput) expenseDateToInput.value = '';
+  renderExpenseRows(expensesCache);
 });
 
 salaryEmployeeSelect?.addEventListener('change', () => {
