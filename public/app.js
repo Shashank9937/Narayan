@@ -475,17 +475,31 @@ function renderSalarySummaries(rows) {
 
 function renderSalaryLedgers(rows) {
   if (!salaryLedgerTbody) return;
+  const safeRows = rows || [];
   const canEdit = hasPermission('salaryledger:update');
-  salaryLedgerTbody.innerHTML = (rows || [])
+  const totalPaidSum = safeRows.reduce((sum, r) => sum + Number(r.totalPaid ?? r.amountGiven ?? 0), 0);
+  const totalToGiveSum = safeRows.reduce((sum, r) => sum + Number(r.totalToGive ?? r.pending ?? 0), 0);
+  const paidSumEl = document.getElementById('salaryLedgerTotalPaidSum');
+  const toGiveSumEl = document.getElementById('salaryLedgerTotalToGiveSum');
+  if (paidSumEl) paidSumEl.textContent = money(totalPaidSum);
+  if (toGiveSumEl) toGiveSumEl.textContent = money(totalToGiveSum);
+
+  salaryLedgerTbody.innerHTML = safeRows
     .map(
-      (r) => `<tr>
+      (r) => {
+        const totalPaid = Number(r.totalPaid ?? r.amountGiven ?? 0);
+        const totalToGive = Number(r.totalToGive ?? r.pending ?? 0);
+        const remaining = Math.max(0, totalToGive);
+        return `<tr>
         <td>${r.name}</td>
         <td>${r.role}</td>
-        <td class="money">${money(r.totalPaid || r.amountGiven || 0)}</td>
-        <td class="money">${money(r.totalToGive || r.pending || 0)}</td>
+        <td class="money">${money(totalPaid)}</td>
+        <td class="money">${money(totalToGive)}</td>
+        <td class="money">${money(remaining)}</td>
         <td>${r.note || '-'}</td>
         <td>${canEdit ? `<button class="small warn sld-edit" data-emp-id="${r.employeeId}">Edit</button>` : '-'}</td>
-      </tr>`
+      </tr>`;
+      }
     )
     .join('');
   if (canEdit) {

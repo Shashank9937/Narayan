@@ -202,6 +202,16 @@
             <input name="note" placeholder="Note (optional)" />
             <button type="submit">Save Salary Ledger</button>
           </form>
+          <div class="summary-stat-grid">
+            <div class="summary-stat">
+              <div class="label">Sum Total Paid (All Employees)</div>
+              <div id="salaryLedgerTotalPaidSum" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Sum Total To Give (All Employees)</div>
+              <div id="salaryLedgerTotalToGiveSum" class="value">₹0</div>
+            </div>
+          </div>
           <div class="table-wrap">
             <table id="salaryLedgerTable">
               <thead>
@@ -210,6 +220,7 @@
                   <th>Role</th>
                   <th>Total Paid</th>
                   <th>Total To Give</th>
+                  <th>Remaining</th>
                   <th>Note</th>
                   <th>Actions</th>
                 </tr>
