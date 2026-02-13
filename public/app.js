@@ -793,8 +793,8 @@ function renderInvestmentSummary() {
   const maaTruckSales = trucksCache
     .filter((r) => r.party === 'maa_vaishno')
     .reduce((sum, r) => sum + Number(r.totalAmount || 0), 0);
-  const narayanNet = narayanInvestment - narayanTruckSales - narayanExpense;
-  const maaNet = maaInvestment - maaTruckSales - maaExpense;
+  const narayanNet = narayanInvestment + narayanExpense - narayanTruckSales;
+  const maaNet = maaInvestment + maaExpense - maaTruckSales;
 
   const set = (id, value) => {
     const el = document.getElementById(id);
