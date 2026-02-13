@@ -489,10 +489,12 @@ function renderSalaryLedgers(rows) {
       (r) => {
         const totalPaid = Number(r.totalPaid ?? r.amountGiven ?? 0);
         const totalToGive = Number(r.totalToGive ?? r.pending ?? 0);
+        const totalSalary = totalPaid + totalToGive;
         const remaining = Math.max(0, totalToGive);
         return `<tr>
         <td>${r.name}</td>
         <td>${r.role}</td>
+        <td class="money">${money(totalSalary)}</td>
         <td class="money">${money(totalPaid)}</td>
         <td class="money">${money(totalToGive)}</td>
         <td class="money">${money(remaining)}</td>
