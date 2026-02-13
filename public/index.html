@@ -49,6 +49,7 @@
         <button class="nav-btn" data-target="investmentSection">Investments</button>
         <button class="nav-btn" data-target="chiniSection">Chini Mill</button>
         <button class="nav-btn" data-target="landSection">Land</button>
+        <button class="nav-btn" data-target="vehicleSection">Vehicles</button>
         <button class="nav-btn" data-target="settingsSection">Settings</button>
       </nav>
 
@@ -196,8 +197,8 @@
           <h2>Salary Ledger (Separate From Monthly Advances)</h2>
           <form id="salaryLedgerForm" class="salary-ledger-form">
             <select name="employeeId" id="salaryLedgerEmployee" required></select>
-            <input name="totalSalary" type="number" min="0" step="0.01" placeholder="Total Salary (All Time)" required />
-            <input name="amountGiven" type="number" min="0" step="0.01" placeholder="Amount Given (All Time)" required />
+            <input name="totalPaid" type="number" min="0" step="0.01" placeholder="Total Paid (All Time)" required />
+            <input name="totalToGive" type="number" min="0" step="0.01" placeholder="Total To Give (All Time)" required />
             <input name="note" placeholder="Note (optional)" />
             <button type="submit">Save Salary Ledger</button>
           </form>
@@ -207,10 +208,10 @@
                 <tr>
                   <th>Employee</th>
                   <th>Role</th>
-                  <th>Total Salary</th>
-                  <th>Amount Given</th>
-                  <th>Pending</th>
+                  <th>Total Paid</th>
+                  <th>Total To Give</th>
                   <th>Note</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -413,11 +414,15 @@
               <div id="invNarayanInvestment" class="value">₹0</div>
             </div>
             <div class="summary-stat">
+              <div class="label">Narayan Expense</div>
+              <div id="invNarayanExpense" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
               <div class="label">Narayan Truck Sales</div>
               <div id="invNarayanTruckSales" class="value">₹0</div>
             </div>
             <div class="summary-stat">
-              <div class="label">Narayan Balance (Investment - Truck Sales)</div>
+              <div class="label">Narayan Balance (Investment - Truck - Expense)</div>
               <div id="invNarayanNet" class="value">₹0</div>
             </div>
             <div class="summary-stat">
@@ -425,11 +430,15 @@
               <div id="invMaaInvestment" class="value">₹0</div>
             </div>
             <div class="summary-stat">
+              <div class="label">Maa Vaishno Expense</div>
+              <div id="invMaaExpense" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
               <div class="label">Maa Vaishno Truck Sales</div>
               <div id="invMaaTruckSales" class="value">₹0</div>
             </div>
             <div class="summary-stat">
-              <div class="label">Maa Vaishno Balance (Investment - Truck Sales)</div>
+              <div class="label">Maa Vaishno Balance (Investment - Truck - Expense)</div>
               <div id="invMaaNet" class="value">₹0</div>
             </div>
           </div>
@@ -520,6 +529,64 @@
                   <th>Owner Name</th>
                   <th>Amount Paid</th>
                   <th>Amount To Be Given</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="vehicleSection" class="section-view">
+        <div class="grid">
+          <section class="panel" id="vehiclePanel">
+            <h2>Vehicle Usage & Monthly Tracking</h2>
+            <form id="vehicleForm">
+              <input name="vehicleName" placeholder="Vehicle Name (e.g. Tractor, Truck)" required />
+              <input name="vehicleNumber" placeholder="Vehicle Number" required />
+              <input name="monthlyPrice" type="number" min="0" step="0.01" placeholder="Monthly Price (₹)" required />
+              <input name="serviceDueDate" type="date" placeholder="Service Due Date" />
+              <input name="lastServiceDate" type="date" placeholder="Last Service Date" />
+              <select name="paymentStatus">
+                <option value="pending">Payment Pending</option>
+                <option value="partial">Payment Partial</option>
+                <option value="paid">Payment Paid</option>
+              </select>
+              <input name="amountPaid" type="number" min="0" step="0.01" placeholder="Amount Paid (₹)" />
+              <input name="note" placeholder="Service/Payment Note" />
+              <button type="submit">Add Vehicle Track</button>
+            </form>
+          </section>
+        </div>
+
+        <section class="panel" id="vehicleReportPanel">
+          <div class="summary-stat-grid">
+            <div class="summary-stat">
+              <div class="label">Total Monthly Price</div>
+              <div id="vehicleMonthlyTotal" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Total Paid</div>
+              <div id="vehiclePaidTotal" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Total Pending</div>
+              <div id="vehiclePendingTotal" class="value">₹0</div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table id="vehicleTable">
+              <thead>
+                <tr>
+                  <th>Vehicle</th>
+                  <th>Number</th>
+                  <th>Monthly Price</th>
+                  <th>Service Due</th>
+                  <th>Last Service</th>
+                  <th>Payment Status</th>
+                  <th>Amount Paid</th>
+                  <th>Note</th>
                   <th>Actions</th>
                 </tr>
               </thead>

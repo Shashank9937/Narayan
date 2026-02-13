@@ -47,6 +47,10 @@ const ROLE_PERMISSIONS = {
     'land:create',
     'land:update',
     'land:delete',
+    'vehicles:view',
+    'vehicles:create',
+    'vehicles:update',
+    'vehicles:delete',
     'export:view',
     'salaryslip:view'
   ],
@@ -70,7 +74,11 @@ const ROLE_PERMISSIONS = {
     'chini:create',
     'land:view',
     'land:create',
-    'land:update'
+    'land:update',
+    'vehicles:view',
+    'vehicles:create',
+    'vehicles:update',
+    'vehicles:delete'
   ]
 };
 
@@ -145,6 +153,7 @@ function ensureDbShape(db) {
   if (!Array.isArray(db.investments)) db.investments = [];
   if (!Array.isArray(db.chiniExpenses)) db.chiniExpenses = [];
   if (!Array.isArray(db.landRecords)) db.landRecords = [];
+  if (!Array.isArray(db.vehicles)) db.vehicles = [];
   if (!Array.isArray(db.users) || db.users.length === 0) db.users = defaultUsers();
   if (!Array.isArray(db.sessions)) db.sessions = [];
 
@@ -382,24 +391,30 @@ function jsonStore() {
         const ledger = db.salaryLedgers.find((l) => l.employeeId === e.id);
         const totalSalary = Number(ledger?.totalSalary || 0);
         const amountGiven = Number(ledger?.amountGiven || 0);
+        const totalToGive = Math.max(0, totalSalary - amountGiven);
         return {
           employeeId: e.id,
           name: e.name,
           role: e.role,
           totalSalary,
           amountGiven,
+          totalPaid: amountGiven,
+          totalToGive,
           note: ledger?.note || '',
-          pending: Math.max(0, totalSalary - amountGiven),
+          pending: totalToGive,
           updatedAt: ledger?.updatedAt || null
         };
       });
     },
-    async upsertSalaryLedger(employeeId, totalSalary, amountGiven, note) {
+    async upsertSalaryLedger(employeeId, totalSalary, amountGiven, note, totalToGive) {
       const db = readJsonDb();
+      const paid = Number(amountGiven);
+      const computedTotal =
+        totalToGive != null && totalToGive !== '' ? paid + Number(totalToGive) : Number(totalSalary);
       const existing = db.salaryLedgers.find((l) => l.employeeId === employeeId);
       if (existing) {
-        existing.totalSalary = Number(totalSalary);
-        existing.amountGiven = Number(amountGiven);
+        existing.totalSalary = computedTotal;
+        existing.amountGiven = paid;
         existing.note = String(note || '').trim();
         existing.updatedAt = new Date().toISOString();
         writeJsonDb(db);
@@ -408,8 +423,8 @@ function jsonStore() {
       const row = {
         id: uid('sld'),
         employeeId,
-        totalSalary: Number(totalSalary),
-        amountGiven: Number(amountGiven),
+        totalSalary: computedTotal,
+        amountGiven: paid,
         note: String(note || '').trim(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -731,6 +746,52 @@ function jsonStore() {
       writeJsonDb(db);
       return record;
     },
+    async listVehicles() {
+      const db = readJsonDb();
+      return db.vehicles.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    },
+    async createVehicle(data) {
+      const db = readJsonDb();
+      const row = {
+        id: uid('veh'),
+        vehicleName: String(data.vehicleName || '').trim(),
+        vehicleNumber: String(data.vehicleNumber || '').trim(),
+        monthlyPrice: Number(data.monthlyPrice),
+        serviceDueDate: data.serviceDueDate || '',
+        lastServiceDate: data.lastServiceDate || '',
+        paymentStatus: String(data.paymentStatus || 'pending').trim().toLowerCase(),
+        amountPaid: Number(data.amountPaid || 0),
+        note: String(data.note || '').trim(),
+        createdAt: new Date().toISOString()
+      };
+      db.vehicles.push(row);
+      writeJsonDb(db);
+      return row;
+    },
+    async updateVehicle(id, data) {
+      const db = readJsonDb();
+      const vehicle = db.vehicles.find((v) => v.id === id);
+      if (!vehicle) return null;
+      vehicle.vehicleName = String(data.vehicleName || '').trim();
+      vehicle.vehicleNumber = String(data.vehicleNumber || '').trim();
+      vehicle.monthlyPrice = Number(data.monthlyPrice);
+      vehicle.serviceDueDate = data.serviceDueDate || '';
+      vehicle.lastServiceDate = data.lastServiceDate || '';
+      vehicle.paymentStatus = String(data.paymentStatus || 'pending').trim().toLowerCase();
+      vehicle.amountPaid = Number(data.amountPaid || 0);
+      vehicle.note = String(data.note || '').trim();
+      vehicle.updatedAt = new Date().toISOString();
+      writeJsonDb(db);
+      return vehicle;
+    },
+    async deleteVehicle(id) {
+      const db = readJsonDb();
+      const before = db.vehicles.length;
+      db.vehicles = db.vehicles.filter((v) => v.id !== id);
+      if (before === db.vehicles.length) return false;
+      writeJsonDb(db);
+      return true;
+    },
     async deleteLandRecord(id) {
       const db = readJsonDb();
       const before = db.landRecords.length;
@@ -886,6 +947,19 @@ function postgresStore() {
           owner_name TEXT NOT NULL,
           amount_paid NUMERIC(12,2) NOT NULL,
           amount_to_be_given NUMERIC(12,2) NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS vehicles (
+          id TEXT PRIMARY KEY,
+          vehicle_name TEXT NOT NULL,
+          vehicle_number TEXT NOT NULL,
+          monthly_price NUMERIC(12,2) NOT NULL,
+          service_due_date DATE,
+          last_service_date DATE,
+          payment_status TEXT NOT NULL,
+          amount_paid NUMERIC(12,2) NOT NULL DEFAULT 0,
+          note TEXT,
           created_at TIMESTAMPTZ NOT NULL
         );
       `);
@@ -1160,39 +1234,45 @@ function postgresStore() {
       return res.rows.map((r) => {
         const totalSalary = Number(r.total_salary || 0);
         const amountGiven = Number(r.amount_given || 0);
+        const totalToGive = Math.max(0, totalSalary - amountGiven);
         return {
           employeeId: r.employee_id,
           name: r.name,
           role: r.role,
           totalSalary,
           amountGiven,
+          totalPaid: amountGiven,
+          totalToGive,
           note: r.note || '',
-          pending: Math.max(0, totalSalary - amountGiven),
+          pending: totalToGive,
           updatedAt: r.updated_at || null
         };
       });
     },
-    async upsertSalaryLedger(employeeId, totalSalary, amountGiven, note) {
+    async upsertSalaryLedger(employeeId, totalSalary, amountGiven, note, totalToGive) {
+      const paid = Number(amountGiven);
+      const computedTotal =
+        totalToGive != null && totalToGive !== '' ? paid + Number(totalToGive) : Number(totalSalary);
       const existing = await pool.query('SELECT id FROM salary_ledgers WHERE employee_id = $1', [employeeId]);
       if (existing.rows[0]) {
         const id = existing.rows[0].id;
         await pool.query(
           'UPDATE salary_ledgers SET total_salary = $2, amount_given = $3, note = $4, updated_at = NOW() WHERE id = $1',
-          [id, Number(totalSalary), Number(amountGiven), String(note || '').trim()]
+          [id, computedTotal, paid, String(note || '').trim()]
         );
         return {
           id,
           employeeId,
-          totalSalary: Number(totalSalary),
-          amountGiven: Number(amountGiven),
+          totalSalary: computedTotal,
+          amountGiven: paid,
           note: String(note || '').trim()
         };
       }
       const row = {
         id: uid('sld'),
         employeeId,
-        totalSalary: Number(totalSalary),
-        amountGiven: Number(amountGiven),
+        totalSalary: computedTotal,
+        amountGiven: paid,
         note: String(note || '').trim(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -1524,6 +1604,97 @@ function postgresStore() {
         amountToBeGiven: Number(r.amount_to_be_given),
         createdAt: r.created_at
       };
+    },
+    async listVehicles() {
+      const res = await pool.query('SELECT * FROM vehicles ORDER BY created_at DESC');
+      return res.rows.map((r) => ({
+        id: r.id,
+        vehicleName: r.vehicle_name,
+        vehicleNumber: r.vehicle_number,
+        monthlyPrice: Number(r.monthly_price),
+        serviceDueDate: r.service_due_date ? String(r.service_due_date).slice(0, 10) : '',
+        lastServiceDate: r.last_service_date ? String(r.last_service_date).slice(0, 10) : '',
+        paymentStatus: r.payment_status,
+        amountPaid: Number(r.amount_paid || 0),
+        note: r.note || '',
+        createdAt: r.created_at
+      }));
+    },
+    async createVehicle(data) {
+      const row = {
+        id: uid('veh'),
+        vehicleName: String(data.vehicleName || '').trim(),
+        vehicleNumber: String(data.vehicleNumber || '').trim(),
+        monthlyPrice: Number(data.monthlyPrice),
+        serviceDueDate: data.serviceDueDate || null,
+        lastServiceDate: data.lastServiceDate || null,
+        paymentStatus: String(data.paymentStatus || 'pending').trim().toLowerCase(),
+        amountPaid: Number(data.amountPaid || 0),
+        note: String(data.note || '').trim(),
+        createdAt: new Date().toISOString()
+      };
+      await pool.query(
+        `INSERT INTO vehicles
+         (id, vehicle_name, vehicle_number, monthly_price, service_due_date, last_service_date, payment_status, amount_paid, note, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [
+          row.id,
+          row.vehicleName,
+          row.vehicleNumber,
+          row.monthlyPrice,
+          row.serviceDueDate,
+          row.lastServiceDate,
+          row.paymentStatus,
+          row.amountPaid,
+          row.note,
+          row.createdAt
+        ]
+      );
+      return row;
+    },
+    async updateVehicle(id, data) {
+      const res = await pool.query(
+        `UPDATE vehicles
+         SET vehicle_name = $2,
+             vehicle_number = $3,
+             monthly_price = $4,
+             service_due_date = $5,
+             last_service_date = $6,
+             payment_status = $7,
+             amount_paid = $8,
+             note = $9
+         WHERE id = $1
+         RETURNING *`,
+        [
+          id,
+          String(data.vehicleName || '').trim(),
+          String(data.vehicleNumber || '').trim(),
+          Number(data.monthlyPrice),
+          data.serviceDueDate || null,
+          data.lastServiceDate || null,
+          String(data.paymentStatus || 'pending').trim().toLowerCase(),
+          Number(data.amountPaid || 0),
+          String(data.note || '').trim()
+        ]
+      );
+      if (!res.rows[0]) return null;
+      const r = res.rows[0];
+      return {
+        id: r.id,
+        vehicleName: r.vehicle_name,
+        vehicleNumber: r.vehicle_number,
+        monthlyPrice: Number(r.monthly_price),
+        serviceDueDate: r.service_due_date ? String(r.service_due_date).slice(0, 10) : '',
+        lastServiceDate: r.last_service_date ? String(r.last_service_date).slice(0, 10) : '',
+        paymentStatus: r.payment_status,
+        amountPaid: Number(r.amount_paid || 0),
+        note: r.note || '',
+        createdAt: r.created_at
+      };
+    },
+    async deleteVehicle(id) {
+      const res = await pool.query('DELETE FROM vehicles WHERE id = $1', [id]);
+      return res.rowCount > 0;
     },
     async deleteLandRecord(id) {
       const res = await pool.query('DELETE FROM land_records WHERE id = $1', [id]);
@@ -1912,19 +2083,24 @@ app.get('/api/salary-ledgers', auth, requirePermission('salaryledger:view'), asy
 });
 
 app.put('/api/salary-ledgers/:employeeId', auth, requirePermission('salaryledger:update'), async (req, res) => {
-  const { totalSalary, amountGiven, note } = req.body;
-  if (totalSalary == null || amountGiven == null) {
-    return res.status(400).json({ error: 'totalSalary and amountGiven are required' });
+  const { totalSalary, amountGiven, totalPaid, totalToGive, note } = req.body;
+  const paidRaw = totalPaid != null ? totalPaid : amountGiven;
+  const toGiveRaw = totalToGive;
+  const totalRaw = totalSalary;
+
+  if (paidRaw == null && totalRaw == null) {
+    return res.status(400).json({ error: 'totalPaid or totalSalary is required' });
   }
-  const total = Number(totalSalary);
-  const given = Number(amountGiven);
-  if (Number.isNaN(total) || total < 0 || Number.isNaN(given) || given < 0) {
-    return res.status(400).json({ error: 'totalSalary and amountGiven must be valid numbers' });
+  const given = Number(paidRaw || 0);
+  const total = Number(totalRaw != null ? totalRaw : given + Number(toGiveRaw || 0));
+  const toGive = toGiveRaw != null ? Number(toGiveRaw) : Math.max(0, total - given);
+  if (Number.isNaN(total) || total < 0 || Number.isNaN(given) || given < 0 || Number.isNaN(toGive) || toGive < 0) {
+    return res.status(400).json({ error: 'totalPaid, totalToGive and totalSalary must be valid non-negative numbers' });
   }
   try {
     const employee = await store.getEmployeeById(req.params.employeeId);
     if (!employee) return res.status(404).json({ error: 'Employee not found' });
-    const row = await store.upsertSalaryLedger(req.params.employeeId, total, given, note);
+    const row = await store.upsertSalaryLedger(req.params.employeeId, total, given, note, toGive);
     return res.json(row);
   } catch (err) {
     console.error(err);
@@ -2468,6 +2644,86 @@ app.put('/api/lands/:id', auth, requirePermission('land:update'), async (req, re
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to update land record' });
+  }
+});
+
+app.get('/api/vehicles', auth, requirePermission('vehicles:view'), async (_req, res) => {
+  try {
+    const rows = await store.listVehicles();
+    return res.json(rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to fetch vehicles' });
+  }
+});
+
+app.post('/api/vehicles', auth, requirePermission('vehicles:create'), async (req, res) => {
+  const { vehicleName, vehicleNumber, monthlyPrice, serviceDueDate, lastServiceDate, paymentStatus, amountPaid, note } =
+    req.body;
+  if (!vehicleName || !vehicleNumber || monthlyPrice == null) {
+    return res.status(400).json({ error: 'vehicleName, vehicleNumber and monthlyPrice are required' });
+  }
+  const monthly = Number(monthlyPrice);
+  const paid = Number(amountPaid || 0);
+  if (Number.isNaN(monthly) || monthly < 0 || Number.isNaN(paid) || paid < 0) {
+    return res.status(400).json({ error: 'monthlyPrice and amountPaid must be valid non-negative numbers' });
+  }
+  try {
+    const row = await store.createVehicle({
+      vehicleName,
+      vehicleNumber,
+      monthlyPrice: monthly,
+      serviceDueDate,
+      lastServiceDate,
+      paymentStatus,
+      amountPaid: paid,
+      note
+    });
+    return res.status(201).json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to create vehicle' });
+  }
+});
+
+app.put('/api/vehicles/:id', auth, requirePermission('vehicles:update'), async (req, res) => {
+  const { vehicleName, vehicleNumber, monthlyPrice, serviceDueDate, lastServiceDate, paymentStatus, amountPaid, note } =
+    req.body;
+  if (!vehicleName || !vehicleNumber || monthlyPrice == null) {
+    return res.status(400).json({ error: 'vehicleName, vehicleNumber and monthlyPrice are required' });
+  }
+  const monthly = Number(monthlyPrice);
+  const paid = Number(amountPaid || 0);
+  if (Number.isNaN(monthly) || monthly < 0 || Number.isNaN(paid) || paid < 0) {
+    return res.status(400).json({ error: 'monthlyPrice and amountPaid must be valid non-negative numbers' });
+  }
+  try {
+    const row = await store.updateVehicle(req.params.id, {
+      vehicleName,
+      vehicleNumber,
+      monthlyPrice: monthly,
+      serviceDueDate,
+      lastServiceDate,
+      paymentStatus,
+      amountPaid: paid,
+      note
+    });
+    if (!row) return res.status(404).json({ error: 'Vehicle not found' });
+    return res.json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to update vehicle' });
+  }
+});
+
+app.delete('/api/vehicles/:id', auth, requirePermission('vehicles:delete'), async (req, res) => {
+  try {
+    const deleted = await store.deleteVehicle(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Vehicle not found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to delete vehicle' });
   }
 });
 

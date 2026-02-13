@@ -8,6 +8,7 @@ const expenseMaaVaishnoTbody = document.querySelector('#expenseTableMaaVaishno t
 const investmentTbody = document.querySelector('#investmentTable tbody');
 const chiniTbody = document.querySelector('#chiniTable tbody');
 const landTbody = document.querySelector('#landTable tbody');
+const vehicleTbody = document.querySelector('#vehicleTable tbody');
 const employeeTbody = document.querySelector('#employeeTable tbody');
 const attendanceReportTbody = document.querySelector('#attendanceReportTable tbody');
 
@@ -32,6 +33,7 @@ const expenseForm = document.getElementById('expenseForm');
 const investmentForm = document.getElementById('investmentForm');
 const chiniForm = document.getElementById('chiniForm');
 const landForm = document.getElementById('landForm');
+const vehicleForm = document.getElementById('vehicleForm');
 const changePasswordForm = document.getElementById('changePasswordForm');
 
 const downloadSalaryCsvBtn = document.getElementById('downloadSalaryCsv');
@@ -62,6 +64,7 @@ let expensesCache = [];
 let investmentsCache = [];
 let chiniExpensesCache = [];
 let landRecordsCache = [];
+let vehiclesCache = [];
 let salaryRowsCache = [];
 let salaryLedgersCache = [];
 let autoRefreshTimer = null;
@@ -116,7 +119,7 @@ function ensureAutoRefresh() {
 }
 
 function setDefaultDates() {
-  [attendanceForm, advanceForm, truckForm, expenseForm, investmentForm, chiniForm].forEach((form) => {
+  [attendanceForm, advanceForm, truckForm, expenseForm, investmentForm, chiniForm, vehicleForm].forEach((form) => {
     if (!form) return;
     const dateInput = form.querySelector('input[type="date"]');
     if (dateInput) dateInput.value = todayISO();
@@ -171,6 +174,7 @@ function applyRoleUI() {
   setFormEnabled('investmentPanel', hasPermission('investments:create'));
   setFormEnabled('chiniPanel', hasPermission('chini:create'));
   setFormEnabled('landPanel', hasPermission('land:create'));
+  setFormEnabled('vehiclePanel', hasPermission('vehicles:create'));
 
   setPanelVisible('salaryPanel', hasPermission('salary:view'));
   setPanelVisible('salaryLedgerPanel', hasPermission('salaryledger:view'));
@@ -181,6 +185,7 @@ function applyRoleUI() {
   setPanelVisible('investmentSummaryPanel', hasPermission('investments:view'));
   setPanelVisible('chiniReportPanel', hasPermission('chini:view'));
   setPanelVisible('landReportPanel', hasPermission('land:view'));
+  setPanelVisible('vehicleReportPanel', hasPermission('vehicles:view'));
   setPanelVisible('changePasswordPanel', true);
 
   downloadSalaryCsvBtn.disabled = !hasPermission('export:view');
@@ -470,18 +475,30 @@ function renderSalarySummaries(rows) {
 
 function renderSalaryLedgers(rows) {
   if (!salaryLedgerTbody) return;
+  const canEdit = hasPermission('salaryledger:update');
   salaryLedgerTbody.innerHTML = (rows || [])
     .map(
       (r) => `<tr>
         <td>${r.name}</td>
         <td>${r.role}</td>
-        <td class="money">${money(r.totalSalary || 0)}</td>
-        <td class="money">${money(r.amountGiven || 0)}</td>
-        <td class="money">${money(r.pending || 0)}</td>
+        <td class="money">${money(r.totalPaid || r.amountGiven || 0)}</td>
+        <td class="money">${money(r.totalToGive || r.pending || 0)}</td>
         <td>${r.note || '-'}</td>
+        <td>${canEdit ? `<button class="small warn sld-edit" data-emp-id="${r.employeeId}">Edit</button>` : '-'}</td>
       </tr>`
     )
     .join('');
+  if (canEdit) {
+    document.querySelectorAll('.sld-edit').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const empId = btn.getAttribute('data-emp-id');
+        if (!salaryLedgerEmployeeSelect) return;
+        salaryLedgerEmployeeSelect.value = empId;
+        prefillSalaryLedgerForm();
+        salaryLedgerForm?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    });
+  }
   prefillSalaryLedgerForm();
 }
 
@@ -493,12 +510,12 @@ function prefillSalaryLedgerForm() {
     salaryLedgerEmployeeSelect.value = employeeId;
   }
   const row = salaryLedgersCache.find((r) => r.employeeId === employeeId);
-  const totalEl = salaryLedgerForm.querySelector('input[name="totalSalary"]');
-  const givenEl = salaryLedgerForm.querySelector('input[name="amountGiven"]');
+  const totalPaidEl = salaryLedgerForm.querySelector('input[name="totalPaid"]');
+  const totalToGiveEl = salaryLedgerForm.querySelector('input[name="totalToGive"]');
   const noteEl = salaryLedgerForm.querySelector('input[name="note"]');
-  if (!totalEl || !givenEl || !noteEl) return;
-  totalEl.value = row ? Number(row.totalSalary || 0) : '';
-  givenEl.value = row ? Number(row.amountGiven || 0) : '';
+  if (!totalPaidEl || !totalToGiveEl || !noteEl) return;
+  totalPaidEl.value = row ? Number(row.totalPaid ?? row.amountGiven ?? 0) : '';
+  totalToGiveEl.value = row ? Number(row.totalToGive ?? row.pending ?? 0) : '';
   noteEl.value = row ? String(row.note || '') : '';
 }
 
@@ -763,23 +780,31 @@ function renderInvestmentSummary() {
   const maaInvestment = investmentsCache
     .filter((r) => r.party === 'maa_vaishno')
     .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  const narayanExpense = expensesCache
+    .filter((r) => r.party === 'narayan')
+    .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  const maaExpense = expensesCache
+    .filter((r) => r.party === 'maa_vaishno')
+    .reduce((sum, r) => sum + Number(r.amount || 0), 0);
   const narayanTruckSales = trucksCache
     .filter((r) => r.party === 'narayan')
     .reduce((sum, r) => sum + Number(r.totalAmount || 0), 0);
   const maaTruckSales = trucksCache
     .filter((r) => r.party === 'maa_vaishno')
     .reduce((sum, r) => sum + Number(r.totalAmount || 0), 0);
-  const narayanNet = narayanInvestment - narayanTruckSales;
-  const maaNet = maaInvestment - maaTruckSales;
+  const narayanNet = narayanInvestment - narayanTruckSales - narayanExpense;
+  const maaNet = maaInvestment - maaTruckSales - maaExpense;
 
   const set = (id, value) => {
     const el = document.getElementById(id);
     if (el) el.textContent = money(value);
   };
   set('invNarayanInvestment', narayanInvestment);
+  set('invNarayanExpense', narayanExpense);
   set('invNarayanTruckSales', narayanTruckSales);
   set('invNarayanNet', narayanNet);
   set('invMaaInvestment', maaInvestment);
+  set('invMaaExpense', maaExpense);
   set('invMaaTruckSales', maaTruckSales);
   set('invMaaNet', maaNet);
 }
@@ -899,6 +924,97 @@ function renderLandRows(rows) {
   }
 }
 
+function renderVehicleRows(rows) {
+  if (!vehicleTbody) return;
+  const canEdit = hasPermission('vehicles:update');
+  const canDelete = hasPermission('vehicles:delete');
+  const totalMonthly = rows.reduce((sum, r) => sum + Number(r.monthlyPrice || 0), 0);
+  const totalPaid = rows.reduce((sum, r) => sum + Number(r.amountPaid || 0), 0);
+  const totalPending = rows.reduce((sum, r) => sum + Math.max(0, Number(r.monthlyPrice || 0) - Number(r.amountPaid || 0)), 0);
+  const set = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = money(value);
+  };
+  set('vehicleMonthlyTotal', totalMonthly);
+  set('vehiclePaidTotal', totalPaid);
+  set('vehiclePendingTotal', totalPending);
+
+  vehicleTbody.innerHTML = rows
+    .map(
+      (r) => `<tr>
+          <td>${r.vehicleName}</td>
+          <td>${r.vehicleNumber}</td>
+          <td class="money">${money(r.monthlyPrice || 0)}</td>
+          <td>${r.serviceDueDate || '-'}</td>
+          <td>${r.lastServiceDate || '-'}</td>
+          <td>${r.paymentStatus || '-'}</td>
+          <td class="money">${money(r.amountPaid || 0)}</td>
+          <td>${r.note || '-'}</td>
+          <td>
+            <div class="actions">
+              ${canEdit ? `<button class="small warn veh-edit" data-id="${r.id}">Edit</button>` : ''}
+              ${canDelete ? `<button class="small danger veh-del" data-id="${r.id}">Delete</button>` : ''}
+              ${!canEdit && !canDelete ? '-' : ''}
+            </div>
+          </td>
+        </tr>`
+    )
+    .join('');
+
+  if (canEdit) {
+    document.querySelectorAll('.veh-edit').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        const current = vehiclesCache.find((v) => v.id === id);
+        if (!current) return;
+        const vehicleName = prompt('Vehicle Name', current.vehicleName || '');
+        if (!vehicleName) return;
+        const vehicleNumber = prompt('Vehicle Number', current.vehicleNumber || '');
+        if (!vehicleNumber) return;
+        const monthlyPrice = prompt('Monthly Price', String(current.monthlyPrice || 0));
+        if (!monthlyPrice) return;
+        const serviceDueDate = prompt('Service Due Date (YYYY-MM-DD)', current.serviceDueDate || '') || '';
+        const lastServiceDate = prompt('Last Service Date (YYYY-MM-DD)', current.lastServiceDate || '') || '';
+        const paymentStatus = prompt('Payment Status (pending/partial/paid)', current.paymentStatus || 'pending') || 'pending';
+        const amountPaid = prompt('Amount Paid', String(current.amountPaid || 0)) || '0';
+        const note = prompt('Note', current.note || '') || '';
+        try {
+          await api(`/api/vehicles/${id}`, 'PUT', {
+            vehicleName,
+            vehicleNumber,
+            monthlyPrice,
+            serviceDueDate,
+            lastServiceDate,
+            paymentStatus,
+            amountPaid,
+            note
+          });
+          await refresh();
+          showToast('Vehicle updated');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    });
+  }
+
+  if (canDelete) {
+    document.querySelectorAll('.veh-del').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        if (!confirm('Delete this vehicle record?')) return;
+        try {
+          await api(`/api/vehicles/${id}`, 'DELETE');
+          await refresh();
+          showToast('Vehicle deleted');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    });
+  }
+}
+
 function filterEmployees(rows) {
   const q = (employeeSearchInput.value || '').trim().toLowerCase();
   if (!q) return rows;
@@ -944,6 +1060,7 @@ async function refresh() {
     hasPermission('investments:view') ? api('/api/investments') : Promise.resolve([]),
     hasPermission('chini:view') ? api('/api/chini-expenses') : Promise.resolve([]),
     hasPermission('land:view') ? api('/api/lands') : Promise.resolve([]),
+    hasPermission('vehicles:view') ? api('/api/vehicles') : Promise.resolve([]),
     hasPermission('attendance:report')
       ? api(`/api/attendance-report?month=${attendanceMonthInput.value || month}`)
       : Promise.resolve({ rows: [] })
@@ -959,6 +1076,7 @@ async function refresh() {
     investments,
     chiniExpenses,
     landRecords,
+    vehicles,
     attendanceReport
   ] =
     await Promise.all(requests);
@@ -978,6 +1096,7 @@ async function refresh() {
   investmentsCache = investments || [];
   chiniExpensesCache = chiniExpenses || [];
   landRecordsCache = landRecords || [];
+  vehiclesCache = vehicles || [];
   salaryRowsCache = (salary && salary.rows) || [];
   salaryLedgersCache = salaryLedgers || [];
   renderEmployeeOptions(employeesCache);
@@ -991,6 +1110,7 @@ async function refresh() {
   renderInvestmentSummary();
   renderChiniRows(chiniExpensesCache);
   renderLandRows(landRecordsCache);
+  renderVehicleRows(vehiclesCache);
   renderAttendanceReportRows((attendanceReport && attendanceReport.rows) || []);
 }
 
@@ -1053,6 +1173,7 @@ logoutBtn.addEventListener('click', async () => {
   investmentsCache = [];
   chiniExpensesCache = [];
   landRecordsCache = [];
+  vehiclesCache = [];
   salaryLedgersCache = [];
   if (autoRefreshTimer) {
     clearInterval(autoRefreshTimer);
@@ -1139,6 +1260,29 @@ landForm.addEventListener('submit', async (e) => {
   }
 });
 
+vehicleForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(vehicleForm);
+  try {
+    await api('/api/vehicles', 'POST', {
+      vehicleName: fd.get('vehicleName'),
+      vehicleNumber: fd.get('vehicleNumber'),
+      monthlyPrice: fd.get('monthlyPrice'),
+      serviceDueDate: fd.get('serviceDueDate') || undefined,
+      lastServiceDate: fd.get('lastServiceDate') || undefined,
+      paymentStatus: fd.get('paymentStatus') || 'pending',
+      amountPaid: fd.get('amountPaid') || 0,
+      note: fd.get('note') || undefined
+    });
+    vehicleForm.reset();
+    setDefaultDates();
+    await refresh();
+    showToast('Vehicle track added');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
 changePasswordForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(changePasswordForm);
@@ -1217,8 +1361,8 @@ salaryLedgerForm?.addEventListener('submit', async (e) => {
   const fd = new FormData(salaryLedgerForm);
   try {
     await api(`/api/salary-ledgers/${fd.get('employeeId')}`, 'PUT', {
-      totalSalary: fd.get('totalSalary'),
-      amountGiven: fd.get('amountGiven'),
+      totalPaid: fd.get('totalPaid'),
+      totalToGive: fd.get('totalToGive'),
       note: fd.get('note') || ''
     });
     await refresh();
