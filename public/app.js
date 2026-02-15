@@ -11,6 +11,20 @@ const chiniTbody = document.querySelector('#chiniTable tbody');
 const landTbody = document.querySelector('#landTable tbody');
 const vehicleTbody = document.querySelector('#vehicleTable tbody');
 const attendanceReportTbody = document.querySelector('#attendanceReportTable tbody');
+const supplierGrid = document.getElementById('supplierGrid');
+const supplierTxTbody = document.querySelector('#supplierTxTable tbody');
+const supplierListPanel = document.getElementById('supplierListPanel');
+const supplierDetailPanel = document.getElementById('supplierDetailPanel');
+const supplierDetailName = document.getElementById('supplierDetailName');
+const backToSuppliersBtn = document.getElementById('backToSuppliersBtn');
+const supTotalMaterialEl = document.getElementById('supTotalMaterial');
+const supTotalPaidEl = document.getElementById('supTotalPaid');
+const supPendingBalanceEl = document.getElementById('supPendingBalance');
+const txSupplierIdInput = document.getElementById('txSupplierId');
+const txTypeSelect = document.getElementById('txType');
+const txTruckFields = document.getElementById('txTruckFields');
+const supplierTransactionForm = document.getElementById('supplierTransactionForm');
+const addSupplierBtn = document.getElementById('addSupplierBtn');
 
 const attendanceEmployeeEl = document.getElementById('attendanceEmployee');
 const advanceEmployeeEl = document.getElementById('advanceEmployee');
@@ -65,6 +79,8 @@ let investmentsCache = [];
 let chiniExpensesCache = [];
 let landRecordsCache = [];
 let vehiclesCache = [];
+let suppliersCache = [];
+let activeSupplierId = null;
 let salaryRowsCache = [];
 let salaryLedgersCache = [];
 let autoRefreshTimer = null;
@@ -238,6 +254,10 @@ function applyRoleUI() {
   setFormEnabled('chiniPanel', hasPermission('chini:create'));
   setFormEnabled('landPanel', hasPermission('land:create'));
   setFormEnabled('vehiclePanel', hasPermission('vehicles:create'));
+
+  // Suppliers - assume manager/admin can create/view
+  // If we had specific permissions: hasPermission('suppliers:create')
+  if (addSupplierBtn) addSupplierBtn.style.display = hasPermission('trucks:create') ? 'block' : 'none';
 
   setPanelVisible('salaryPanel', hasPermission('salary:view'));
   setPanelVisible('salaryLedgerPanel', hasPermission('salaryledger:view'));
@@ -1201,6 +1221,8 @@ async function refresh() {
     hasPermission('chini:view') ? api('/api/chini-expenses') : Promise.resolve([]),
     hasPermission('land:view') ? api('/api/lands') : Promise.resolve([]),
     hasPermission('vehicles:view') ? api('/api/vehicles') : Promise.resolve([]),
+    // Suppliers - assume permission check or open
+    api('/api/suppliers').catch(() => []),
     hasPermission('attendance:report')
       ? api(`/api/attendance-report?month=${attendanceMonthInput.value || month}`)
       : Promise.resolve({ rows: [] })
@@ -1217,6 +1239,7 @@ async function refresh() {
     chiniExpenses,
     landRecords,
     vehicles,
+    suppliers,
     attendanceReport
   ] =
     await Promise.all(requests);
@@ -1237,6 +1260,33 @@ async function refresh() {
   chiniExpensesCache = chiniExpenses || [];
   landRecordsCache = landRecords || [];
   vehiclesCache = vehicles || [];
+  suppliersCache = suppliers || [];
+  salaryRowsCache = (salary && salary.rows) || [];
+  salaryLedgersCache = salaryLedgers || [];
+  renderEmployeeOptions(employeesCache);
+  renderEmployeeRows(filterEmployees(employeesCache));
+  renderSalaryRows(salaryRowsCache);
+  renderSalarySummaries(salaryRowsCache);
+  renderSalaryLedgers(salaryLedgersCache);
+  renderTruckRows(filterTrucks(trucksCache).sort((a, b) => (a.date < b.date ? 1 : -1)));
+  renderExpenseRows(expensesCache);
+  renderInvestmentRows(investmentsCache);
+  renderInvestmentSummary();
+  renderChiniRows(chiniExpensesCache);
+  renderLandRows(landRecordsCache);
+  renderVehicleRows(vehiclesCache);
+  renderSuppliers(suppliersCache);
+
+  // Update detail view if active
+  if (activeSupplierId && supplierDetailPanel && !supplierDetailPanel.classList.contains('hidden')) {
+    const sup = suppliersCache.find(s => s.id === activeSupplierId);
+    if (sup) {
+      // Re-fetch transactions to be sure
+      api(`/api/suppliers/${activeSupplierId}/transactions`)
+        .then(txs => renderSupplierTransactions(txs, sup))
+        .catch(console.error);
+    }
+  }
   salaryRowsCache = (salary && salary.rows) || [];
   salaryLedgersCache = salaryLedgers || [];
   renderEmployeeOptions(employeesCache);
