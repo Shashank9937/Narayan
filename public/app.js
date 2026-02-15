@@ -1287,17 +1287,7 @@ async function refresh() {
         .catch(console.error);
     }
   }
-  salaryRowsCache = (salary && salary.rows) || [];
-  salaryLedgersCache = salaryLedgers || [];
-  renderEmployeeOptions(employeesCache);
-  renderEmployeeRows(filterEmployees(employeesCache));
-  renderSalaryRows(salaryRowsCache);
-  renderSalarySummaries(salaryRowsCache);
-  renderSalaryLedgers(salaryLedgersCache);
-  renderTruckRows(filterTrucks(trucksCache).sort((a, b) => (a.date < b.date ? 1 : -1)));
-  renderExpenseRows(expensesCache);
-  renderInvestmentRows(investmentsCache);
-  renderInvestmentSummary();
+
   renderChiniRows(chiniExpensesCache);
   renderLandRows(landRecordsCache);
   renderVehicleRows(vehiclesCache);
