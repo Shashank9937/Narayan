@@ -1464,6 +1464,21 @@ vehicleForm?.addEventListener('submit', async (e) => {
   }
 });
 
+if (addSupplierBtn) {
+  addSupplierBtn.addEventListener('click', async () => {
+    const name = prompt('Enter Supplier Name:');
+    if (name && name.trim()) {
+      try {
+        await api('/api/suppliers', 'POST', { name: name.trim() });
+        showToast('Supplier added successfully');
+        await refresh();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+  });
+}
+
 changePasswordForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(changePasswordForm);
