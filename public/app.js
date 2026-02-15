@@ -9,7 +9,6 @@ const investmentTbody = document.querySelector('#investmentTable tbody');
 const chiniTbody = document.querySelector('#chiniTable tbody');
 const landTbody = document.querySelector('#landTable tbody');
 const vehicleTbody = document.querySelector('#vehicleTable tbody');
-const employeeTbody = document.querySelector('#employeeTable tbody');
 const attendanceReportTbody = document.querySelector('#attendanceReportTable tbody');
 
 const attendanceEmployeeEl = document.getElementById('attendanceEmployee');
@@ -114,8 +113,71 @@ function ensureAutoRefresh() {
   if (autoRefreshTimer) return;
   autoRefreshTimer = setInterval(() => {
     if (!token()) return;
-    refresh().catch(() => {});
+    refresh().catch(() => { });
   }, 30000);
+}
+
+// Sorting logic
+let currentSort = {
+  tableId: null,
+  colIndex: null,
+  asc: true
+};
+
+function sortTable(tableId, colIndex) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const tbody = table.querySelector('tbody');
+  const ths = table.querySelectorAll('th');
+  const rows = Array.from(tbody.rows);
+
+  // Toggle sort direction
+  if (currentSort.tableId === tableId && currentSort.colIndex === colIndex) {
+    currentSort.asc = !currentSort.asc;
+  } else {
+    currentSort.tableId = tableId;
+    currentSort.colIndex = colIndex;
+    currentSort.asc = true;
+  }
+
+  // Update header UI
+  ths.forEach((th, idx) => {
+    th.classList.remove('asc', 'desc');
+    if (idx === colIndex) {
+      th.classList.add(currentSort.asc ? 'asc' : 'desc');
+    }
+  });
+
+  // Sort rows
+  rows.sort((a, b) => {
+    const aVal = a.cells[colIndex].textContent.trim();
+    const bVal = b.cells[colIndex].textContent.trim();
+
+    // Check if both are money/numbers
+    const aNum = parseFloat(aVal.replace(/[^0-9.-]+/g, ''));
+    const bNum = parseFloat(bVal.replace(/[^0-9.-]+/g, ''));
+
+    if (!isNaN(aNum) && !isNaN(bNum) && !aVal.includes('-') && !bVal.includes('-')) { // Simple heuristic for now
+      return currentSort.asc ? aNum - bNum : bNum - aNum;
+    }
+
+    return currentSort.asc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+  });
+
+  rows.forEach(row => tbody.appendChild(row));
+}
+
+function initSorting() {
+  document.querySelectorAll('table').forEach(table => {
+    if (!table.id) return;
+    table.querySelectorAll('th').forEach((th, index) => {
+      // Skip actions column usually last
+      if (th.textContent.toLowerCase().includes('action')) return;
+
+      th.classList.add('sortable');
+      th.addEventListener('click', () => sortTable(table.id, index));
+    });
+  });
 }
 
 function setDefaultDates() {
@@ -356,10 +418,9 @@ function renderSalaryRows(rows) {
           <td class="money">${money(r.totalSalaryAllTime ?? 0)}</td>
           <td class="money">${money(r.totalAdvancesAllTime ?? 0)}</td>
           <td class="money">${money(r.totalRemainingAllTime ?? 0)}</td>
-          <td>${
-            canSeeSlip
-              ? `<button class="small slip-btn" data-emp-id="${r.employeeId}">PDF Slip</button>`
-              : '-'
+          <td>${canSeeSlip
+            ? `<button class="small slip-btn" data-emp-id="${r.employeeId}">PDF Slip</button>`
+            : '-'
           }</td>
         </tr>`;
       }
@@ -1145,6 +1206,7 @@ async function bootstrapSession() {
     setDefaultDates();
     await refresh();
     ensureAutoRefresh();
+    initSorting();
   } catch (err) {
     showToast(err.message, 'error');
     setVisibility(false);

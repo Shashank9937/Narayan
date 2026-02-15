@@ -71,6 +71,10 @@ npm start
 
 The app auto-creates required tables on startup.
 
+Health check endpoint:
+
+- `GET /healthz`
+
 ## Publish (Render - fastest)
 
 1. Push this repo to GitHub.
@@ -91,6 +95,8 @@ docker run -p 3000:3000 -e STORAGE_MODE=json company-ops-dashboard
 ```
 
 ## Important API Endpoints
+
+- `GET /healthz`
 
 - `POST /api/login`
 - `GET /api/me`
@@ -122,3 +128,34 @@ docker run -p 3000:3000 -e STORAGE_MODE=json company-ops-dashboard
 - `admin`: full access
 - `accountant`: employee create/update/delete, salary/advance, reports/exports
 - `manager`: attendance + trucks + attendance report
+
+## Production Hardening Checklist
+
+1. Use paid Render plans for both web service and database.
+2. Keep `STORAGE_MODE=postgres` in production.
+3. Set strong passwords and rotate them regularly.
+4. Restrict who can access admin credentials.
+5. Enable Render alerts (deploy failure, service down).
+6. Test `/healthz` after every deploy.
+7. Keep dependencies updated monthly or quarterly.
+8. Document an owner for operations and incident response.
+
+## Backup and Recovery (PostgreSQL)
+
+Daily backup with `pg_dump`:
+
+```bash
+pg_dump "$DATABASE_URL" > backup-$(date +%F).sql
+```
+
+Restore from backup:
+
+```bash
+psql "$DATABASE_URL" < backup-2026-02-12.sql
+```
+
+Recommended:
+
+1. Keep 7 daily backups + 4 weekly backups.
+2. Store backups outside the app server (cloud storage).
+3. Run a restore test at least once per month.
