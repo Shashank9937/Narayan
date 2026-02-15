@@ -1,4 +1,5 @@
 const cardsEl = document.getElementById('cards');
+const employeeGrid = document.getElementById('employeeGrid');
 const salaryTbody = document.querySelector('#salaryTable tbody');
 const salaryLedgerTbody = document.querySelector('#salaryLedgerTable tbody');
 const truckNarayanTbody = document.querySelector('#truckTableNarayan tbody');
@@ -320,26 +321,52 @@ function renderEmployeeOptions(employees) {
   }
 }
 
+function getInitials(name) {
+  return name
+    .split(' ')
+    .map((n) => n[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+}
+
 function renderEmployeeRows(rows) {
   const canEdit = hasPermission('employees:update');
   const canDelete = hasPermission('employees:delete');
 
-  employeeTbody.innerHTML = rows
-    .map(
-      (e) =>
-        `<tr>
-          <td>${e.name}</td>
-          <td>${e.role}</td>
-          <td class="money">${money(e.monthlySalary)}</td>
-          <td>
-            <div class="actions">
-              ${canEdit ? `<button class="small warn emp-edit" data-id="${e.id}">Edit</button>` : ''}
-              ${canDelete ? `<button class="small danger emp-del" data-id="${e.id}">Delete</button>` : ''}
-              ${!canEdit && !canDelete ? '-' : ''}
+  if (!employeeGrid) return;
+
+  employeeGrid.innerHTML = rows
+    .map((e) => {
+      const initials = getInitials(e.name);
+      return `
+        <div class="employee-card">
+          <div class="employee-header">
+            <div class="avatar">${initials}</div>
+            <div class="employee-info">
+              <h3>${e.name}</h3>
+              <span class="role-badge">${e.role}</span>
             </div>
-          </td>
-        </tr>`
-    )
+          </div>
+          
+          <div class="employee-stats">
+            <div class="stat-item">
+              <span class="stat-label">Monthly Salary</span>
+              <span class="stat-value money">${money(e.monthlySalary)}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Joined</span>
+              <span class="stat-value">${e.joiningDate || '-'}</span>
+            </div>
+          </div>
+
+          <div class="employee-actions">
+             ${canEdit ? `<button class="small emp-edit" data-id="${e.id}" style="background:var(--bg); color:var(--text); border:1px solid var(--border);">Edit</button>` : ''}
+             ${canDelete ? `<button class="small danger emp-del" data-id="${e.id}">Delete</button>` : ''}
+          </div>
+        </div>
+      `;
+    })
     .join('');
 
   if (canEdit) {
@@ -402,26 +429,53 @@ function renderSalaryRows(rows) {
         const advVal = r.advances ?? 0;
         const salary = r.monthlySalary ?? 0;
         const remaining = Math.max(0, salary - (advVal || 0));
+        const percentPaid = salary > 0 ? Math.min(100, (advVal / salary) * 100) : 0;
+
+        // Status logic
+        let statusClass = 'pending';
+        let statusText = 'Pending';
+        let progressClass = '';
+
+        if (remaining === 0) {
+          statusClass = 'paid';
+          statusText = 'Fully Paid';
+        } else if (percentPaid > 80) {
+          statusClass = 'pending'; // high pending
+          progressClass = 'warning';
+        } else if (percentPaid === 0) {
+          statusClass = 'unpaid';
+          statusText = 'Unpaid';
+          progressClass = 'danger';
+        }
+
         const advancesCell = canEditAdvances
           ? `<input type="number" min="0" step="0.01" class="advances-input" value="${advVal}" 
                data-emp-id="${r.employeeId}" data-salary="${salary}" data-original="${advVal}"
                placeholder="0" />`
           : `<span class="money">${money(advVal)}</span>`;
+
         return `<tr data-emp-id="${r.employeeId}">
-          <td>${r.name}</td>
-          <td>${r.role}</td>
-          <td>${r.joiningDate || '-'}</td>
+          <td>
+            <div style="font-weight:600;">${r.name}</div>
+            <div style="font-size:0.8rem; color:var(--text-light);">${r.role}</div>
+          </td>
+          <td>
+             <span class="status-badge ${statusClass}">${statusText}</span>
+          </td>
           <td class="money">${money(salary)}</td>
-          <td class="advances-cell">${advancesCell}</td>
+          <td class="advances-cell">
+            ${advancesCell}
+            <div class="salary-progress-wrap" title="${percentPaid.toFixed(1)}% Paid">
+               <div class="salary-progress-bar ${progressClass}" style="width: ${percentPaid}%"></div>
+            </div>
+          </td>
           <td class="money remaining-cell" data-salary="${salary}">${money(remaining)}</td>
           <td>${r.monthsWorked ?? '-'}</td>
-          <td class="money">${money(r.totalSalaryAllTime ?? 0)}</td>
-          <td class="money">${money(r.totalAdvancesAllTime ?? 0)}</td>
-          <td class="money">${money(r.totalRemainingAllTime ?? 0)}</td>
-          <td>${canSeeSlip
-            ? `<button class="small slip-btn" data-emp-id="${r.employeeId}">PDF Slip</button>`
-            : '-'
-          }</td>
+          <td class="money" style="opacity:0.8;">${money(r.totalSalaryAllTime ?? 0)}</td>
+          <td class="money" style="opacity:0.8;">${money(r.totalAdvancesAllTime ?? 0)}</td>
+          <td>
+             ${canSeeSlip ? `<button class="small slip-btn" data-emp-id="${r.employeeId}" title="Download Payslip">📄 Slip</button>` : '-'}
+          </td>
         </tr>`;
       }
     )
@@ -435,7 +489,14 @@ function renderSalaryRows(rows) {
         const remaining = Math.max(0, salary - advances);
         const row = input.closest('tr');
         const remainingCell = row?.querySelector('.remaining-cell');
+
+        // Update remaining text
         if (remainingCell) remainingCell.textContent = money(remaining);
+
+        // Update progress bar
+        const percent = salary > 0 ? Math.min(100, (advances / salary) * 100) : 0;
+        const progBar = row?.querySelector('.salary-progress-bar');
+        if (progBar) progBar.style.width = `${percent}%`;
       });
       input.addEventListener('blur', async () => {
         const empId = input.dataset.empId;
