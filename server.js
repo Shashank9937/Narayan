@@ -159,6 +159,8 @@ function ensureDbShape(db) {
   if (!Array.isArray(db.vehicles)) db.vehicles = [];
   if (!Array.isArray(db.users) || db.users.length === 0) db.users = defaultUsers();
   if (!Array.isArray(db.sessions)) db.sessions = [];
+  if (!Array.isArray(db.suppliers)) db.suppliers = [];
+  if (!Array.isArray(db.supplierTransactions)) db.supplierTransactions = [];
 
   let changed = false;
   db.users = db.users.map((u) => {
@@ -803,30 +805,122 @@ function jsonStore() {
       writeJsonDb(db);
       return true;
     },
-    async dashboard(month, today) {
+    // Supplier Management
+    async listSuppliers() {
       const db = readJsonDb();
-      const totalSalary = db.employees.reduce((sum, e) => sum + Number(e.monthlySalary), 0);
-      const totalAdvances = db.salaryAdvances
-        .filter((a) => monthOf(a.date) === month)
-        .reduce((sum, a) => sum + Number(a.amount), 0);
-      const attendanceToday = db.attendance.filter((a) => a.date === today);
-      const presentToday = attendanceToday.filter((a) => a.status === 'present').length;
-      const absentToday = attendanceToday.filter((a) => a.status === 'absent').length;
-      const trucksThisMonth = db.trucks.filter((t) => monthOf(t.date) === month);
-
-      return {
-        month,
-        today,
-        totalEmployees: db.employees.length,
-        totalSalary,
-        totalAdvances,
-        totalRemaining: Math.max(0, totalSalary - totalAdvances),
-        presentToday,
-        absentToday,
-        truckCountThisMonth: trucksThisMonth.length,
-        truckQuantityThisMonth: trucksThisMonth.reduce((sum, t) => sum + Number(t.quantity), 0)
+      return db.suppliers.map(s => {
+        const txs = db.supplierTransactions.filter(t => t.supplierId === s.id);
+        const totalTrucks = txs.filter(t => t.type === 'truck').length;
+        const totalMaterialAmount = txs.filter(t => t.type === 'truck').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+        const totalPaid = txs.filter(t => t.type === 'payment').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+        const balance = totalMaterialAmount - totalPaid;
+        return {
+          ...s,
+          totalTrucks,
+          totalMaterialAmount,
+          totalPaid,
+          balance
+        };
+      }).sort((a, b) => a.name.localeCompare(b.name));
+    },
+    async createSupplier(data) {
+      const db = readJsonDb();
+      const row = {
+        id: uid('sup'),
+        name: String(data.name).trim(),
+        contact: String(data.contact || '').trim(),
+        address: String(data.address || '').trim(),
+        createdAt: new Date().toISOString()
       };
+      db.suppliers.push(row);
+      writeJsonDb(db);
+      return row;
+    },
+    async updateSupplier(id, data) {
+      const db = readJsonDb();
+      const sup = db.suppliers.find(s => s.id === id);
+      if (!sup) return null;
+      sup.name = String(data.name).trim();
+      sup.contact = String(data.contact || '').trim();
+      sup.address = String(data.address || '').trim();
+      sup.updatedAt = new Date().toISOString();
+      writeJsonDb(db);
+      return sup;
+    },
+    async deleteSupplier(id) {
+      const db = readJsonDb();
+      const before = db.suppliers.length;
+      db.suppliers = db.suppliers.filter(s => s.id !== id);
+      if (before === db.suppliers.length) return false;
+      // Cascade delete transactions
+      db.supplierTransactions = db.supplierTransactions.filter(t => t.supplierId !== id);
+      writeJsonDb(db);
+      return true;
+    },
+    async listSupplierTransactions(supplierId) {
+      const db = readJsonDb();
+      return db.supplierTransactions
+        .filter(t => t.supplierId === supplierId)
+        .sort((a, b) => a.date < b.date ? 1 : -1);
+    },
+    async createSupplierTransaction(data) {
+      const db = readJsonDb();
+      // data.type must be 'truck' or 'payment'
+      const row = {
+        id: uid('stx'),
+        supplierId: data.supplierId,
+        date: data.date,
+        type: data.type, // 'truck' | 'payment'
+        amount: Number(data.amount),
+        // Optional fields for 'truck' type
+        truckNumber: data.truckNumber ? String(data.truckNumber).trim() : undefined,
+        material: data.material ? String(data.material).trim() : undefined,
+        quantity: data.quantity ? Number(data.quantity) : undefined,
+        rate: data.rate ? Number(data.rate) : undefined,
+        note: data.note ? String(data.note).trim() : '',
+        createdAt: new Date().toISOString()
+      };
+      db.supplierTransactions.push(row);
+      writeJsonDb(db);
+      return row;
+    },
+    async deleteSupplierTransaction(id) {
+      const db = readJsonDb();
+      const before = db.supplierTransactions.length;
+      db.supplierTransactions = db.supplierTransactions.filter(t => t.id !== id);
+      if (before === db.supplierTransactions.length) return false;
+      writeJsonDb(db);
+      return true;
     }
+      db.landRecords = db.landRecords.filter((l) => l.id !== id);
+    if(before === db.landRecords.length) return false;
+  writeJsonDb(db);
+  return true;
+},
+    async dashboard(month, today) {
+  const db = readJsonDb();
+  const totalSalary = db.employees.reduce((sum, e) => sum + Number(e.monthlySalary), 0);
+  const totalAdvances = db.salaryAdvances
+    .filter((a) => monthOf(a.date) === month)
+    .reduce((sum, a) => sum + Number(a.amount), 0);
+  const attendanceToday = db.attendance.filter((a) => a.date === today);
+  const presentToday = attendanceToday.filter((a) => a.status === 'present').length;
+  const absentToday = attendanceToday.filter((a) => a.status === 'absent').length;
+  const trucksThisMonth = db.trucks.filter((t) => monthOf(t.date) === month);
+
+  return {
+    month,
+    today,
+    totalEmployees: db.employees.length,
+    totalSalary,
+    totalAdvances,
+    totalRemaining: Math.max(0, totalSalary - totalAdvances),
+    presentToday,
+    absentToday,
+    truckCountThisMonth: trucksThisMonth.length,
+    truckQuantityThisMonth: trucksThisMonth.reduce((sum, t) => sum + Number(t.quantity), 0)
+  };
+}
   };
 }
 
