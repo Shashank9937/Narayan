@@ -2904,8 +2904,8 @@ app.get('/api/employees/:id/offer-letter', auth, async (req, res) => {
     doc.pipe(res);
 
     // Header
-    doc.fontSize(20).font('Helvetica-Bold').text('NARAYAN ENTERPRISES', { align: 'center' });
-    doc.fontSize(10).font('Helvetica').text('Employment Offer Letter', { align: 'center' });
+    doc.fontSize(20).text('NARAYAN ENTERPRISES', { align: 'center' });
+    doc.fontSize(10).text('Employment Offer Letter', { align: 'center' });
     doc.moveDown(2);
 
     // Date
@@ -2914,8 +2914,8 @@ app.get('/api/employees/:id/offer-letter', auth, async (req, res) => {
     doc.moveDown();
 
     // Employee Details
-    doc.fontSize(12).font('Helvetica-Bold').text(`To,`);
-    doc.font('Helvetica').text(employee.name);
+    doc.fontSize(12).text(`To,`);
+    doc.text(employee.name);
     doc.moveDown();
 
     // Salutation
@@ -2927,36 +2927,36 @@ app.get('/api/employees/:id/offer-letter', auth, async (req, res) => {
     doc.moveDown();
 
     // Terms & Conditions
-    doc.fontSize(12).font('Helvetica-Bold').text('1. Position and Duties');
-    doc.fontSize(10).font('Helvetica').text(`You will be employed as ${employee.role || 'Employee'}. Your duties will include all tasks assigned by management from time to time.`);
+    doc.fontSize(12).text('1. Position and Duties');
+    doc.fontSize(10).text(`You will be employed as ${employee.role || 'Employee'}. Your duties will include all tasks assigned by management from time to time.`);
     doc.moveDown();
 
-    doc.fontSize(12).font('Helvetica-Bold').text('2. Compensation');
-    doc.fontSize(10).font('Helvetica').text(`Your monthly salary will be ₹${employee.monthlySalary.toLocaleString('en-IN')} (Rupees ${numberToWords(employee.monthlySalary)} only), payable on or before the 5th of each month.`);
+    doc.fontSize(12).text('2. Compensation');
+    doc.fontSize(10).text(`Your monthly salary will be ₹${employee.monthlySalary.toLocaleString('en-IN')} (Rupees ${numberToWords(employee.monthlySalary)} only), payable on or before the 5th of each month.`);
     doc.moveDown();
 
-    doc.fontSize(12).font('Helvetica-Bold').text('3. Probation Period');
-    doc.fontSize(10).font('Helvetica').text('You will be on probation for a period of 3 (three) months from your date of joining. During this period, either party may terminate employment with 7 days notice.');
+    doc.fontSize(12).text('3. Probation Period');
+    doc.fontSize(10).text('You will be on probation for a period of 3 (three) months from your date of joining. During this period, either party may terminate employment with 7 days notice.');
     doc.moveDown();
 
-    doc.fontSize(12).font('Helvetica-Bold').text('4. Working Hours');
-    doc.fontSize(10).font('Helvetica').text('Your normal working hours will be as per company policy, typically 9:00 AM to 6:00 PM, Monday through Saturday, with appropriate breaks.');
+    doc.fontSize(12).text('4. Working Hours');
+    doc.fontSize(10).text('Your normal working hours will be as per company policy, typically 9:00 AM to 6:00 PM, Monday through Saturday, with appropriate breaks.');
     doc.moveDown();
 
-    doc.fontSize(12).font('Helvetica-Bold').text('5. Leave Policy');
-    doc.fontSize(10).font('Helvetica').text('You will be entitled to leave as per company policy. All leave must be approved by management in advance.');
+    doc.fontSize(12).text('5. Leave Policy');
+    doc.fontSize(10).text('You will be entitled to leave as per company policy. All leave must be approved by management in advance.');
     doc.moveDown();
 
-    doc.fontSize(12).font('Helvetica-Bold').text('6. Termination');
-    doc.fontSize(10).font('Helvetica').text('After successful completion of probation, either party may terminate employment by providing 30 days written notice or salary in lieu thereof.');
+    doc.fontSize(12).text('6. Termination');
+    doc.fontSize(10).text('After successful completion of probation, either party may terminate employment by providing 30 days written notice or salary in lieu thereof.');
     doc.moveDown();
 
-    doc.fontSize(12).font('Helvetica-Bold').text('7. Confidentiality');
-    doc.fontSize(10).font('Helvetica').text('You agree to maintain strict confidentiality of all company information, trade secrets, and business dealings both during and after your employment.');
+    doc.fontSize(12).text('7. Confidentiality');
+    doc.fontSize(10).text('You agree to maintain strict confidentiality of all company information, trade secrets, and business dealings both during and after your employment.');
     doc.moveDown();
 
-    doc.fontSize(12).font('Helvetica-Bold').text('8. Code of Conduct');
-    doc.fontSize(10).font('Helvetica').text('You agree to abide by all company policies, rules, and regulations as communicated from time to time.');
+    doc.fontSize(12).text('8. Code of Conduct');
+    doc.fontSize(10).text('You agree to abide by all company policies, rules, and regulations as communicated from time to time.');
     doc.moveDown(2);
 
     // Closing
