@@ -756,12 +756,14 @@ function jsonStore() {
         const txs = db.supplierTransactions.filter(t => t.supplierId === s.id);
         const totalTrucks = txs.filter(t => t.type === 'truck').length;
         const totalMaterialAmount = txs.filter(t => t.type === 'truck').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+        const totalMaterialQuantity = txs.filter(t => t.type === 'truck').reduce((sum, t) => sum + (Number(t.quantity) || 0), 0);
         const totalPaid = txs.filter(t => t.type === 'payment').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
         const balance = totalMaterialAmount - totalPaid;
         return {
           ...s,
           totalTrucks,
           totalMaterialAmount,
+          totalMaterialQuantity,
           totalPaid,
           balance
         };
