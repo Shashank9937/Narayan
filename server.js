@@ -2887,6 +2887,112 @@ app.get('/api/export/attendance.csv', auth, requirePermission('export:view'), as
   }
 });
 
+// Offer Letter Generation
+app.get('/api/employees/:id/offer-letter', auth, async (req, res) => {
+  try {
+    const employee = await store.getEmployee(req.params.id);
+    if (!employee) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    const PDFDocument = require('pdfkit');
+    const doc = new PDFDocument({ margin: 50 });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="offer-letter-${employee.name.replace(/\s+/g, '-')}.pdf"`);
+
+    doc.pipe(res);
+
+    // Header
+    doc.fontSize(20).font('Helvetica-Bold').text('NARAYAN ENTERPRISES', { align: 'center' });
+    doc.fontSize(10).font('Helvetica').text('Employment Offer Letter', { align: 'center' });
+    doc.moveDown(2);
+
+    // Date
+    const today = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+    doc.fontSize(10).text(`Date: ${today}`, { align: 'right' });
+    doc.moveDown();
+
+    // Employee Details
+    doc.fontSize(12).font('Helvetica-Bold').text(`To,`);
+    doc.font('Helvetica').text(employee.name);
+    doc.moveDown();
+
+    // Salutation
+    doc.text(`Dear ${employee.name},`);
+    doc.moveDown();
+
+    // Opening
+    doc.fontSize(11).text('We are pleased to offer you employment with Narayan Enterprises on the following terms and conditions:');
+    doc.moveDown();
+
+    // Terms & Conditions
+    doc.fontSize(12).font('Helvetica-Bold').text('1. Position and Duties');
+    doc.fontSize(10).font('Helvetica').text(`You will be employed as ${employee.role || 'Employee'}. Your duties will include all tasks assigned by management from time to time.`);
+    doc.moveDown();
+
+    doc.fontSize(12).font('Helvetica-Bold').text('2. Compensation');
+    doc.fontSize(10).font('Helvetica').text(`Your monthly salary will be ₹${employee.monthlySalary.toLocaleString('en-IN')} (Rupees ${numberToWords(employee.monthlySalary)} only), payable on or before the 5th of each month.`);
+    doc.moveDown();
+
+    doc.fontSize(12).font('Helvetica-Bold').text('3. Probation Period');
+    doc.fontSize(10).font('Helvetica').text('You will be on probation for a period of 3 (three) months from your date of joining. During this period, either party may terminate employment with 7 days notice.');
+    doc.moveDown();
+
+    doc.fontSize(12).font('Helvetica-Bold').text('4. Working Hours');
+    doc.fontSize(10).font('Helvetica').text('Your normal working hours will be as per company policy, typically 9:00 AM to 6:00 PM, Monday through Saturday, with appropriate breaks.');
+    doc.moveDown();
+
+    doc.fontSize(12).font('Helvetica-Bold').text('5. Leave Policy');
+    doc.fontSize(10).font('Helvetica').text('You will be entitled to leave as per company policy. All leave must be approved by management in advance.');
+    doc.moveDown();
+
+    doc.fontSize(12).font('Helvetica-Bold').text('6. Termination');
+    doc.fontSize(10).font('Helvetica').text('After successful completion of probation, either party may terminate employment by providing 30 days written notice or salary in lieu thereof.');
+    doc.moveDown();
+
+    doc.fontSize(12).font('Helvetica-Bold').text('7. Confidentiality');
+    doc.fontSize(10).font('Helvetica').text('You agree to maintain strict confidentiality of all company information, trade secrets, and business dealings both during and after your employment.');
+    doc.moveDown();
+
+    doc.fontSize(12).font('Helvetica-Bold').text('8. Code of Conduct');
+    doc.fontSize(10).font('Helvetica').text('You agree to abide by all company policies, rules, and regulations as communicated from time to time.');
+    doc.moveDown(2);
+
+    // Closing
+    doc.fontSize(11).text('Please sign and return a copy of this letter to indicate your acceptance of these terms.');
+    doc.moveDown(2);
+
+    doc.text('Sincerely,');
+    doc.moveDown(3);
+
+    // Signature Section
+    doc.fontSize(10).text('_______________________', { continued: true }).text('                    _______________________');
+    doc.text('Authorized Signatory', { continued: true }).text('                    Employee Signature');
+    doc.text('Narayan Enterprises', { continued: true }).text(`                    ${employee.name}`);
+
+    doc.end();
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to generate offer letter' });
+  }
+});
+
+// Helper function to convert number to words (simplified for Indian numbering)
+function numberToWords(num) {
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  const teens = ['Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+
+  if (num === 0) return 'Zero';
+  if (num < 10) return ones[num];
+  if (num < 20) return teens[num - 10];
+  if (num < 100) return tens[Math.floor(num / 10)] + (num % 10 ? ' ' + ones[num % 10] : '');
+  if (num < 1000) return ones[Math.floor(num / 100)] + ' Hundred' + (num % 100 ? ' and ' + numberToWords(num % 100) : '');
+  if (num < 100000) return numberToWords(Math.floor(num / 1000)) + ' Thousand' + (num % 1000 ? ' ' + numberToWords(num % 1000) : '');
+  return numberToWords(Math.floor(num / 100000)) + ' Lakh' + (num % 100000 ? ' ' + numberToWords(num % 100000) : '');
+}
+
 app.get('/api/dashboard', auth, requirePermission('dashboard:view'), async (req, res) => {
   const month = req.query.month || currentMonth();
   const today = req.query.today || new Date().toISOString().slice(0, 10);

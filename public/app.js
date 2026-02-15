@@ -384,6 +384,7 @@ function renderEmployeeRows(rows) {
           <div class="employee-actions">
              ${canEdit ? `<button class="small emp-edit" data-id="${e.id}" style="background:var(--bg); color:var(--text); border:1px solid var(--border);">Edit</button>` : ''}
              ${canDelete ? `<button class="small danger emp-del" data-id="${e.id}">Delete</button>` : ''}
+             <button class="small" onclick="downloadOfferLetter('${e.id}')" style="background:var(--accent); color:white;">Offer Letter</button>
           </div>
         </div>
       `;
@@ -1856,6 +1857,11 @@ sectionNav.addEventListener('click', (e) => {
   if (!btn) return;
   activateSection(btn.getAttribute('data-target'));
 });
+
+// Download Offer Letter PDF
+function downloadOfferLetter(employeeId) {
+  window.open(urlWithAuth(`/api/employees/${employeeId}/offer-letter`), '_blank');
+}
 
 function downloadWithAuth(url) {
   const t = token();
