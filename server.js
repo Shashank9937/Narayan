@@ -2890,7 +2890,7 @@ app.get('/api/export/attendance.csv', auth, requirePermission('export:view'), as
 // Offer Letter Generation
 app.get('/api/employees/:id/offer-letter', auth, async (req, res) => {
   try {
-    const employee = await store.getEmployee(req.params.id);
+    const employee = await store.getEmployeeById(req.params.id);
     if (!employee) {
       return res.status(404).json({ error: 'Employee not found' });
     }
