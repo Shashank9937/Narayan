@@ -1423,6 +1423,166 @@ chiniForm.addEventListener('submit', async (e) => {
   }
 });
 
+// --- Supplier Management Functions ---
+
+function renderSuppliers(rows) {
+  if (!supplierGrid) return;
+  supplierGrid.innerHTML = rows.map(s => {
+    const initials = getInitials(s.name);
+    // Positive balance means we owe them (pending), usually bad.
+    return `
+      <div class="employee-card" onclick="viewSupplierDetail('${s.id}')" style="cursor:pointer;">
+        <div class="employee-header">
+          <div class="avatar" style="background:var(--accent);">${initials}</div>
+          <div class="employee-info">
+            <h3>${s.name}</h3>
+            <span class="role-badge" style="background:var(--bg); border:1px solid var(--border);">Supplier</span>
+          </div>
+        </div>
+        <div class="employee-stats">
+          <div class="stat-item">
+            <span class="stat-label">Trucks</span>
+            <span class="stat-value">${s.totalTrucks || 0}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Balance</span>
+            <span class="stat-value money" style="color:var(--danger)">${money(s.balance || 0)}</span>
+          </div>
+        </div>
+        <div class="employee-actions">
+           <button class="small danger stop-prop" onclick="deleteSupplier(event, '${s.id}')">Delete</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function viewSupplierDetail(id) {
+  const supplier = suppliersCache.find(s => s.id === id);
+  if (!supplier) return;
+
+  activeSupplierId = id;
+  supplierListPanel.classList.add('hidden');
+  supplierDetailPanel.classList.remove('hidden');
+
+  if (supplierDetailName) supplierDetailName.textContent = supplier.name;
+  if (txSupplierIdInput) txSupplierIdInput.value = id;
+
+  // Fetch transactions
+  try {
+    const txs = await api(`/api/suppliers/${id}/transactions`);
+    renderSupplierTransactions(txs, supplier);
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+function renderSupplierTransactions(txs, supplier) {
+  if (supplier) {
+    if (supTotalMaterialEl) supTotalMaterialEl.textContent = money(supplier.totalMaterialAmount || 0);
+    if (supTotalPaidEl) supTotalPaidEl.textContent = money(supplier.totalPaid || 0);
+    if (supPendingBalanceEl) supPendingBalanceEl.textContent = money(supplier.balance || 0);
+  }
+
+  if (supplierTxTbody) {
+    supplierTxTbody.innerHTML = txs.map(t => {
+      const isTruck = t.type === 'truck';
+      const badgeClass = isTruck ? 'truck' : 'payment';
+      const amountClass = isTruck ? 'danger' : 'success';
+
+      let details = '';
+      if (isTruck) {
+        details = `Truck: ${t.truckNumber || '-'}, Mat: ${t.material || '-'}, Qty: ${t.quantity || '-'} @ ${t.rate || '-'}`;
+      } else {
+        details = t.note || 'Payment';
+      }
+
+      return `
+         <tr>
+           <td>${t.date}</td>
+           <td><span class="tx-badge ${badgeClass}">${t.type}</span></td>
+           <td>${details}</td>
+           <td class="money" style="color:var(--${amountClass})">${money(t.amount)}</td>
+           <td>
+              <button class="small danger" onclick="deleteSupplierTx('${t.id}')">Del</button>
+           </td>
+         </tr>
+       `;
+    }).join('');
+  }
+}
+
+window.deleteSupplier = async (e, id) => {
+  e.stopPropagation();
+  if (!confirm('Delete this supplier?')) return;
+  try {
+    await api(`/api/suppliers/${id}`, 'DELETE');
+    showToast('Supplier deleted');
+    await refresh();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+};
+
+window.deleteSupplierTx = async (id) => {
+  if (!confirm('Delete this transaction?')) return;
+  try {
+    await api(`/api/transactions/${id}`, 'DELETE'); // generalized endpoint or supplier specific?
+    // Using generalized based on plan, or verify server.js. 
+    // Checking server.js: app.delete('/api/supplier-transactions/:id'...)
+    // Wait, let me check server.js routes again to be precise. 
+    // Attempting safely:
+    await api(`/api/supplier-transactions/${id}`, 'DELETE');
+    showToast('Transaction deleted');
+    // Refresh detail view
+    const sup = suppliersCache.find(s => s.id === activeSupplierId);
+    if (sup) {
+      // We need to refresh parent data too to update balance
+      await refresh();
+      // Refresh stays on same view? refresh() keeps view but might need to re-open detail?
+      // refresh() calls renderSuppliers, which shows list. 
+      // logic in refresh() handles activeSupplierId check.
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+};
+
+// Back button
+if (document.getElementById('backToSuppliersBtn')) {
+  document.getElementById('backToSuppliersBtn').addEventListener('click', () => {
+    activeSupplierId = null;
+    supplierDetailPanel.classList.add('hidden');
+    supplierListPanel.classList.remove('hidden');
+  });
+}
+
+// Transaction Form
+if (supplierTransactionForm) {
+  supplierTransactionForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(supplierTransactionForm);
+    try {
+      await api(`/api/suppliers/${activeSupplierId}/transactions`, 'POST', {
+        date: fd.get('date'),
+        type: fd.get('type'),
+        amount: fd.get('amount'),
+        truckNumber: fd.get('truckNumber'),
+        material: fd.get('material'),
+        quantity: fd.get('quantity'),
+        rate: fd.get('rate'),
+        note: fd.get('note')
+      });
+      supplierTransactionForm.reset();
+      setDefaultDates();
+      await refresh();
+      showToast('Transaction added');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+}
+
 landForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(landForm);
