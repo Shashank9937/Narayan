@@ -494,6 +494,7 @@ function jsonStore() {
         pricePerQuintal: pricePerQuintal ?? undefined,
         totalAmount: totalAmount ?? undefined,
         party: party || undefined,
+        client: data.client ? String(data.client).trim() : '',
         origin: data.origin ? String(data.origin).trim() : '',
         destination: data.destination ? String(data.destination).trim() : '',
         notes: data.notes ? String(data.notes).trim() : '',
@@ -528,6 +529,7 @@ function jsonStore() {
       truck.pricePerQuintal = pricePerQuintal ?? undefined;
       truck.totalAmount = totalAmount ?? undefined;
       truck.party = party || undefined;
+      truck.client = data.client ? String(data.client).trim() : '';
       truck.origin = data.origin ? String(data.origin).trim() : '';
       truck.destination = data.destination ? String(data.destination).trim() : '';
       truck.notes = data.notes ? String(data.notes).trim() : '';

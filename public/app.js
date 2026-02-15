@@ -25,6 +25,8 @@ const txTypeSelect = document.getElementById('txType');
 const txTruckFields = document.getElementById('txTruckFields');
 const supplierTransactionForm = document.getElementById('supplierTransactionForm');
 const addSupplierBtn = document.getElementById('addSupplierBtn');
+const truckPelletTotalEl = document.getElementById('truckPelletTotal');
+const truckBriquetteTotalEl = document.getElementById('truckBriquetteTotal');
 
 const attendanceEmployeeEl = document.getElementById('attendanceEmployee');
 const advanceEmployeeEl = document.getElementById('advanceEmployee');
@@ -701,6 +703,25 @@ function partyLabel(party) {
 function renderTruckRows(rows) {
   const canEdit = hasPermission('trucks:update');
   const canDelete = hasPermission('trucks:delete');
+
+  // Calculate material-specific totals
+  let pelletTotal = 0;
+  let briquetteTotal = 0;
+
+  rows.forEach(row => {
+    const qty = Number(row.quantity) || 0;
+    const material = (row.rawMaterial || '').toLowerCase();
+    if (material === 'pellets') {
+      pelletTotal += qty;
+    } else if (material === 'briquettes') {
+      briquetteTotal += qty;
+    }
+  });
+
+  // Update material stats display
+  if (truckPelletTotalEl) truckPelletTotalEl.textContent = `${pelletTotal.toFixed(2)} Qntl`;
+  if (truckBriquetteTotalEl) truckBriquetteTotalEl.textContent = `${briquetteTotal.toFixed(2)} Qntl`;
+
   const narayanTotal = rows
     .filter((t) => t.party === 'narayan' && t.totalAmount != null)
     .reduce((sum, t) => sum + Number(t.totalAmount), 0);
@@ -1751,6 +1772,7 @@ truckForm.addEventListener('submit', async (e) => {
       truckNumber: fd.get('truckNumber'),
       driverName: fd.get('driverName'),
       rawMaterial: fd.get('rawMaterial'),
+      client: fd.get('client'),
       quantity: fd.get('quantity'),
       pricePerQuintal: fd.get('pricePerQuintal') || undefined,
       origin: fd.get('origin'),
