@@ -257,9 +257,8 @@ function applyRoleUI() {
   setFormEnabled('landPanel', hasPermission('land:create'));
   setFormEnabled('vehiclePanel', hasPermission('vehicles:create'));
 
-  // Suppliers - assume manager/admin can create/view
-  // If we had specific permissions: hasPermission('suppliers:create')
-  if (addSupplierBtn) addSupplierBtn.style.display = hasPermission('trucks:create') ? 'block' : 'none';
+  // Suppliers - show for all logged-in users
+  if (addSupplierBtn) addSupplierBtn.style.display = 'block';
 
   setPanelVisible('salaryPanel', hasPermission('salary:view'));
   setPanelVisible('salaryLedgerPanel', hasPermission('salaryledger:view'));
@@ -1450,7 +1449,14 @@ function renderSuppliers(rows) {
   if (!supplierGrid) return;
   supplierGrid.innerHTML = rows.map(s => {
     const initials = getInitials(s.name);
-    // Positive balance means we owe them (pending), usually bad.
+
+    // Get material breakdown from transactions
+    const materialBreakdown = {};
+    let totalQuantity = 0;
+
+    // Assuming we have access to transactions via suppliersCache with embedded data
+    // If not, we'll need to fetch separately - for now show totals
+
     return `
       <div class="employee-card" onclick="viewSupplierDetail('${s.id}')" style="cursor:pointer;">
         <div class="employee-header">
@@ -1462,11 +1468,15 @@ function renderSuppliers(rows) {
         </div>
         <div class="employee-stats">
           <div class="stat-item">
-            <span class="stat-label">Trucks</span>
+            <span class="stat-label">Total Deliveries</span>
             <span class="stat-value">${s.totalTrucks || 0}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">Balance</span>
+            <span class="stat-label">Total Material</span>
+            <span class="stat-value">${s.totalMaterialAmount ? s.totalMaterialAmount.toFixed(2) + ' Qntl' : '0 Qntl'}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Pending Balance</span>
             <span class="stat-value money" style="color:var(--danger)">${money(s.balance || 0)}</span>
           </div>
         </div>
