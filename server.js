@@ -503,65 +503,7 @@ function jsonStore() {
       writeJsonDb(db);
       return row;
     },
-    async updateTruck(id, data) {
-      const quantity = Number(data.quantity);
-      const pricePerQuintal =
-        data.pricePerQuintal != null && data.pricePerQuintal !== ''
-          ? Number(data.pricePerQuintal)
-          : null;
-      const totalAmount =
-        pricePerQuintal != null && !Number.isNaN(pricePerQuintal) ? pricePerQuintal * quantity : null;
-      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
-        ? String(data.party).toLowerCase()
-        : null;
 
-      const res = await pool.query(
-        `UPDATE trucks
-         SET date = $2,
-             truck_number = $3,
-             driver_name = $4,
-             raw_material = $5,
-             quantity = $6,
-             price_per_quintal = $7,
-             total_amount = $8,
-             party = $9,
-             origin = $10,
-             destination = $11,
-             notes = $12
-         WHERE id = $1
-         RETURNING *`,
-        [
-          id,
-          data.date,
-          String(data.truckNumber).trim(),
-          data.driverName ? String(data.driverName).trim() : '',
-          String(data.rawMaterial).trim(),
-          quantity,
-          pricePerQuintal ?? null,
-          totalAmount ?? null,
-          party ?? null,
-          data.origin ? String(data.origin).trim() : '',
-          data.destination ? String(data.destination).trim() : '',
-          data.notes ? String(data.notes).trim() : ''
-        ]
-      );
-      if (!res.rows[0]) return null;
-      const r = res.rows[0];
-      return {
-        id: r.id,
-        date: String(r.date).slice(0, 10),
-        truckNumber: r.truck_number,
-        driverName: r.driver_name || '',
-        rawMaterial: r.raw_material,
-        quantity: Number(r.quantity),
-        pricePerQuintal: r.price_per_quintal != null ? Number(r.price_per_quintal) : null,
-        totalAmount: r.total_amount != null ? Number(r.total_amount) : null,
-        party: r.party || null,
-        origin: r.origin || '',
-        destination: r.destination || '',
-        notes: r.notes || ''
-      };
-    },
     async updateTruck(id, data) {
       const db = readJsonDb();
       const truck = db.trucks.find((t) => t.id === id);
@@ -891,36 +833,31 @@ function jsonStore() {
       if (before === db.supplierTransactions.length) return false;
       writeJsonDb(db);
       return true;
-    }
-      db.landRecords = db.landRecords.filter((l) => l.id !== id);
-    if(before === db.landRecords.length) return false;
-  writeJsonDb(db);
-  return true;
-},
+    },
     async dashboard(month, today) {
-  const db = readJsonDb();
-  const totalSalary = db.employees.reduce((sum, e) => sum + Number(e.monthlySalary), 0);
-  const totalAdvances = db.salaryAdvances
-    .filter((a) => monthOf(a.date) === month)
-    .reduce((sum, a) => sum + Number(a.amount), 0);
-  const attendanceToday = db.attendance.filter((a) => a.date === today);
-  const presentToday = attendanceToday.filter((a) => a.status === 'present').length;
-  const absentToday = attendanceToday.filter((a) => a.status === 'absent').length;
-  const trucksThisMonth = db.trucks.filter((t) => monthOf(t.date) === month);
+      const db = readJsonDb();
+      const totalSalary = db.employees.reduce((sum, e) => sum + Number(e.monthlySalary), 0);
+      const totalAdvances = db.salaryAdvances
+        .filter((a) => monthOf(a.date) === month)
+        .reduce((sum, a) => sum + Number(a.amount), 0);
+      const attendanceToday = db.attendance.filter((a) => a.date === today);
+      const presentToday = attendanceToday.filter((a) => a.status === 'present').length;
+      const absentToday = attendanceToday.filter((a) => a.status === 'absent').length;
+      const trucksThisMonth = db.trucks.filter((t) => monthOf(t.date) === month);
 
-  return {
-    month,
-    today,
-    totalEmployees: db.employees.length,
-    totalSalary,
-    totalAdvances,
-    totalRemaining: Math.max(0, totalSalary - totalAdvances),
-    presentToday,
-    absentToday,
-    truckCountThisMonth: trucksThisMonth.length,
-    truckQuantityThisMonth: trucksThisMonth.reduce((sum, t) => sum + Number(t.quantity), 0)
-  };
-}
+      return {
+        month,
+        today,
+        totalEmployees: db.employees.length,
+        totalSalary,
+        totalAdvances,
+        totalRemaining: Math.max(0, totalSalary - totalAdvances),
+        presentToday,
+        absentToday,
+        truckCountThisMonth: trucksThisMonth.length,
+        truckQuantityThisMonth: trucksThisMonth.reduce((sum, t) => sum + Number(t.quantity), 0)
+      };
+    }
   };
 }
 
