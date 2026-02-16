@@ -3037,80 +3037,121 @@ app.get('/api/employees/:id/offer-letter', auth, async (req, res) => {
     }
 
     const PDFDocument = require('pdfkit');
-    const doc = new PDFDocument({ margin: 50 });
+    const doc = new PDFDocument({ margin: 40, size: 'A4' });
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="offer-letter-${employee.name.replace(/\s+/g, '-')}.pdf"`);
 
     doc.pipe(res);
 
-    // Header
-    doc.fontSize(20).text('NARAYAN ENTERPRISES', { align: 'center' });
-    doc.fontSize(10).text('Employment Offer Letter', { align: 'center' });
-    doc.moveDown(2);
-
-    // Date
+    const colors = {
+      brand: '#1D4ED8',
+      brandDark: '#102A43',
+      brandSoft: '#EAF2FF',
+      text: '#132A4A',
+      muted: '#5D6A7E',
+      border: '#D8E2F0',
+      ok: '#0E9F6E'
+    };
+    const pageW = doc.page.width;
+    const margin = 40;
+    const contentW = pageW - margin * 2;
     const today = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
-    doc.fontSize(10).text(`Date: ${today}`, { align: 'right' });
-    doc.moveDown();
+    const annualCtc = Number(employee.monthlySalary || 0) * 12;
+    const money = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
-    // Employee Details
-    doc.fontSize(12).text(`To,`);
-    doc.text(employee.name);
-    doc.moveDown();
+    // Header band
+    doc.save().roundedRect(margin, 24, contentW, 104, 14).fill(colors.brandSoft).restore();
+    doc.save().roundedRect(margin, 24, contentW, 104, 14).lineWidth(1).strokeColor(colors.border).stroke().restore();
 
-    // Salutation
-    doc.text(`Dear ${employee.name},`);
-    doc.moveDown();
+    // Center emblem (logo-style mark)
+    const cx = pageW / 2;
+    doc.save().circle(cx, 56, 20).fill(colors.brand).restore();
+    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(14).text('NE', cx - 11, 50, { width: 22, align: 'center' });
 
-    // Opening
-    doc.fontSize(11).text('We are pleased to offer you employment with Narayan Enterprises on the following terms and conditions:');
-    doc.moveDown();
+    doc.fillColor(colors.brandDark).font('Helvetica-Bold').fontSize(20).text(APP_NAME, margin, 78, {
+      width: contentW,
+      align: 'center'
+    });
+    doc.fillColor(colors.brand).font('Helvetica-Bold').fontSize(11).text('OFFICIAL EMPLOYMENT OFFER LETTER', margin, 102, {
+      width: contentW,
+      align: 'center'
+    });
 
-    // Terms & Conditions
-    doc.fontSize(12).text('1. Position and Duties');
-    doc.fontSize(10).text(`You will be employed as ${employee.role || 'Employee'}. Your duties will include all tasks assigned by management from time to time.`);
-    doc.moveDown();
+    // Meta box
+    let y = 144;
+    doc.save().roundedRect(margin, y, contentW, 82, 10).fill('#FFFFFF').restore();
+    doc.save().roundedRect(margin, y, contentW, 82, 10).lineWidth(1).strokeColor(colors.border).stroke().restore();
+    doc.fillColor(colors.muted).font('Helvetica-Bold').fontSize(10);
+    doc.text('Date', margin + 12, y + 14);
+    doc.text('Candidate', margin + 12, y + 38);
+    doc.text('Position', margin + contentW / 2, y + 14);
+    doc.text('Monthly Compensation', margin + contentW / 2, y + 38);
+    doc.fillColor(colors.text).font('Helvetica').fontSize(11);
+    doc.text(today, margin + 110, y + 14);
+    doc.text(employee.name, margin + 110, y + 38, { width: contentW / 2 - 130 });
+    doc.text(employee.role || 'Employee', margin + contentW / 2 + 132, y + 14, { width: contentW / 2 - 144 });
+    doc.text(money(employee.monthlySalary), margin + contentW / 2 + 132, y + 38, { width: contentW / 2 - 144 });
 
-    doc.fontSize(12).text('2. Compensation');
-    doc.fontSize(10).text(`Your monthly salary will be ₹${employee.monthlySalary.toLocaleString('en-IN')} (Rupees ${numberToWords(employee.monthlySalary)} only), payable on or before the 5th of each month.`);
-    doc.moveDown();
+    y += 102;
+    doc.fillColor(colors.text).font('Helvetica').fontSize(11);
+    doc.text(`Dear ${employee.name},`, margin, y);
+    y += 22;
+    doc.text(
+      `We are pleased to welcome you to ${APP_NAME}. This letter confirms our offer and outlines your key employment terms.`,
+      margin,
+      y,
+      { width: contentW, lineGap: 3 }
+    );
 
-    doc.fontSize(12).text('3. Probation Period');
-    doc.fontSize(10).text('You will be on probation for a period of 3 (three) months from your date of joining. During this period, either party may terminate employment with 7 days notice.');
-    doc.moveDown();
+    y += 54;
+    const sections = [
+      ['Role & Responsibilities', `You will join as ${employee.role || 'Employee'} and will be responsible for role-specific tasks assigned by management.`],
+      [
+        'Compensation',
+        `Your monthly salary will be ${money(employee.monthlySalary)} (Rupees ${numberToWords(Number(employee.monthlySalary || 0))} only). The annual reference CTC is ${money(annualCtc)}.`
+      ],
+      ['Probation', 'Your probation period will be 3 months from joining date. During probation, either party may terminate with 7 days notice.'],
+      ['Work Schedule', 'Working hours and weekly offs will follow company operations and shift requirements as communicated by your reporting manager.'],
+      ['Confidentiality', 'All business, financial, customer, and operational information must be treated as confidential during and after your employment.'],
+      ['Separation', 'Post probation, either party may separate with 30 days notice or salary in lieu, subject to company policy.']
+    ];
 
-    doc.fontSize(12).text('4. Working Hours');
-    doc.fontSize(10).text('Your normal working hours will be as per company policy, typically 9:00 AM to 6:00 PM, Monday through Saturday, with appropriate breaks.');
-    doc.moveDown();
+    sections.forEach(([title, body], idx) => {
+      if (y > doc.page.height - 170) {
+        doc.addPage();
+        y = 54;
+      }
+      doc.save().roundedRect(margin, y, contentW, 68, 8).fill(idx % 2 === 0 ? '#FFFFFF' : '#F8FBFF').restore();
+      doc.save().roundedRect(margin, y, contentW, 68, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
+      doc.fillColor(colors.brand).font('Helvetica-Bold').fontSize(11).text(title, margin + 12, y + 10);
+      doc.fillColor(colors.text).font('Helvetica').fontSize(10.3).text(body, margin + 12, y + 28, {
+        width: contentW - 24,
+        lineGap: 2
+      });
+      y += 78;
+    });
 
-    doc.fontSize(12).text('5. Leave Policy');
-    doc.fontSize(10).text('You will be entitled to leave as per company policy. All leave must be approved by management in advance.');
-    doc.moveDown();
+    y += 6;
+    doc.fillColor(colors.text).font('Helvetica').fontSize(11);
+    doc.text('Please sign below to indicate your acceptance of the above terms.', margin, y);
 
-    doc.fontSize(12).text('6. Termination');
-    doc.fontSize(10).text('After successful completion of probation, either party may terminate employment by providing 30 days written notice or salary in lieu thereof.');
-    doc.moveDown();
+    y += 44;
+    const lineY = y + 24;
+    doc.save().moveTo(margin, lineY).lineTo(margin + 200, lineY).strokeColor(colors.border).stroke().restore();
+    doc.save().moveTo(pageW - margin - 200, lineY).lineTo(pageW - margin, lineY).strokeColor(colors.border).stroke().restore();
+    doc.fillColor(colors.muted).font('Helvetica-Bold').fontSize(10);
+    doc.text('Authorized Signatory', margin, lineY + 6, { width: 200, align: 'center' });
+    doc.text('Employee Signature', pageW - margin - 200, lineY + 6, { width: 200, align: 'center' });
+    doc.fillColor(colors.text).font('Helvetica').fontSize(10);
+    doc.text(APP_NAME, margin, lineY + 22, { width: 200, align: 'center' });
+    doc.text(employee.name, pageW - margin - 200, lineY + 22, { width: 200, align: 'center' });
 
-    doc.fontSize(12).text('7. Confidentiality');
-    doc.fontSize(10).text('You agree to maintain strict confidentiality of all company information, trade secrets, and business dealings both during and after your employment.');
-    doc.moveDown();
-
-    doc.fontSize(12).text('8. Code of Conduct');
-    doc.fontSize(10).text('You agree to abide by all company policies, rules, and regulations as communicated from time to time.');
-    doc.moveDown(2);
-
-    // Closing
-    doc.fontSize(11).text('Please sign and return a copy of this letter to indicate your acceptance of these terms.');
-    doc.moveDown(2);
-
-    doc.text('Sincerely,');
-    doc.moveDown(3);
-
-    // Signature Section
-    doc.fontSize(10).text('_______________________', { continued: true }).text('                    _______________________');
-    doc.text('Authorized Signatory', { continued: true }).text('                    Employee Signature');
-    doc.text('Narayan Enterprises', { continued: true }).text(`                    ${employee.name}`);
+    // Footer strip
+    const fy = doc.page.height - 36;
+    doc.save().moveTo(margin, fy - 6).lineTo(margin + contentW, fy - 6).strokeColor(colors.border).stroke().restore();
+    doc.fillColor(colors.muted).font('Helvetica').fontSize(9);
+    doc.text(`${APP_NAME} • Professional Offer Documentation`, margin, fy, { width: contentW, align: 'center' });
 
     doc.end();
   } catch (err) {
