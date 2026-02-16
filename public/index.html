@@ -85,8 +85,7 @@
         <div class="row wrap">
           <h2>Employee Directory</h2>
           <div class="row">
-            <input id="employeeSearchInput" type="text" placeholder="Search by name/role..."
-              style="min-width: 250px;" />
+            <input id="employeeSearchInput" class="wide-input" type="text" placeholder="Search by name/role..." />
           </div>
         </div>
         <div id="employeeGrid" class="employee-grid">
@@ -275,7 +274,7 @@
             <button id="downloadTruckCsv" class="small">Download Truck CSV</button>
           </div>
         </div>
-        <div class="summary-stat-grid" style="margin-bottom: 1.5rem;">
+        <div class="summary-stat-grid mb-lg">
           <div class="summary-stat">
             <div class="label">Total Pellets Sold</div>
             <div id="truckPelletTotal" class="value">0 Qntl</div>
@@ -653,7 +652,7 @@
           <h2 id="supplierDetailName">Supplier Name</h2>
         </div>
 
-        <div class="summary-stat-grid" style="margin-top:1rem;">
+        <div class="summary-stat-grid mt-sm">
           <div class="summary-stat">
             <div class="label">Total Material Value</div>
             <div id="supTotalMaterial" class="value">₹0</div>
@@ -664,13 +663,13 @@
           </div>
           <div class="summary-stat">
             <div class="label">Pending Balance</div>
-            <div id="supPendingBalance" class="value" style="color:var(--danger);">₹0</div>
+            <div id="supPendingBalance" class="value pending-value">₹0</div>
           </div>
         </div>
 
-        <div class="grid" style="grid-template-columns: 1fr 2fr; margin-top:2rem;">
+        <div class="grid supplier-layout mt-lg">
           <!-- Add Transaction Form -->
-          <section class="panel" style="box-shadow:none; border:1px solid var(--border);">
+          <section class="panel supplier-form-panel">
             <h3>Add Transaction</h3>
             <form id="supplierTransactionForm">
               <input type="hidden" name="supplierId" id="txSupplierId" />

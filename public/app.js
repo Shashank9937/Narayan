@@ -394,9 +394,9 @@ function renderEmployeeRows(rows) {
           </div>
 
           <div class="employee-actions">
-             ${canEdit ? `<button type="button" class="small emp-edit" data-id="${e.id}" style="background:var(--bg); color:var(--text); border:1px solid var(--border);">Edit</button>` : ''}
+             ${canEdit ? `<button type="button" class="small secondary emp-edit" data-id="${e.id}">Edit</button>` : ''}
              ${canDelete ? `<button type="button" class="small danger emp-del" data-id="${e.id}">Delete</button>` : ''}
-             <button class="small" onclick="downloadOfferLetter('${e.id}')" style="background:var(--accent); color:white;">Offer Letter</button>
+             <button class="small offer-btn" onclick="downloadOfferLetter('${e.id}')">Offer Letter</button>
           </div>
         </div>
       `;
@@ -493,8 +493,8 @@ function renderSalaryRows(rows) {
 
         return `<tr data-emp-id="${r.employeeId}">
           <td>
-            <div style="font-weight:600;">${r.name}</div>
-            <div style="font-size:0.8rem; color:var(--text-light);">${r.role}</div>
+            <div class="record-name">${r.name}</div>
+            <div class="record-subtext">${r.role}</div>
           </td>
           <td>
              <span class="status-badge ${statusClass}">${statusText}</span>
@@ -508,8 +508,8 @@ function renderSalaryRows(rows) {
           </td>
           <td class="money remaining-cell" data-salary="${salary}">${money(remaining)}</td>
           <td>${r.monthsWorked ?? '-'}</td>
-          <td class="money" style="opacity:0.8;">${money(r.totalSalaryAllTime ?? 0)}</td>
-          <td class="money" style="opacity:0.8;">${money(r.totalAdvancesAllTime ?? 0)}</td>
+          <td class="money muted-money">${money(r.totalSalaryAllTime ?? 0)}</td>
+          <td class="money muted-money">${money(r.totalAdvancesAllTime ?? 0)}</td>
           <td>
              ${canSeeSlip ? `<button type="button" class="small slip-btn" data-emp-id="${r.employeeId}" title="Download Payslip">📄 Slip</button>` : '-'}
           </td>
@@ -1486,12 +1486,12 @@ function renderSuppliers(rows) {
     // If not, we'll need to fetch separately - for now show totals
 
     return `
-      <div class="employee-card" onclick="viewSupplierDetail('${s.id}')" style="cursor:pointer;">
+      <div class="employee-card supplier-card" onclick="viewSupplierDetail('${s.id}')">
         <div class="employee-header">
-          <div class="avatar" style="background:var(--accent);">${initials}</div>
+          <div class="avatar supplier-avatar">${initials}</div>
           <div class="employee-info">
             <h3>${s.name}</h3>
-            <span class="role-badge" style="background:var(--bg); border:1px solid var(--border);">Supplier</span>
+            <span class="role-badge supplier-role">Supplier</span>
           </div>
         </div>
         <div class="employee-stats">
@@ -1505,7 +1505,7 @@ function renderSuppliers(rows) {
           </div>
           <div class="stat-item">
             <span class="stat-label">Pending Balance</span>
-            <span class="stat-value money" style="color:var(--danger)">${money(s.balance || 0)}</span>
+            <span class="stat-value money supplier-pending">${money(s.balance || 0)}</span>
           </div>
         </div>
         <div class="employee-actions">
@@ -1561,7 +1561,7 @@ function renderSupplierTransactions(txs, supplier) {
            <td>${t.date}</td>
            <td><span class="tx-badge ${badgeClass}">${t.type}</span></td>
            <td>${details}</td>
-           <td class="money" style="color:var(--${amountClass})">${money(t.amount)}</td>
+           <td class="money tx-amount-${amountClass}">${money(t.amount)}</td>
            <td>
               <button class="small danger" onclick="deleteSupplierTx('${t.id}')">Del</button>
            </td>
