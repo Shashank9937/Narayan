@@ -62,6 +62,7 @@ const attendanceMonthInput = document.getElementById('attendanceMonthInput');
 const employeeSearchInput = document.getElementById('employeeSearchInput');
 const truckSearchInput = document.getElementById('truckSearchInput');
 const salaryEmployeeSelect = document.getElementById('salaryEmployeeSelect');
+const salaryMonthInput = document.getElementById('salaryMonthInput');
 const salaryLedgerEmployeeSelect = document.getElementById('salaryLedgerEmployee');
 const salaryEmployeeSummaryEl = document.getElementById('salaryEmployeeSummary');
 const salaryOverallSummaryEl = document.getElementById('salaryOverallSummary');
@@ -91,6 +92,7 @@ let autoRefreshTimer = null;
 let expenseFilter = { dateFrom: '', dateTo: '' };
 let editingTruckId = null;
 let editingLandId = null;
+let activeSalaryMonth = monthISO();
 
 function showToast(message, type = 'ok') {
   toastEl.textContent = message;
@@ -210,6 +212,8 @@ function setDefaultDates() {
     if (dateInput) dateInput.value = todayISO();
   });
   attendanceMonthInput.value = monthISO();
+  if (salaryMonthInput && !salaryMonthInput.value) salaryMonthInput.value = activeSalaryMonth;
+  activeSalaryMonth = getActiveSalaryMonth();
   if (expenseDateToInput && !expenseDateToInput.value) expenseDateToInput.value = todayISO();
   if (expenseDateFromInput && !expenseDateFromInput.value) {
     const d = new Date();
@@ -218,6 +222,10 @@ function setDefaultDates() {
   }
   const joiningInput = document.getElementById('employeeJoiningDate');
   if (joiningInput && !joiningInput.value) joiningInput.value = todayISO();
+}
+
+function getActiveSalaryMonth() {
+  return salaryMonthInput?.value || activeSalaryMonth || monthISO();
 }
 
 function hasPermission(permission) {
@@ -475,9 +483,12 @@ function renderSalaryRows(rows) {
         }
 
         const advancesCell = canEditAdvances
-          ? `<input type="number" min="0" step="0.01" class="advances-input" value="${advVal}" 
+          ? `<div class="row wrap">
+               <input type="number" min="0" step="0.01" class="advances-input" value="${advVal}" 
                data-emp-id="${r.employeeId}" data-salary="${salary}" data-original="${advVal}"
-               placeholder="0" />`
+               placeholder="0" />
+               <button type="button" class="small adv-save" data-emp-id="${r.employeeId}">Save</button>
+             </div>`
           : `<span class="money">${money(advVal)}</span>`;
 
         return `<tr data-emp-id="${r.employeeId}">
@@ -508,6 +519,27 @@ function renderSalaryRows(rows) {
     .join('');
 
   if (canEditAdvances) {
+    const saveAdvance = async (input) => {
+      const empId = input.dataset.empId;
+      const original = Number(input.dataset.original) || 0;
+      const entered = parseFloat(input.value);
+      if (Number.isNaN(entered) || entered < 0 || entered === original) return;
+      try {
+        await api('/api/advances/set', 'PUT', {
+          employeeId: empId,
+          month: getActiveSalaryMonth(),
+          totalAdvances: entered
+        });
+        input.dataset.original = String(entered);
+        await refresh();
+        showToast('Advances updated');
+      } catch (err) {
+        showToast(err.message, 'error');
+        input.value = original;
+        input.dataset.original = String(original);
+      }
+    };
+
     document.querySelectorAll('.advances-input').forEach((input) => {
       input.addEventListener('input', () => {
         const salary = Number(input.dataset.salary) || 0;
@@ -525,24 +557,15 @@ function renderSalaryRows(rows) {
         if (progBar) progBar.style.width = `${percent}%`;
       });
       input.addEventListener('blur', async () => {
-        const empId = input.dataset.empId;
-        const original = Number(input.dataset.original) || 0;
-        const entered = parseFloat(input.value);
-        if (Number.isNaN(entered) || entered < 0 || entered === original) return;
-        try {
-          await api('/api/advances/set', 'PUT', {
-            employeeId: empId,
-            month: monthISO(),
-            totalAdvances: entered
-          });
-          input.dataset.original = String(entered);
-          await refresh();
-          showToast('Advances updated');
-        } catch (err) {
-          showToast(err.message, 'error');
-          input.value = original;
-          input.dataset.original = String(original);
-        }
+        // Keep blur save for keyboard users.
+        await saveAdvance(input);
+      });
+    });
+    document.querySelectorAll('.adv-save').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const empId = btn.getAttribute('data-emp-id');
+        const input = document.querySelector(`.advances-input[data-emp-id="${empId}"]`);
+        if (input) await saveAdvance(input);
       });
     });
   }
@@ -551,7 +574,7 @@ function renderSalaryRows(rows) {
     document.querySelectorAll('.slip-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         const empId = btn.getAttribute('data-emp-id');
-        const url = `/api/salary-slip/${empId}.pdf?month=${monthISO()}`;
+        const url = `/api/salary-slip/${empId}.pdf?month=${getActiveSalaryMonth()}`;
         window.open(urlWithAuth(url), '_blank');
       });
     });
@@ -636,9 +659,9 @@ function renderSalaryLedgers(rows) {
     .map(
       (r) => {
         const totalPaid = Number(r.totalPaid ?? r.amountGiven ?? 0);
-        const totalToGive = Number(r.totalToGive ?? r.pending ?? 0);
-        const totalSalary = totalPaid + totalToGive;
-        const remaining = Math.max(0, totalToGive);
+        const totalToGive = Number(r.totalToGive ?? r.totalSalary ?? 0);
+        const totalSalary = Number(r.totalSalary ?? totalToGive);
+        const remaining = Math.max(0, totalToGive - totalPaid);
         const ledgerDate = r.updatedAt ? String(r.updatedAt).slice(0, 10) : '-';
         return `<tr>
         <td>${r.name}</td>
@@ -682,8 +705,21 @@ function prefillSalaryLedgerForm() {
   const noteEl = salaryLedgerForm.querySelector('input[name="note"]');
   if (!totalPaidEl || !totalToGiveEl || !noteEl) return;
   totalPaidEl.value = row ? Number(row.totalPaid ?? row.amountGiven ?? 0) : '';
-  totalToGiveEl.value = row ? Number(row.totalToGive ?? row.pending ?? 0) : '';
+  totalToGiveEl.value = row ? Number(row.totalToGive ?? row.totalSalary ?? 0) : '';
   noteEl.value = row ? String(row.note || '') : '';
+  updateSalaryLedgerRemainingPreview();
+}
+
+function updateSalaryLedgerRemainingPreview() {
+  if (!salaryLedgerForm) return;
+  const totalPaidEl = salaryLedgerForm.querySelector('input[name="totalPaid"]');
+  const totalToGiveEl = salaryLedgerForm.querySelector('input[name="totalToGive"]');
+  const previewEl = document.getElementById('salaryLedgerRemainingPreview');
+  if (!totalPaidEl || !totalToGiveEl || !previewEl) return;
+  const paid = Number(totalPaidEl.value || 0);
+  const toGive = Number(totalToGiveEl.value || 0);
+  const remaining = Math.max(0, toGive - paid);
+  previewEl.textContent = money(remaining);
 }
 
 function renderAttendanceReportRows(rows) {
@@ -1220,7 +1256,7 @@ function activateSection(sectionId) {
 }
 
 async function refresh() {
-  const month = monthISO();
+  const month = getActiveSalaryMonth();
 
   const requests = [
     hasPermission('dashboard:view') ? api(`/api/dashboard?month=${month}&today=${todayISO()}`) : Promise.resolve(null),
@@ -1743,10 +1779,16 @@ advanceForm.addEventListener('submit', async (e) => {
 salaryLedgerForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(salaryLedgerForm);
+  const totalPaid = Number(fd.get('totalPaid') || 0);
+  const totalToGive = Number(fd.get('totalToGive') || 0);
+  if (totalPaid > totalToGive) {
+    showToast('Total Paid cannot be greater than Total To Give', 'error');
+    return;
+  }
   try {
     await api(`/api/salary-ledgers/${fd.get('employeeId')}`, 'PUT', {
-      totalPaid: fd.get('totalPaid'),
-      totalToGive: fd.get('totalToGive'),
+      totalPaid,
+      totalToGive,
       note: fd.get('note') || ''
     });
     await refresh();
@@ -1853,6 +1895,9 @@ salaryLedgerEmployeeSelect?.addEventListener('change', () => {
   prefillSalaryLedgerForm();
 });
 
+salaryLedgerForm?.querySelector('input[name="totalPaid"]')?.addEventListener('input', updateSalaryLedgerRemainingPreview);
+salaryLedgerForm?.querySelector('input[name="totalToGive"]')?.addEventListener('input', updateSalaryLedgerRemainingPreview);
+
 sectionNav.addEventListener('click', (e) => {
   const btn = e.target.closest('.nav-btn');
   if (!btn) return;
@@ -1889,7 +1934,17 @@ function downloadWithAuth(url) {
 }
 
 downloadSalaryCsvBtn.addEventListener('click', () => {
-  downloadWithAuth(`/api/export/salary.csv?month=${monthISO()}`);
+  downloadWithAuth(`/api/export/salary.csv?month=${getActiveSalaryMonth()}`);
+});
+
+salaryMonthInput?.addEventListener('change', async () => {
+  activeSalaryMonth = getActiveSalaryMonth();
+  try {
+    await refresh();
+    showToast(`Salary month changed to ${activeSalaryMonth}`);
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
 });
 
 downloadTruckCsvBtn.addEventListener('click', () => {

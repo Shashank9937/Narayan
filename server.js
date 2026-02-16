@@ -398,7 +398,7 @@ function jsonStore() {
         const ledger = db.salaryLedgers.find((l) => l.employeeId === e.id);
         const totalSalary = Number(ledger?.totalSalary || 0);
         const amountGiven = Number(ledger?.amountGiven || 0);
-        const totalToGive = Math.max(0, totalSalary - amountGiven);
+        const remaining = Math.max(0, totalSalary - amountGiven);
         return {
           employeeId: e.id,
           name: e.name,
@@ -406,9 +406,10 @@ function jsonStore() {
           totalSalary,
           amountGiven,
           totalPaid: amountGiven,
-          totalToGive,
+          totalToGive: totalSalary,
+          remaining,
           note: ledger?.note || '',
-          pending: totalToGive,
+          pending: remaining,
           updatedAt: ledger?.updatedAt || null
         };
       });
@@ -417,7 +418,7 @@ function jsonStore() {
       const db = readJsonDb();
       const paid = Number(amountGiven);
       const computedTotal =
-        totalToGive != null && totalToGive !== '' ? paid + Number(totalToGive) : Number(totalSalary);
+        totalToGive != null && totalToGive !== '' ? Number(totalToGive) : Number(totalSalary);
       const existing = db.salaryLedgers.find((l) => l.employeeId === employeeId);
       if (existing) {
         existing.totalSalary = computedTotal;
@@ -1320,7 +1321,7 @@ function postgresStore() {
       return res.rows.map((r) => {
         const totalSalary = Number(r.total_salary || 0);
         const amountGiven = Number(r.amount_given || 0);
-        const totalToGive = Math.max(0, totalSalary - amountGiven);
+        const remaining = Math.max(0, totalSalary - amountGiven);
         return {
           employeeId: r.employee_id,
           name: r.name,
@@ -1328,9 +1329,10 @@ function postgresStore() {
           totalSalary,
           amountGiven,
           totalPaid: amountGiven,
-          totalToGive,
+          totalToGive: totalSalary,
+          remaining,
           note: r.note || '',
-          pending: totalToGive,
+          pending: remaining,
           updatedAt: r.updated_at || null
         };
       });
@@ -1338,7 +1340,7 @@ function postgresStore() {
     async upsertSalaryLedger(employeeId, totalSalary, amountGiven, note, totalToGive) {
       const paid = Number(amountGiven);
       const computedTotal =
-        totalToGive != null && totalToGive !== '' ? paid + Number(totalToGive) : Number(totalSalary);
+        totalToGive != null && totalToGive !== '' ? Number(totalToGive) : Number(totalSalary);
       const existing = await pool.query('SELECT id FROM salary_ledgers WHERE employee_id = $1', [employeeId]);
       if (existing.rows[0]) {
         const id = existing.rows[0].id;
@@ -2218,19 +2220,22 @@ app.put('/api/salary-ledgers/:employeeId', auth, requirePermission('salaryledger
   const toGiveRaw = totalToGive;
   const totalRaw = totalSalary;
 
-  if (paidRaw == null && totalRaw == null) {
-    return res.status(400).json({ error: 'totalPaid or totalSalary is required' });
+  if (paidRaw == null || (toGiveRaw == null && totalRaw == null)) {
+    return res.status(400).json({ error: 'totalPaid and totalToGive are required' });
   }
   const given = Number(paidRaw || 0);
-  const total = Number(totalRaw != null ? totalRaw : given + Number(toGiveRaw || 0));
-  const toGive = toGiveRaw != null ? Number(toGiveRaw) : Math.max(0, total - given);
+  const toGive = Number(toGiveRaw != null ? toGiveRaw : totalRaw);
+  const total = Number(totalRaw != null ? totalRaw : toGive);
   if (Number.isNaN(total) || total < 0 || Number.isNaN(given) || given < 0 || Number.isNaN(toGive) || toGive < 0) {
     return res.status(400).json({ error: 'totalPaid, totalToGive and totalSalary must be valid non-negative numbers' });
+  }
+  if (given > toGive) {
+    return res.status(400).json({ error: 'totalPaid cannot be greater than totalToGive' });
   }
   try {
     const employee = await store.getEmployeeById(req.params.employeeId);
     if (!employee) return res.status(404).json({ error: 'Employee not found' });
-    const row = await store.upsertSalaryLedger(req.params.employeeId, total, given, note, toGive);
+    const row = await store.upsertSalaryLedger(req.params.employeeId, toGive, given, note, toGive);
     return res.json(row);
   } catch (err) {
     console.error(err);

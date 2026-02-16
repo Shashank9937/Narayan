@@ -153,8 +153,11 @@
 
       <section class="panel" id="salaryPanel">
         <div class="row">
-          <h2>Salary Summary (Current Month)</h2>
-          <button id="downloadSalaryCsv" class="small">Download Salary CSV</button>
+          <h2>Salary Summary</h2>
+          <div class="row">
+            <input id="salaryMonthInput" type="month" />
+            <button id="downloadSalaryCsv" class="small">Download Salary CSV</button>
+          </div>
         </div>
         <div class="salary-summary-grid">
           <section class="summary-box">
@@ -195,6 +198,7 @@
           <select name="employeeId" id="salaryLedgerEmployee" required></select>
           <input name="totalPaid" type="number" min="0" step="0.01" placeholder="Total Paid (All Time)" required />
           <input name="totalToGive" type="number" min="0" step="0.01" placeholder="Total To Give (All Time)" required />
+          <div class="hint">Remaining: <strong id="salaryLedgerRemainingPreview">₹0</strong></div>
           <input name="note" placeholder="Note (optional)" />
           <button type="submit">Save Salary Ledger</button>
         </form>
