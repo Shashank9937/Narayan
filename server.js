@@ -39,6 +39,7 @@ const ROLE_PERMISSIONS = {
     'expenses:delete',
     'investments:view',
     'investments:create',
+    'investments:update',
     'investments:delete',
     'chini:view',
     'chini:create',
@@ -72,6 +73,7 @@ const ROLE_PERMISSIONS = {
     'expenses:delete',
     'investments:view',
     'investments:create',
+    'investments:update',
     'investments:delete',
     'chini:view',
     'chini:create',
@@ -624,6 +626,21 @@ function jsonStore() {
       db.investments.push(row);
       writeJsonDb(db);
       return row;
+    },
+    async updateInvestment(id, data) {
+      const db = readJsonDb();
+      const investment = db.investments.find((i) => i.id === id);
+      if (!investment) return null;
+      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
+        ? String(data.party).toLowerCase()
+        : 'narayan';
+      investment.date = data.date;
+      investment.party = party;
+      investment.amount = Number(data.amount);
+      investment.note = String(data.note || '').trim();
+      investment.updatedAt = new Date().toISOString();
+      writeJsonDb(db);
+      return investment;
     },
     async deleteInvestment(id) {
       const db = readJsonDb();
@@ -1550,6 +1567,28 @@ function postgresStore() {
         [row.id, row.date, row.party, row.amount, row.note, row.createdAt]
       );
       return row;
+    },
+    async updateInvestment(id, data) {
+      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
+        ? String(data.party).toLowerCase()
+        : 'narayan';
+      const res = await pool.query(
+        `UPDATE investments
+         SET date = $2, party = $3, amount = $4, note = $5
+         WHERE id = $1
+         RETURNING *`,
+        [id, data.date, party, Number(data.amount), String(data.note || '').trim()]
+      );
+      if (!res.rows[0]) return null;
+      const r = res.rows[0];
+      return {
+        id: r.id,
+        date: String(r.date).slice(0, 10),
+        party: r.party || 'narayan',
+        amount: Number(r.amount),
+        note: r.note || '',
+        createdAt: r.created_at
+      };
     },
     async deleteInvestment(id) {
       const res = await pool.query('DELETE FROM investments WHERE id = $1', [id]);

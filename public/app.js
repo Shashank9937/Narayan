@@ -384,8 +384,8 @@ function renderEmployeeRows(rows) {
           </div>
 
           <div class="employee-actions">
-             ${canEdit ? `<button class="small emp-edit" data-id="${e.id}" style="background:var(--bg); color:var(--text); border:1px solid var(--border);">Edit</button>` : ''}
-             ${canDelete ? `<button class="small danger emp-del" data-id="${e.id}">Delete</button>` : ''}
+             ${canEdit ? `<button type="button" class="small emp-edit" data-id="${e.id}" style="background:var(--bg); color:var(--text); border:1px solid var(--border);">Edit</button>` : ''}
+             ${canDelete ? `<button type="button" class="small danger emp-del" data-id="${e.id}">Delete</button>` : ''}
              <button class="small" onclick="downloadOfferLetter('${e.id}')" style="background:var(--accent); color:white;">Offer Letter</button>
           </div>
         </div>
@@ -498,7 +498,7 @@ function renderSalaryRows(rows) {
           <td class="money" style="opacity:0.8;">${money(r.totalSalaryAllTime ?? 0)}</td>
           <td class="money" style="opacity:0.8;">${money(r.totalAdvancesAllTime ?? 0)}</td>
           <td>
-             ${canSeeSlip ? `<button class="small slip-btn" data-emp-id="${r.employeeId}" title="Download Payslip">📄 Slip</button>` : '-'}
+             ${canSeeSlip ? `<button type="button" class="small slip-btn" data-emp-id="${r.employeeId}" title="Download Payslip">📄 Slip</button>` : '-'}
           </td>
         </tr>`;
       }
@@ -645,7 +645,7 @@ function renderSalaryLedgers(rows) {
         <td class="money">${money(totalToGive)}</td>
         <td class="money">${money(remaining)}</td>
         <td>${r.note || '-'}</td>
-        <td>${canEdit ? `<button class="small warn sld-edit" data-emp-id="${r.employeeId}">Edit</button>` : '-'}</td>
+        <td>${canEdit ? `<button type="button" class="small warn sld-edit" data-emp-id="${r.employeeId}">Edit</button>` : '-'}</td>
       </tr>`;
       }
     )
@@ -658,6 +658,7 @@ function renderSalaryLedgers(rows) {
         salaryLedgerEmployeeSelect.value = empId;
         prefillSalaryLedgerForm();
         salaryLedgerForm?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        showToast('Ledger row loaded in form. Edit and click Save.');
       });
     });
   }
@@ -762,8 +763,8 @@ function renderTruckRows(rows) {
           <td>${t.destination || '-'}</td>
           <td>
             <div class="actions">
-              ${canEdit ? `<button class="small warn truck-edit" data-id="${t.id}">Edit</button>` : ''}
-              ${canDelete ? `<button class="small danger truck-del" data-id="${t.id}">Delete</button>` : ''}
+              ${canEdit ? `<button type="button" class="small warn truck-edit" data-id="${t.id}">Edit</button>` : ''}
+              ${canDelete ? `<button type="button" class="small danger truck-del" data-id="${t.id}">Delete</button>` : ''}
               ${!canEdit && !canDelete ? '-' : ''}
             </div>
           </td>
@@ -874,8 +875,8 @@ function renderExpenseRows(rows) {
           <td class="money">${money(e.amount)}</td>
           <td>
             <div class="actions">
-              ${canEdit ? `<button class="small warn exp-edit" data-id="${e.id}">Edit</button>` : ''}
-              ${canDelete ? `<button class="small danger exp-del" data-id="${e.id}">Delete</button>` : ''}
+              ${canEdit ? `<button type="button" class="small warn exp-edit" data-id="${e.id}">Edit</button>` : ''}
+              ${canDelete ? `<button type="button" class="small danger exp-del" data-id="${e.id}">Delete</button>` : ''}
               ${!canEdit && !canDelete ? '-' : ''}
             </div>
           </td>
@@ -939,7 +940,7 @@ function renderInvestmentRows(rows) {
           <td>${partyLabel(r.party)}</td>
           <td class="money">${money(r.amount)}</td>
           <td>${r.note || '-'}</td>
-          <td>${canDelete ? `<button class="small danger inv-del" data-id="${r.id}">Delete</button>` : '-'}</td>
+          <td>${canDelete ? `<button type="button" class="small danger inv-del" data-id="${r.id}">Delete</button>` : '-'}</td>
         </tr>`
     )
     .join('');
@@ -1020,7 +1021,7 @@ function renderChiniRows(rows) {
           <td>${partyLabel(r.party)}</td>
           <td>${r.description || '-'}</td>
           <td class="money">${money(r.amount)}</td>
-          <td>${canDelete ? `<button class="small danger chi-del" data-id="${r.id}">Delete</button>` : '-'}</td>
+          <td>${canDelete ? `<button type="button" class="small danger chi-del" data-id="${r.id}">Delete</button>` : '-'}</td>
         </tr>`
     )
     .join('');
@@ -1061,8 +1062,8 @@ function renderLandRows(rows) {
           <td class="money">${money(r.amountToBeGiven)}</td>
           <td>
             <div class="actions">
-              ${canEdit ? `<button class="small warn land-edit" data-id="${r.id}">Edit</button>` : ''}
-              ${canDelete ? `<button class="small danger land-del" data-id="${r.id}">Delete</button>` : ''}
+              ${canEdit ? `<button type="button" class="small warn land-edit" data-id="${r.id}">Edit</button>` : ''}
+              ${canDelete ? `<button type="button" class="small danger land-del" data-id="${r.id}">Delete</button>` : ''}
               ${!canEdit && !canDelete ? '-' : ''}
             </div>
           </td>
@@ -1141,8 +1142,8 @@ function renderVehicleRows(rows) {
           <td>${r.note || '-'}</td>
           <td>
             <div class="actions">
-              ${canEdit ? `<button class="small warn veh-edit" data-id="${r.id}">Edit</button>` : ''}
-              ${canDelete ? `<button class="small danger veh-del" data-id="${r.id}">Delete</button>` : ''}
+              ${canEdit ? `<button type="button" class="small warn veh-edit" data-id="${r.id}">Edit</button>` : ''}
+              ${canDelete ? `<button type="button" class="small danger veh-del" data-id="${r.id}">Delete</button>` : ''}
               ${!canEdit && !canDelete ? '-' : ''}
             </div>
           </td>
