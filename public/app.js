@@ -89,6 +89,8 @@ let salaryRowsCache = [];
 let salaryLedgersCache = [];
 let autoRefreshTimer = null;
 let expenseFilter = { dateFrom: '', dateTo: '' };
+let editingTruckId = null;
+let editingLandId = null;
 
 function showToast(message, type = 'ok') {
   toastEl.textContent = message;
@@ -784,42 +786,25 @@ function renderTruckRows(rows) {
         const id = btn.getAttribute('data-id');
         const current = trucksCache.find((t) => t.id === id);
         if (!current) return;
-        const date = prompt('Date (YYYY-MM-DD)', current.date || '');
-        if (!date) return;
-        const party = prompt('Party (narayan or maa_vaishno)', current.party || 'narayan');
-        if (!party) return;
-        const truckNumber = prompt('Truck Number', current.truckNumber || '');
-        if (!truckNumber) return;
-        const driverName = prompt('Driver Name', current.driverName || '') || '';
-        const rawMaterial = prompt('Raw Material', current.rawMaterial || '');
-        if (!rawMaterial) return;
-        const quantity = prompt('Quantity (Qntl)', String(current.quantity || ''));
-        if (!quantity) return;
-        const pricePerQuintal = prompt(
-          'Price per Quintal (optional)',
-          current.pricePerQuintal != null ? String(current.pricePerQuintal) : ''
-        );
-        const origin = prompt('Origin', current.origin || '') || '';
-        const destination = prompt('Destination', current.destination || '') || '';
-        const notes = prompt('Notes', current.notes || '') || '';
-        try {
-          await api(`/api/trucks/${id}`, 'PUT', {
-            date,
-            party,
-            truckNumber,
-            driverName,
-            rawMaterial,
-            quantity,
-            pricePerQuintal: pricePerQuintal || undefined,
-            origin,
-            destination,
-            notes
-          });
-          await refresh();
-          showToast('Truck entry updated');
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
+        editingTruckId = id;
+        truckForm.querySelector('input[name="date"]').value = current.date || '';
+        truckForm.querySelector('select[name="party"]').value = current.party || 'narayan';
+        truckForm.querySelector('input[name="truckNumber"]').value = current.truckNumber || '';
+        truckForm.querySelector('input[name="driverName"]').value = current.driverName || '';
+        truckForm.querySelector('select[name="rawMaterial"]').value = current.rawMaterial || '';
+        const clientInput = truckForm.querySelector('input[name="client"]');
+        if (clientInput) clientInput.value = current.client || '';
+        truckForm.querySelector('input[name="quantity"]').value = current.quantity != null ? String(current.quantity) : '';
+        truckForm.querySelector('input[name="pricePerQuintal"]').value =
+          current.pricePerQuintal != null ? String(current.pricePerQuintal) : '';
+        truckForm.querySelector('input[name="origin"]').value = current.origin || '';
+        truckForm.querySelector('input[name="destination"]').value = current.destination || '';
+        truckForm.querySelector('input[name="notes"]').value = current.notes || '';
+        const submitBtn = truckForm.querySelector('button[type="submit"]');
+        if (submitBtn) submitBtn.textContent = 'Update Truck Entry';
+        updateTruckTotal();
+        truckForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        showToast('Truck loaded. Update fields and click "Update Truck Entry".');
       });
     });
   }
@@ -1077,22 +1062,17 @@ function renderLandRows(rows) {
         const id = btn.getAttribute('data-id');
         const current = landRecordsCache.find((r) => r.id === id);
         if (!current) return;
-        const amountPaid = prompt('Amount Paid', String(current.amountPaid || 0));
-        if (!amountPaid) return;
-        const amountToBeGiven = prompt('Amount To Be Given', String(current.amountToBeGiven || 0));
-        if (!amountToBeGiven) return;
-        try {
-          await api(`/api/lands/${id}`, 'PUT', {
-            area: current.area,
-            ownerName: current.ownerName,
-            amountPaid,
-            amountToBeGiven
-          });
-          await refresh();
-          showToast('Land record updated');
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
+        editingLandId = id;
+        landForm.querySelector('input[name="area"]').value = current.area || '';
+        landForm.querySelector('input[name="ownerName"]').value = current.ownerName || '';
+        landForm.querySelector('input[name="amountPaid"]').value =
+          current.amountPaid != null ? String(current.amountPaid) : '';
+        landForm.querySelector('input[name="amountToBeGiven"]').value =
+          current.amountToBeGiven != null ? String(current.amountToBeGiven) : '';
+        const submitBtn = landForm.querySelector('button[type="submit"]');
+        if (submitBtn) submitBtn.textContent = 'Update Land Record';
+        landForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        showToast('Land record loaded. Update values and click "Update Land Record".');
       });
     });
   }
@@ -1628,15 +1608,20 @@ landForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(landForm);
   try {
-    await api('/api/lands', 'POST', {
+    const endpoint = editingLandId ? `/api/lands/${editingLandId}` : '/api/lands';
+    const method = editingLandId ? 'PUT' : 'POST';
+    await api(endpoint, method, {
       area: fd.get('area'),
       ownerName: fd.get('ownerName'),
       amountPaid: fd.get('amountPaid'),
       amountToBeGiven: fd.get('amountToBeGiven')
     });
     landForm.reset();
+    editingLandId = null;
+    const submitBtn = landForm.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = 'Add Land Record';
     await refresh();
-    showToast('Land record added');
+    showToast(method === 'PUT' ? 'Land record updated' : 'Land record added');
   } catch (err) {
     showToast(err.message, 'error');
   }
@@ -1786,7 +1771,9 @@ truckForm.addEventListener('submit', async (e) => {
   const fd = new FormData(truckForm);
 
   try {
-    await api('/api/trucks', 'POST', {
+    const endpoint = editingTruckId ? `/api/trucks/${editingTruckId}` : '/api/trucks';
+    const method = editingTruckId ? 'PUT' : 'POST';
+    await api(endpoint, method, {
       date: fd.get('date'),
       party: fd.get('party') || undefined,
       truckNumber: fd.get('truckNumber'),
@@ -1800,10 +1787,13 @@ truckForm.addEventListener('submit', async (e) => {
       notes: fd.get('notes')
     });
     truckForm.reset();
+    editingTruckId = null;
+    const submitBtn = truckForm.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = 'Add Truck Entry';
     setDefaultDates();
     updateTruckTotal();
     await refresh();
-    showToast('Truck entry added');
+    showToast(method === 'PUT' ? 'Truck entry updated' : 'Truck entry added');
   } catch (err) {
     showToast(err.message, 'error');
   }
