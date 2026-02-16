@@ -639,9 +639,11 @@ function renderSalaryLedgers(rows) {
         const totalToGive = Number(r.totalToGive ?? r.pending ?? 0);
         const totalSalary = totalPaid + totalToGive;
         const remaining = Math.max(0, totalToGive);
+        const ledgerDate = r.updatedAt ? String(r.updatedAt).slice(0, 10) : '-';
         return `<tr>
         <td>${r.name}</td>
         <td>${r.role}</td>
+        <td>${ledgerDate}</td>
         <td class="money">${money(totalSalary)}</td>
         <td class="money">${money(totalPaid)}</td>
         <td class="money">${money(totalToGive)}</td>
@@ -791,7 +793,7 @@ function renderTruckRows(rows) {
         truckForm.querySelector('select[name="party"]').value = current.party || 'narayan';
         truckForm.querySelector('input[name="truckNumber"]').value = current.truckNumber || '';
         truckForm.querySelector('input[name="driverName"]').value = current.driverName || '';
-        truckForm.querySelector('select[name="rawMaterial"]').value = current.rawMaterial || '';
+        truckForm.querySelector('input[name="rawMaterial"]').value = current.rawMaterial || '';
         const clientInput = truckForm.querySelector('input[name="client"]');
         if (clientInput) clientInput.value = current.client || '';
         truckForm.querySelector('input[name="quantity"]').value = current.quantity != null ? String(current.quantity) : '';

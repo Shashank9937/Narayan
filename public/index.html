@@ -211,13 +211,14 @@
         <div class="table-wrap">
           <table id="salaryLedgerTable">
             <thead>
-              <tr>
-                <th>Employee</th>
-                <th>Role</th>
-                <th>Total Salary</th>
-                <th>Total Paid</th>
-                <th>Total To Give</th>
-                <th>Remaining</th>
+                <tr>
+                  <th>Employee</th>
+                  <th>Role</th>
+                  <th>Date</th>
+                  <th>Total Salary</th>
+                  <th>Total Paid</th>
+                  <th>Total To Give</th>
+                  <th>Remaining</th>
                 <th>Note</th>
                 <th>Actions</th>
               </tr>
@@ -241,11 +242,11 @@
             </select>
             <input name="truckNumber" placeholder="Truck Number" required />
             <input name="driverName" placeholder="Driver Name" />
-            <select name="rawMaterial" required>
-              <option value="">Select Material Type</option>
-              <option value="Pellets">Pellets</option>
-              <option value="Briquettes">Briquettes</option>
-            </select>
+            <input name="rawMaterial" list="rawMaterialOptions" placeholder="Raw Material (e.g. Pellets)" required />
+            <datalist id="rawMaterialOptions">
+              <option value="Pellets"></option>
+              <option value="Briquettes"></option>
+            </datalist>
             <input name="client" placeholder="Supplied To (Client Name)" />
             <input name="quantity" type="number" min="0.01" step="0.01" placeholder="Quantity (quintals)" required />
             <input name="pricePerQuintal" type="number" min="0" step="0.01" placeholder="Price per Quintal"

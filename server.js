@@ -674,6 +674,21 @@ function jsonStore() {
       writeJsonDb(db);
       return row;
     },
+    async updateChiniExpense(id, data) {
+      const db = readJsonDb();
+      const expense = db.chiniExpenses.find((e) => e.id === id);
+      if (!expense) return null;
+      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
+        ? String(data.party).toLowerCase()
+        : 'narayan';
+      expense.date = data.date;
+      expense.party = party;
+      expense.description = String(data.description || '').trim() || 'Chini Mill Expense';
+      expense.amount = Number(data.amount);
+      expense.updatedAt = new Date().toISOString();
+      writeJsonDb(db);
+      return expense;
+    },
     async deleteChiniExpense(id) {
       const db = readJsonDb();
       const before = db.chiniExpenses.length;
@@ -846,6 +861,22 @@ function jsonStore() {
       db.supplierTransactions.push(row);
       writeJsonDb(db);
       return row;
+    },
+    async updateSupplierTransaction(id, data) {
+      const db = readJsonDb();
+      const tx = db.supplierTransactions.find(t => t.id === id);
+      if (!tx) return null;
+      tx.date = data.date;
+      tx.type = data.type;
+      tx.amount = Number(data.amount);
+      tx.truckNumber = data.truckNumber ? String(data.truckNumber).trim() : undefined;
+      tx.material = data.material ? String(data.material).trim() : undefined;
+      tx.quantity = data.quantity ? Number(data.quantity) : undefined;
+      tx.rate = data.rate ? Number(data.rate) : undefined;
+      tx.note = data.note ? String(data.note).trim() : '';
+      tx.updatedAt = new Date().toISOString();
+      writeJsonDb(db);
+      return tx;
     },
     async deleteSupplierTransaction(id) {
       const db = readJsonDb();
@@ -1632,6 +1663,28 @@ function postgresStore() {
         [row.id, row.date, row.party, row.description, row.amount, row.createdAt]
       );
       return row;
+    },
+    async updateChiniExpense(id, data) {
+      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
+        ? String(data.party).toLowerCase()
+        : 'narayan';
+      const res = await pool.query(
+        `UPDATE chini_expenses
+         SET date = $2, party = $3, description = $4, amount = $5, updated_at = $6
+         WHERE id = $1
+         RETURNING *`,
+        [id, data.date, party, String(data.description || '').trim() || 'Chini Mill Expense', Number(data.amount), new Date().toISOString()]
+      );
+      if (!res.rows[0]) return null;
+      const r = res.rows[0];
+      return {
+        id: r.id,
+        date: String(r.date).slice(0, 10),
+        party: r.party || 'narayan',
+        description: r.description || '',
+        amount: Number(r.amount),
+        createdAt: r.created_at
+      };
     },
     async deleteChiniExpense(id) {
       const res = await pool.query('DELETE FROM chini_expenses WHERE id = $1', [id]);
@@ -2622,6 +2675,28 @@ app.post('/api/investments', auth, requirePermission('investments:create'), asyn
   }
 });
 
+app.put('/api/investments/:id', auth, requirePermission('investments:update'), async (req, res) => {
+  const { date, party, amount, note } = req.body;
+  if (!date || !party || amount == null) {
+    return res.status(400).json({ error: 'date, party and amount are required' });
+  }
+  const numAmount = Number(amount);
+  if (Number.isNaN(numAmount) || numAmount <= 0) {
+    return res.status(400).json({ error: 'amount must be a positive number' });
+  }
+  if (!['narayan', 'maa_vaishno'].includes(String(party).toLowerCase())) {
+    return res.status(400).json({ error: 'party must be narayan or maa_vaishno' });
+  }
+  try {
+    const row = await store.updateInvestment(req.params.id, { date, party, amount: numAmount, note });
+    if (!row) return res.status(404).json({ error: 'Investment not found' });
+    return res.json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to update investment' });
+  }
+});
+
 app.delete('/api/investments/:id', auth, requirePermission('investments:delete'), async (req, res) => {
   try {
     const deleted = await store.deleteInvestment(req.params.id);
@@ -2661,6 +2736,28 @@ app.post('/api/chini-expenses', auth, requirePermission('chini:create'), async (
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to create chini expense' });
+  }
+});
+
+app.put('/api/chini-expenses/:id', auth, requirePermission('chini:update'), async (req, res) => {
+  const { date, party, description, amount } = req.body;
+  if (!date || !party || amount == null) {
+    return res.status(400).json({ error: 'date, party and amount are required' });
+  }
+  const numAmount = Number(amount);
+  if (Number.isNaN(numAmount) || numAmount <= 0) {
+    return res.status(400).json({ error: 'amount must be a positive number' });
+  }
+  if (!['narayan', 'maa_vaishno'].includes(String(party).toLowerCase())) {
+    return res.status(400).json({ error: 'party must be narayan or maa_vaishno' });
+  }
+  try {
+    const row = await store.updateChiniExpense(req.params.id, { date, party, description, amount: numAmount });
+    if (!row) return res.status(404).json({ error: 'Chini expense not found' });
+    return res.json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to update chini expense' });
   }
 });
 
