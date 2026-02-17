@@ -52,6 +52,10 @@ const ROLE_PERMISSIONS = {
     'vehicles:create',
     'vehicles:update',
     'vehicles:delete',
+    'billing:view',
+    'billing:create',
+    'billing:update',
+    'billing:delete',
     'export:view',
     'salaryslip:view'
   ],
@@ -83,7 +87,11 @@ const ROLE_PERMISSIONS = {
     'vehicles:view',
     'vehicles:create',
     'vehicles:update',
-    'vehicles:delete'
+    'vehicles:delete',
+    'billing:view',
+    'billing:create',
+    'billing:update',
+    'billing:delete'
   ]
 };
 
@@ -106,6 +114,62 @@ function daysInMonth(year, monthIndexZeroBased) {
 function parseISODate(dateStr) {
   const d = new Date(`${dateStr}T00:00:00Z`);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function normalizeGstNo(gstNo) {
+  return String(gstNo || '')
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .trim();
+}
+
+function isValidGstNo(gstNo) {
+  return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(normalizeGstNo(gstNo));
+}
+
+function cleanInvoiceItems(items) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item) => {
+      const quantity = Number(item.quantity);
+      const rate = Number(item.rate);
+      const gstPercent = Number(item.gstPercent ?? 0);
+      if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(rate) || rate < 0) return null;
+      const taxableValue = quantity * rate;
+      const gstAmount = (taxableValue * Math.max(gstPercent, 0)) / 100;
+      return {
+        description: String(item.description || '').trim(),
+        hsnSac: String(item.hsnSac || '').trim(),
+        unit: String(item.unit || '').trim(),
+        quantity,
+        rate,
+        gstPercent: Math.max(gstPercent, 0),
+        taxableValue,
+        gstAmount,
+        lineTotal: taxableValue + gstAmount
+      };
+    })
+    .filter((row) => row && row.description);
+}
+
+function calcInvoiceTotals(items) {
+  const subtotal = items.reduce((sum, i) => sum + Number(i.taxableValue || 0), 0);
+  const totalGst = items.reduce((sum, i) => sum + Number(i.gstAmount || 0), 0);
+  const grandTotal = subtotal + totalGst;
+  return { subtotal, totalGst, grandTotal };
+}
+
+function normalizeBillCompany(data) {
+  return {
+    gstNo: normalizeGstNo(data.gstNo),
+    companyName: String(data.companyName || '').trim(),
+    address: String(data.address || '').trim(),
+    state: String(data.state || '').trim(),
+    stateCode: String(data.stateCode || '').trim(),
+    contactPerson: String(data.contactPerson || '').trim(),
+    phone: String(data.phone || '').trim(),
+    email: String(data.email || '').trim()
+  };
 }
 
 function userView(user) {
@@ -159,6 +223,8 @@ function ensureDbShape(db) {
   if (!Array.isArray(db.chiniExpenses)) db.chiniExpenses = [];
   if (!Array.isArray(db.landRecords)) db.landRecords = [];
   if (!Array.isArray(db.vehicles)) db.vehicles = [];
+  if (!Array.isArray(db.billingCompanies)) db.billingCompanies = [];
+  if (!Array.isArray(db.bills)) db.bills = [];
   if (!Array.isArray(db.users) || db.users.length === 0) db.users = defaultUsers();
   if (!Array.isArray(db.sessions)) db.sessions = [];
   if (!Array.isArray(db.suppliers)) db.suppliers = [];
@@ -887,6 +953,107 @@ function jsonStore() {
       writeJsonDb(db);
       return true;
     },
+    async listBillingCompanies() {
+      const db = readJsonDb();
+      return (db.billingCompanies || [])
+        .map((c) => ({
+          ...c,
+          gstNo: normalizeGstNo(c.gstNo)
+        }))
+        .sort((a, b) => String(a.companyName || '').localeCompare(String(b.companyName || '')));
+    },
+    async getBillingCompanyByGst(gstNo) {
+      const db = readJsonDb();
+      const normalized = normalizeGstNo(gstNo);
+      if (!normalized) return null;
+      return (db.billingCompanies || []).find((c) => normalizeGstNo(c.gstNo) === normalized) || null;
+    },
+    async upsertBillingCompany(data) {
+      const db = readJsonDb();
+      const company = normalizeBillCompany(data);
+      const existing = (db.billingCompanies || []).find((c) => normalizeGstNo(c.gstNo) === company.gstNo);
+      if (existing) {
+        existing.companyName = company.companyName;
+        existing.address = company.address;
+        existing.state = company.state;
+        existing.stateCode = company.stateCode;
+        existing.contactPerson = company.contactPerson;
+        existing.phone = company.phone;
+        existing.email = company.email;
+        existing.updatedAt = new Date().toISOString();
+        writeJsonDb(db);
+        return existing;
+      }
+      const row = {
+        id: uid('bc'),
+        ...company,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      db.billingCompanies.push(row);
+      writeJsonDb(db);
+      return row;
+    },
+    async listBills() {
+      const db = readJsonDb();
+      return (db.bills || []).sort((a, b) => (a.billDate < b.billDate ? 1 : -1));
+    },
+    async getBillById(id) {
+      const db = readJsonDb();
+      return (db.bills || []).find((b) => b.id === id) || null;
+    },
+    async createBill(data) {
+      const db = readJsonDb();
+      const company = normalizeBillCompany(data.company || {});
+      const items = cleanInvoiceItems(data.items);
+      const totals = calcInvoiceTotals(items);
+      const row = {
+        id: uid('bill'),
+        invoiceNo: String(data.invoiceNo || '').trim(),
+        billDate: String(data.billDate),
+        dueDate: data.dueDate ? String(data.dueDate) : '',
+        vehicleNo: String(data.vehicleNo || '').trim(),
+        company,
+        placeOfSupply: String(data.placeOfSupply || '').trim(),
+        reverseCharge: Boolean(data.reverseCharge),
+        items,
+        subtotal: totals.subtotal,
+        totalGst: totals.totalGst,
+        grandTotal: totals.grandTotal,
+        notes: String(data.notes || '').trim(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      db.bills.push(row);
+      const existingCompany = (db.billingCompanies || []).find((c) => normalizeGstNo(c.gstNo) === company.gstNo);
+      if (existingCompany) {
+        existingCompany.companyName = company.companyName;
+        existingCompany.address = company.address;
+        existingCompany.state = company.state;
+        existingCompany.stateCode = company.stateCode;
+        existingCompany.contactPerson = company.contactPerson;
+        existingCompany.phone = company.phone;
+        existingCompany.email = company.email;
+        existingCompany.updatedAt = new Date().toISOString();
+      } else {
+        db.billingCompanies.push({
+          id: uid('bc'),
+          ...company,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+      }
+      writeJsonDb(db);
+      return row;
+    },
+    async deleteBill(id) {
+      const db = readJsonDb();
+      const before = db.bills.length;
+      db.bills = db.bills.filter((b) => b.id !== id);
+      if (before === db.bills.length) return false;
+      writeJsonDb(db);
+      return true;
+    },
     async dashboard(month, today) {
       const db = readJsonDb();
       const totalSalary = db.employees.reduce((sum, e) => sum + Number(e.monthlySalary), 0);
@@ -1048,6 +1215,45 @@ function postgresStore() {
           amount_paid NUMERIC(12,2) NOT NULL DEFAULT 0,
           note TEXT,
           created_at TIMESTAMPTZ NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS billing_companies (
+          id TEXT PRIMARY KEY,
+          gst_no TEXT UNIQUE NOT NULL,
+          company_name TEXT NOT NULL,
+          address TEXT NOT NULL,
+          state TEXT,
+          state_code TEXT,
+          contact_person TEXT,
+          phone TEXT,
+          email TEXT,
+          created_at TIMESTAMPTZ NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS bills (
+          id TEXT PRIMARY KEY,
+          invoice_no TEXT NOT NULL,
+          bill_date DATE NOT NULL,
+          due_date DATE,
+          vehicle_no TEXT,
+          company_gst_no TEXT NOT NULL,
+          company_name TEXT NOT NULL,
+          company_address TEXT NOT NULL,
+          company_state TEXT,
+          company_state_code TEXT,
+          contact_person TEXT,
+          company_phone TEXT,
+          company_email TEXT,
+          place_of_supply TEXT,
+          reverse_charge BOOLEAN NOT NULL DEFAULT FALSE,
+          items JSONB NOT NULL,
+          subtotal NUMERIC(14,2) NOT NULL,
+          total_gst NUMERIC(14,2) NOT NULL,
+          grand_total NUMERIC(14,2) NOT NULL,
+          notes TEXT,
+          created_at TIMESTAMPTZ NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL
         );
       `);
 
@@ -1830,6 +2036,208 @@ function postgresStore() {
     },
     async deleteLandRecord(id) {
       const res = await pool.query('DELETE FROM land_records WHERE id = $1', [id]);
+      return res.rowCount > 0;
+    },
+    async listBillingCompanies() {
+      const res = await pool.query('SELECT * FROM billing_companies ORDER BY company_name ASC');
+      return res.rows.map((r) => ({
+        id: r.id,
+        gstNo: normalizeGstNo(r.gst_no),
+        companyName: r.company_name,
+        address: r.address,
+        state: r.state || '',
+        stateCode: r.state_code || '',
+        contactPerson: r.contact_person || '',
+        phone: r.phone || '',
+        email: r.email || '',
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      }));
+    },
+    async getBillingCompanyByGst(gstNo) {
+      const normalized = normalizeGstNo(gstNo);
+      if (!normalized) return null;
+      const res = await pool.query('SELECT * FROM billing_companies WHERE gst_no = $1', [normalized]);
+      if (!res.rows[0]) return null;
+      const r = res.rows[0];
+      return {
+        id: r.id,
+        gstNo: normalizeGstNo(r.gst_no),
+        companyName: r.company_name,
+        address: r.address,
+        state: r.state || '',
+        stateCode: r.state_code || '',
+        contactPerson: r.contact_person || '',
+        phone: r.phone || '',
+        email: r.email || '',
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      };
+    },
+    async upsertBillingCompany(data) {
+      const company = normalizeBillCompany(data);
+      const res = await pool.query(
+        `INSERT INTO billing_companies
+          (id, gst_no, company_name, address, state, state_code, contact_person, phone, email, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         ON CONFLICT (gst_no)
+         DO UPDATE SET
+           company_name = EXCLUDED.company_name,
+           address = EXCLUDED.address,
+           state = EXCLUDED.state,
+           state_code = EXCLUDED.state_code,
+           contact_person = EXCLUDED.contact_person,
+           phone = EXCLUDED.phone,
+           email = EXCLUDED.email,
+           updated_at = EXCLUDED.updated_at
+         RETURNING *`,
+        [
+          uid('bc'),
+          company.gstNo,
+          company.companyName,
+          company.address,
+          company.state,
+          company.stateCode,
+          company.contactPerson,
+          company.phone,
+          company.email,
+          new Date().toISOString(),
+          new Date().toISOString()
+        ]
+      );
+      const r = res.rows[0];
+      return {
+        id: r.id,
+        gstNo: normalizeGstNo(r.gst_no),
+        companyName: r.company_name,
+        address: r.address,
+        state: r.state || '',
+        stateCode: r.state_code || '',
+        contactPerson: r.contact_person || '',
+        phone: r.phone || '',
+        email: r.email || '',
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      };
+    },
+    async listBills() {
+      const res = await pool.query('SELECT * FROM bills ORDER BY bill_date DESC, created_at DESC');
+      return res.rows.map((r) => ({
+        id: r.id,
+        invoiceNo: r.invoice_no,
+        billDate: String(r.bill_date).slice(0, 10),
+        dueDate: r.due_date ? String(r.due_date).slice(0, 10) : '',
+        vehicleNo: r.vehicle_no || '',
+        company: {
+          gstNo: normalizeGstNo(r.company_gst_no),
+          companyName: r.company_name,
+          address: r.company_address,
+          state: r.company_state || '',
+          stateCode: r.company_state_code || '',
+          contactPerson: r.contact_person || '',
+          phone: r.company_phone || '',
+          email: r.company_email || ''
+        },
+        placeOfSupply: r.place_of_supply || '',
+        reverseCharge: Boolean(r.reverse_charge),
+        items: Array.isArray(r.items) ? r.items : [],
+        subtotal: Number(r.subtotal || 0),
+        totalGst: Number(r.total_gst || 0),
+        grandTotal: Number(r.grand_total || 0),
+        notes: r.notes || '',
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      }));
+    },
+    async getBillById(id) {
+      const res = await pool.query('SELECT * FROM bills WHERE id = $1', [id]);
+      if (!res.rows[0]) return null;
+      const r = res.rows[0];
+      return {
+        id: r.id,
+        invoiceNo: r.invoice_no,
+        billDate: String(r.bill_date).slice(0, 10),
+        dueDate: r.due_date ? String(r.due_date).slice(0, 10) : '',
+        vehicleNo: r.vehicle_no || '',
+        company: {
+          gstNo: normalizeGstNo(r.company_gst_no),
+          companyName: r.company_name,
+          address: r.company_address,
+          state: r.company_state || '',
+          stateCode: r.company_state_code || '',
+          contactPerson: r.contact_person || '',
+          phone: r.company_phone || '',
+          email: r.company_email || ''
+        },
+        placeOfSupply: r.place_of_supply || '',
+        reverseCharge: Boolean(r.reverse_charge),
+        items: Array.isArray(r.items) ? r.items : [],
+        subtotal: Number(r.subtotal || 0),
+        totalGst: Number(r.total_gst || 0),
+        grandTotal: Number(r.grand_total || 0),
+        notes: r.notes || '',
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      };
+    },
+    async createBill(data) {
+      const company = normalizeBillCompany(data.company || {});
+      const items = cleanInvoiceItems(data.items);
+      const totals = calcInvoiceTotals(items);
+      await this.upsertBillingCompany(company);
+      const now = new Date().toISOString();
+      const row = {
+        id: uid('bill'),
+        invoiceNo: String(data.invoiceNo || '').trim(),
+        billDate: String(data.billDate),
+        dueDate: data.dueDate ? String(data.dueDate) : null,
+        vehicleNo: String(data.vehicleNo || '').trim(),
+        company,
+        placeOfSupply: String(data.placeOfSupply || '').trim(),
+        reverseCharge: Boolean(data.reverseCharge),
+        items,
+        subtotal: totals.subtotal,
+        totalGst: totals.totalGst,
+        grandTotal: totals.grandTotal,
+        notes: String(data.notes || '').trim(),
+        createdAt: now,
+        updatedAt: now
+      };
+      await pool.query(
+        `INSERT INTO bills
+          (id, invoice_no, bill_date, due_date, vehicle_no, company_gst_no, company_name, company_address, company_state, company_state_code,
+           contact_person, company_phone, company_email, place_of_supply, reverse_charge, items, subtotal, total_gst, grand_total, notes, created_at, updated_at)
+         VALUES
+          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20,$21,$22)`,
+        [
+          row.id,
+          row.invoiceNo,
+          row.billDate,
+          row.dueDate,
+          row.vehicleNo || null,
+          row.company.gstNo,
+          row.company.companyName,
+          row.company.address,
+          row.company.state || null,
+          row.company.stateCode || null,
+          row.company.contactPerson || null,
+          row.company.phone || null,
+          row.company.email || null,
+          row.placeOfSupply || null,
+          row.reverseCharge,
+          JSON.stringify(row.items),
+          row.subtotal,
+          row.totalGst,
+          row.grandTotal,
+          row.notes || null,
+          row.createdAt,
+          row.updatedAt
+        ]
+      );
+      return row;
+    },
+    async deleteBill(id) {
+      const res = await pool.query('DELETE FROM bills WHERE id = $1', [id]);
       return res.rowCount > 0;
     },
     async dashboard(month, today) {
@@ -2914,6 +3322,253 @@ app.delete('/api/lands/:id', auth, requirePermission('land:delete'), async (req,
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to delete land record' });
+  }
+});
+
+app.get('/api/billing/companies', auth, requirePermission('billing:view'), async (req, res) => {
+  try {
+    const gstNo = normalizeGstNo(req.query.gstNo);
+    if (gstNo) {
+      const company = await store.getBillingCompanyByGst(gstNo);
+      return res.json({ company: company || null });
+    }
+    const rows = await store.listBillingCompanies();
+    return res.json(rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to fetch billing companies' });
+  }
+});
+
+app.post('/api/billing/companies', auth, requirePermission('billing:create'), async (req, res) => {
+  const company = normalizeBillCompany(req.body || {});
+  if (!company.gstNo || !company.companyName || !company.address) {
+    return res.status(400).json({ error: 'gstNo, companyName and address are required' });
+  }
+  if (!isValidGstNo(company.gstNo)) {
+    return res.status(400).json({ error: 'Enter a valid 15-character GST number' });
+  }
+  try {
+    const row = await store.upsertBillingCompany(company);
+    return res.status(201).json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to save billing company' });
+  }
+});
+
+app.get('/api/bills', auth, requirePermission('billing:view'), async (_req, res) => {
+  try {
+    const rows = await store.listBills();
+    return res.json(rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to fetch bills' });
+  }
+});
+
+app.post('/api/bills', auth, requirePermission('billing:create'), async (req, res) => {
+  const { invoiceNo, billDate, dueDate, vehicleNo, placeOfSupply, reverseCharge, notes } = req.body || {};
+  const company = normalizeBillCompany((req.body && req.body.company) || {});
+  const items = cleanInvoiceItems((req.body && req.body.items) || []);
+
+  if (!invoiceNo || !billDate) {
+    return res.status(400).json({ error: 'invoiceNo and billDate are required' });
+  }
+  if (!company.gstNo || !company.companyName || !company.address) {
+    return res.status(400).json({ error: 'Company GST, name and address are required' });
+  }
+  if (!isValidGstNo(company.gstNo)) {
+    return res.status(400).json({ error: 'Enter a valid 15-character GST number' });
+  }
+  if (!items.length) {
+    return res.status(400).json({ error: 'Add at least one valid bill item' });
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(billDate))) {
+    return res.status(400).json({ error: 'billDate must be in YYYY-MM-DD format' });
+  }
+  if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(dueDate))) {
+    return res.status(400).json({ error: 'dueDate must be in YYYY-MM-DD format' });
+  }
+
+  try {
+    const row = await store.createBill({
+      invoiceNo,
+      billDate,
+      dueDate,
+      vehicleNo,
+      company,
+      placeOfSupply,
+      reverseCharge: Boolean(reverseCharge),
+      items,
+      notes
+    });
+    return res.status(201).json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to create bill' });
+  }
+});
+
+app.delete('/api/bills/:id', auth, requirePermission('billing:delete'), async (req, res) => {
+  try {
+    const deleted = await store.deleteBill(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Bill not found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to delete bill' });
+  }
+});
+
+app.get('/api/bills/:id.pdf', auth, requirePermission('billing:view'), async (req, res) => {
+  try {
+    const bill = await store.getBillById(req.params.id);
+    if (!bill) return res.status(404).json({ error: 'Bill not found' });
+
+    const seller = {
+      name: APP_NAME,
+      address: process.env.COMPANY_ADDRESS || 'Address not configured',
+      gstNo: normalizeGstNo(process.env.COMPANY_GST_NO || '') || 'NA',
+      state: process.env.COMPANY_STATE || 'NA',
+      stateCode: process.env.COMPANY_STATE_CODE || 'NA',
+      phone: process.env.COMPANY_PHONE || '',
+      email: process.env.COMPANY_EMAIL || ''
+    };
+
+    const moneyValue = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const doc = new PDFDocument({ margin: 36, size: 'A4' });
+    const filename = `invoice-${String(bill.invoiceNo || bill.id).replace(/[^a-z0-9_-]/gi, '-')}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    doc.pipe(res);
+
+    const pageWidth = doc.page.width;
+    const usableWidth = pageWidth - 72;
+    const left = 36;
+    let y = 34;
+    const colors = {
+      border: '#CFD8E6',
+      heading: '#0C2E66',
+      text: '#1A2738',
+      muted: '#5E6A7A',
+      panel: '#F6F9FF'
+    };
+
+    // Header
+    doc.save().roundedRect(left, y, usableWidth, 70, 8).fill(colors.panel).restore();
+    doc.save().roundedRect(left, y, usableWidth, 70, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
+    doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(19).text('TAX INVOICE', left + 12, y + 10);
+    doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(13).text(seller.name, left + 12, y + 35, { width: usableWidth - 24 });
+    doc.font('Helvetica').fontSize(9).fillColor(colors.muted);
+    doc.text(`Invoice No: ${bill.invoiceNo}`, left + usableWidth - 220, y + 12, { width: 205, align: 'right' });
+    doc.text(`Invoice Date: ${bill.billDate}`, left + usableWidth - 220, y + 28, { width: 205, align: 'right' });
+    doc.text(`Due Date: ${bill.dueDate || '-'}`, left + usableWidth - 220, y + 44, { width: 205, align: 'right' });
+    y += 82;
+
+    // Seller / buyer blocks
+    const boxW = (usableWidth - 12) / 2;
+    const boxH = 118;
+    doc.save().roundedRect(left, y, boxW, boxH, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
+    doc.save().roundedRect(left + boxW + 12, y, boxW, boxH, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
+
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(colors.heading).text('Supplier Details', left + 10, y + 10);
+    doc.font('Helvetica').fontSize(9.2).fillColor(colors.text);
+    doc.text(seller.name, left + 10, y + 28);
+    doc.text(seller.address, left + 10, y + 42, { width: boxW - 20 });
+    doc.text(`GSTIN: ${seller.gstNo}`, left + 10, y + 72);
+    doc.text(`State: ${seller.state} (${seller.stateCode})`, left + 10, y + 86);
+    if (seller.phone) doc.text(`Phone: ${seller.phone}`, left + 10, y + 100);
+    if (seller.email) doc.text(`Email: ${seller.email}`, left + 10, y + 112);
+
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(colors.heading).text('Bill To (Buyer)', left + boxW + 22, y + 10);
+    doc.font('Helvetica').fontSize(9.2).fillColor(colors.text);
+    doc.text(bill.company.companyName, left + boxW + 22, y + 28);
+    doc.text(bill.company.address, left + boxW + 22, y + 42, { width: boxW - 20 });
+    doc.text(`GSTIN: ${bill.company.gstNo}`, left + boxW + 22, y + 72);
+    doc.text(`State: ${bill.company.state || '-'} (${bill.company.stateCode || '-'})`, left + boxW + 22, y + 86);
+    if (bill.company.phone) doc.text(`Phone: ${bill.company.phone}`, left + boxW + 22, y + 100);
+    if (bill.company.email) doc.text(`Email: ${bill.company.email}`, left + boxW + 22, y + 112);
+    y += boxH + 12;
+
+    // Extra bill meta
+    doc.font('Helvetica').fontSize(9.4).fillColor(colors.text);
+    doc.text(`Place of Supply: ${bill.placeOfSupply || '-'}`, left, y);
+    doc.text(`Reverse Charge: ${bill.reverseCharge ? 'Yes' : 'No'}`, left + 220, y);
+    doc.text(`Vehicle No: ${bill.vehicleNo || '-'}`, left + 390, y);
+    y += 14;
+
+    // Items table header
+    const col = {
+      idx: left,
+      desc: left + 34,
+      hsn: left + 246,
+      qty: left + 306,
+      rate: left + 360,
+      tax: left + 430,
+      total: left + 482
+    };
+    const rowH = 22;
+    doc.save().roundedRect(left, y, usableWidth, rowH, 4).fill(colors.panel).restore();
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(colors.heading);
+    doc.text('#', col.idx + 6, y + 7);
+    doc.text('Description', col.desc, y + 7, { width: 200 });
+    doc.text('HSN/SAC', col.hsn, y + 7, { width: 58 });
+    doc.text('Qty', col.qty, y + 7, { width: 40, align: 'right' });
+    doc.text('Rate', col.rate, y + 7, { width: 65, align: 'right' });
+    doc.text('GST %', col.tax, y + 7, { width: 45, align: 'right' });
+    doc.text('Amount', col.total, y + 7, { width: 78, align: 'right' });
+    y += rowH;
+
+    bill.items.forEach((item, index) => {
+      const taxableValue = Number(item.taxableValue || 0);
+      const rowTotal = Number(item.lineTotal || taxableValue + Number(item.gstAmount || 0));
+      doc.save().rect(left, y, usableWidth, rowH).strokeColor(colors.border).lineWidth(0.5).stroke().restore();
+      doc.font('Helvetica').fontSize(8.8).fillColor(colors.text);
+      doc.text(String(index + 1), col.idx + 6, y + 6);
+      doc.text(item.description || '-', col.desc, y + 6, { width: 194, ellipsis: true });
+      doc.text(item.hsnSac || '-', col.hsn, y + 6, { width: 56, ellipsis: true });
+      doc.text(String(item.quantity || 0), col.qty, y + 6, { width: 40, align: 'right' });
+      doc.text(moneyValue(item.rate || 0), col.rate, y + 6, { width: 65, align: 'right' });
+      doc.text(`${Number(item.gstPercent || 0).toFixed(2)}`, col.tax, y + 6, { width: 45, align: 'right' });
+      doc.text(moneyValue(rowTotal), col.total, y + 6, { width: 78, align: 'right' });
+      y += rowH;
+      if (y > doc.page.height - 160) {
+        doc.addPage();
+        y = 44;
+      }
+    });
+
+    // Totals
+    y += 8;
+    const totalsX = left + usableWidth - 220;
+    doc.save().roundedRect(totalsX, y, 220, 84, 6).lineWidth(1).strokeColor(colors.border).stroke().restore();
+    doc.font('Helvetica').fontSize(9.5).fillColor(colors.text);
+    doc.text('Taxable Value', totalsX + 10, y + 12);
+    doc.text(moneyValue(bill.subtotal), totalsX + 10, y + 12, { width: 200, align: 'right' });
+    doc.text('Total GST', totalsX + 10, y + 32);
+    doc.text(moneyValue(bill.totalGst), totalsX + 10, y + 32, { width: 200, align: 'right' });
+    doc.font('Helvetica-Bold').fontSize(11).fillColor(colors.heading);
+    doc.text('Grand Total', totalsX + 10, y + 54);
+    doc.text(moneyValue(bill.grandTotal), totalsX + 10, y + 54, { width: 200, align: 'right' });
+
+    if (bill.notes) {
+      doc.font('Helvetica-Bold').fontSize(9.5).fillColor(colors.heading).text('Notes:', left, y + 8, { width: usableWidth - 240 });
+      doc.font('Helvetica').fontSize(9).fillColor(colors.text).text(bill.notes, left, y + 24, { width: usableWidth - 240 });
+    }
+
+    // Footer signature
+    const footerY = doc.page.height - 78;
+    doc.save().moveTo(left, footerY).lineTo(left + usableWidth, footerY).strokeColor(colors.border).stroke().restore();
+    doc.font('Helvetica').fontSize(9).fillColor(colors.muted);
+    doc.text('This is a computer-generated invoice.', left, footerY + 8, { width: usableWidth });
+    doc.text(`For ${seller.name}`, left + usableWidth - 180, footerY + 8, { width: 180, align: 'right' });
+    doc.text('Authorised Signatory', left + usableWidth - 180, footerY + 42, { width: 180, align: 'right' });
+
+    doc.end();
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to generate bill PDF' });
   }
 });
 

@@ -55,6 +55,7 @@
       <button class="nav-btn" data-target="landSection">Land</button>
       <button class="nav-btn" data-target="vehicleSection">Vehicles</button>
       <button class="nav-btn" data-target="supplierSection">Suppliers</button>
+      <button class="nav-btn" data-target="billingSection">Billing</button>
       <button class="nav-btn" data-target="settingsSection">Settings</button>
     </nav>
 
@@ -713,6 +714,129 @@
           </section>
         </div>
       </div>
+    </section>
+
+    <section id="billingSection" class="section-view">
+      <div class="grid">
+        <section class="panel" id="billPanel">
+          <h2>GST Bill Generator</h2>
+          <form id="billForm">
+            <div class="bill-grid two">
+              <input name="invoiceNo" placeholder="Invoice No (e.g. NE/2026/001)" required />
+              <input name="billDate" type="date" required />
+              <input name="dueDate" type="date" />
+              <input name="vehicleNo" placeholder="Vehicle No (optional)" />
+            </div>
+
+            <div class="bill-grid three">
+              <input id="billCompanyGstNo" name="gstNo" placeholder="Buyer GST No" maxlength="15" required />
+              <button id="billGstLookupBtn" type="button" class="small">Auto Fill by GST</button>
+              <input id="billPlaceOfSupply" name="placeOfSupply" placeholder="Place of Supply" />
+            </div>
+
+            <div class="bill-grid two">
+              <input id="billCompanyName" name="companyName" placeholder="Buyer Company Name" required />
+              <input id="billCompanyContact" name="contactPerson" placeholder="Contact Person" />
+              <input id="billCompanyPhone" name="phone" placeholder="Phone" />
+              <input id="billCompanyEmail" name="email" placeholder="Email" />
+            </div>
+            <textarea id="billCompanyAddress" name="address" placeholder="Buyer Address" required></textarea>
+            <div class="bill-grid two">
+              <input id="billCompanyState" name="state" placeholder="State" />
+              <input id="billCompanyStateCode" name="stateCode" placeholder="State Code" />
+            </div>
+
+            <div class="row wrap">
+              <h3>Bill Items</h3>
+              <button id="addBillItemBtn" type="button" class="small">+ Add Item</button>
+            </div>
+            <div class="table-wrap">
+              <table id="billItemsTable">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Description</th>
+                    <th>HSN/SAC</th>
+                    <th>Unit</th>
+                    <th>Qty</th>
+                    <th>Rate</th>
+                    <th>GST %</th>
+                    <th>Taxable</th>
+                    <th>Line Total</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="billItemsTbody"></tbody>
+              </table>
+            </div>
+
+            <div class="billing-totals">
+              <div class="summary-stat">
+                <div class="label">Subtotal</div>
+                <div id="billSubtotal" class="value">₹0</div>
+              </div>
+              <div class="summary-stat">
+                <div class="label">Total GST</div>
+                <div id="billTotalGst" class="value">₹0</div>
+              </div>
+              <div class="summary-stat">
+                <div class="label">Grand Total</div>
+                <div id="billGrandTotal" class="value">₹0</div>
+              </div>
+            </div>
+
+            <textarea name="notes" id="billNotes" placeholder="Notes (optional)"></textarea>
+            <label class="inline-check">
+              <input name="reverseCharge" type="checkbox" />
+              Reverse Charge Applicable
+            </label>
+            <button type="submit">Save Bill & Generate PDF</button>
+          </form>
+        </section>
+      </div>
+
+      <section class="panel" id="billReportPanel">
+        <div class="row wrap">
+          <h2>Generated Bills</h2>
+          <input id="billSearchInput" type="text" placeholder="Search invoice / company / GST" class="wide-input" />
+        </div>
+        <div class="table-wrap">
+          <table id="billTable">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Invoice</th>
+                <th>Company</th>
+                <th>GST No</th>
+                <th>Subtotal</th>
+                <th>Total GST</th>
+                <th>Grand Total</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" id="billCompanyPanel">
+        <h2>Saved GST Companies</h2>
+        <div class="table-wrap">
+          <table id="billCompanyTable">
+            <thead>
+              <tr>
+                <th>GST No</th>
+                <th>Company</th>
+                <th>Contact</th>
+                <th>Phone</th>
+                <th>State</th>
+                <th>Address</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
     </section>
 
     <section id="settingsSection" class="section-view">

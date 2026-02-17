@@ -25,6 +25,24 @@ const txTypeSelect = document.getElementById('txType');
 const txTruckFields = document.getElementById('txTruckFields');
 const supplierTransactionForm = document.getElementById('supplierTransactionForm');
 const addSupplierBtn = document.getElementById('addSupplierBtn');
+const billForm = document.getElementById('billForm');
+const billItemsTbody = document.getElementById('billItemsTbody');
+const addBillItemBtn = document.getElementById('addBillItemBtn');
+const billGstLookupBtn = document.getElementById('billGstLookupBtn');
+const billCompanyGstNoInput = document.getElementById('billCompanyGstNo');
+const billCompanyNameInput = document.getElementById('billCompanyName');
+const billCompanyAddressInput = document.getElementById('billCompanyAddress');
+const billCompanyStateInput = document.getElementById('billCompanyState');
+const billCompanyStateCodeInput = document.getElementById('billCompanyStateCode');
+const billCompanyContactInput = document.getElementById('billCompanyContact');
+const billCompanyPhoneInput = document.getElementById('billCompanyPhone');
+const billCompanyEmailInput = document.getElementById('billCompanyEmail');
+const billSubtotalEl = document.getElementById('billSubtotal');
+const billTotalGstEl = document.getElementById('billTotalGst');
+const billGrandTotalEl = document.getElementById('billGrandTotal');
+const billTbody = document.querySelector('#billTable tbody');
+const billCompanyTbody = document.querySelector('#billCompanyTable tbody');
+const billSearchInput = document.getElementById('billSearchInput');
 const truckPelletTotalEl = document.getElementById('truckPelletTotal');
 const truckBriquetteTotalEl = document.getElementById('truckBriquetteTotal');
 const truckPelletRevenueEl = document.getElementById('truckPelletRevenue');
@@ -85,6 +103,8 @@ let chiniExpensesCache = [];
 let landRecordsCache = [];
 let vehiclesCache = [];
 let suppliersCache = [];
+let billingCompaniesCache = [];
+let billsCache = [];
 let activeSupplierId = null;
 let salaryRowsCache = [];
 let salaryLedgersCache = [];
@@ -93,6 +113,7 @@ let expenseFilter = { dateFrom: '', dateTo: '' };
 let editingTruckId = null;
 let editingLandId = null;
 let activeSalaryMonth = monthISO();
+let billItemsState = [];
 
 function showToast(message, type = 'ok') {
   toastEl.textContent = message;
@@ -132,6 +153,43 @@ function monthISO() {
 
 function money(n) {
   return `₹${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+}
+
+function normalizeGstNo(gstNo) {
+  return String(gstNo || '').toUpperCase().replace(/\s+/g, '').trim();
+}
+
+function emptyBillItem() {
+  return {
+    description: '',
+    hsnSac: '',
+    unit: 'Nos',
+    quantity: 1,
+    rate: 0,
+    gstPercent: 5
+  };
+}
+
+function calcBillTotals(items) {
+  const safeItems = Array.isArray(items) ? items : [];
+  const subtotal = safeItems.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.rate || 0), 0);
+  const totalGst = safeItems.reduce(
+    (sum, item) => sum + ((Number(item.quantity || 0) * Number(item.rate || 0) * Number(item.gstPercent || 0)) / 100),
+    0
+  );
+  return {
+    subtotal,
+    totalGst,
+    grandTotal: subtotal + totalGst
+  };
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function ensureAutoRefresh() {
@@ -206,7 +264,7 @@ function initSorting() {
 }
 
 function setDefaultDates() {
-  [attendanceForm, advanceForm, truckForm, expenseForm, investmentForm, chiniForm, vehicleForm].forEach((form) => {
+  [attendanceForm, advanceForm, truckForm, expenseForm, investmentForm, chiniForm, vehicleForm, billForm].forEach((form) => {
     if (!form) return;
     const dateInput = form.querySelector('input[type="date"]');
     if (dateInput) dateInput.value = todayISO();
@@ -222,6 +280,10 @@ function setDefaultDates() {
   }
   const joiningInput = document.getElementById('employeeJoiningDate');
   if (joiningInput && !joiningInput.value) joiningInput.value = todayISO();
+  if (billForm && billItemsState.length === 0) {
+    billItemsState = [emptyBillItem()];
+    renderBillItems();
+  }
 }
 
 function getActiveSalaryMonth() {
@@ -268,6 +330,7 @@ function applyRoleUI() {
   setFormEnabled('chiniPanel', hasPermission('chini:create'));
   setFormEnabled('landPanel', hasPermission('land:create'));
   setFormEnabled('vehiclePanel', hasPermission('vehicles:create'));
+  setFormEnabled('billPanel', hasPermission('billing:create'));
 
   // Suppliers - show for all logged-in users
   if (addSupplierBtn) addSupplierBtn.style.display = 'block';
@@ -282,6 +345,8 @@ function applyRoleUI() {
   setPanelVisible('chiniReportPanel', hasPermission('chini:view'));
   setPanelVisible('landReportPanel', hasPermission('land:view'));
   setPanelVisible('vehicleReportPanel', hasPermission('vehicles:view'));
+  setPanelVisible('billReportPanel', hasPermission('billing:view'));
+  setPanelVisible('billCompanyPanel', hasPermission('billing:view'));
   setPanelVisible('changePasswordPanel', true);
 
   downloadSalaryCsvBtn.disabled = !hasPermission('export:view');
@@ -1223,6 +1288,163 @@ function renderVehicleRows(rows) {
   }
 }
 
+function fillBillCompanyFields(company) {
+  if (!company) return;
+  if (billCompanyGstNoInput) billCompanyGstNoInput.value = normalizeGstNo(company.gstNo || '');
+  if (billCompanyNameInput) billCompanyNameInput.value = company.companyName || '';
+  if (billCompanyAddressInput) billCompanyAddressInput.value = company.address || '';
+  if (billCompanyStateInput) billCompanyStateInput.value = company.state || '';
+  if (billCompanyStateCodeInput) billCompanyStateCodeInput.value = company.stateCode || '';
+  if (billCompanyContactInput) billCompanyContactInput.value = company.contactPerson || '';
+  if (billCompanyPhoneInput) billCompanyPhoneInput.value = company.phone || '';
+  if (billCompanyEmailInput) billCompanyEmailInput.value = company.email || '';
+}
+
+function updateBillTotals() {
+  const totals = calcBillTotals(billItemsState);
+  if (billSubtotalEl) billSubtotalEl.textContent = money(totals.subtotal);
+  if (billTotalGstEl) billTotalGstEl.textContent = money(totals.totalGst);
+  if (billGrandTotalEl) billGrandTotalEl.textContent = money(totals.grandTotal);
+}
+
+function renderBillItems() {
+  if (!billItemsTbody) return;
+  if (!billItemsState.length) billItemsState = [emptyBillItem()];
+
+  billItemsTbody.innerHTML = billItemsState
+    .map((item, index) => {
+      const qty = Number(item.quantity || 0);
+      const rate = Number(item.rate || 0);
+      const gstPercent = Number(item.gstPercent || 0);
+      const taxable = qty * rate;
+      const lineTotal = taxable + (taxable * gstPercent) / 100;
+      return `
+        <tr data-index="${index}">
+          <td>${index + 1}</td>
+          <td><input class="bill-item-input" data-field="description" value="${escapeHtml(item.description || '')}" placeholder="Item description" /></td>
+          <td><input class="bill-item-input" data-field="hsnSac" value="${escapeHtml(item.hsnSac || '')}" placeholder="HSN/SAC" /></td>
+          <td><input class="bill-item-input" data-field="unit" value="${escapeHtml(item.unit || '')}" placeholder="Unit" /></td>
+          <td><input class="bill-item-input" data-field="quantity" type="number" min="0.01" step="0.01" value="${qty}" /></td>
+          <td><input class="bill-item-input" data-field="rate" type="number" min="0" step="0.01" value="${rate}" /></td>
+          <td><input class="bill-item-input" data-field="gstPercent" type="number" min="0" step="0.01" value="${gstPercent}" /></td>
+          <td class="money">${money(taxable)}</td>
+          <td class="money">${money(lineTotal)}</td>
+          <td><button type="button" class="small danger bill-item-del" data-index="${index}">Delete</button></td>
+        </tr>
+      `;
+    })
+    .join('');
+
+  document.querySelectorAll('.bill-item-input').forEach((input) => {
+    input.addEventListener('input', () => {
+      const row = input.closest('tr');
+      const index = Number(row?.dataset.index);
+      const field = input.dataset.field;
+      if (!Number.isInteger(index) || !field || !billItemsState[index]) return;
+      if (['quantity', 'rate', 'gstPercent'].includes(field)) {
+        billItemsState[index][field] = Number(input.value || 0);
+      } else {
+        billItemsState[index][field] = input.value;
+      }
+      const current = billItemsState[index] || emptyBillItem();
+      const taxable = Number(current.quantity || 0) * Number(current.rate || 0);
+      const lineTotal = taxable + (taxable * Number(current.gstPercent || 0)) / 100;
+      if (row?.cells?.[7]) row.cells[7].textContent = money(taxable);
+      if (row?.cells?.[8]) row.cells[8].textContent = money(lineTotal);
+      updateBillTotals();
+    });
+  });
+
+  document.querySelectorAll('.bill-item-del').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const index = Number(btn.dataset.index);
+      if (!Number.isInteger(index)) return;
+      billItemsState = billItemsState.filter((_, i) => i !== index);
+      if (!billItemsState.length) billItemsState = [emptyBillItem()];
+      renderBillItems();
+      updateBillTotals();
+    });
+  });
+  updateBillTotals();
+}
+
+function filterBills(rows) {
+  const q = (billSearchInput?.value || '').trim().toLowerCase();
+  if (!q) return rows;
+  return rows.filter((bill) => {
+    const company = bill.company || {};
+    return `${bill.invoiceNo || ''} ${bill.billDate || ''} ${company.companyName || ''} ${company.gstNo || ''}`
+      .toLowerCase()
+      .includes(q);
+  });
+}
+
+function renderBills(rows) {
+  if (!billTbody) return;
+  const canDelete = hasPermission('billing:delete');
+  billTbody.innerHTML = rows
+    .map((bill) => {
+      const company = bill.company || {};
+      return `
+        <tr>
+          <td>${bill.billDate || '-'}</td>
+          <td>${escapeHtml(bill.invoiceNo || '-')}</td>
+          <td>${escapeHtml(company.companyName || '-')}</td>
+          <td>${escapeHtml(company.gstNo || '-')}</td>
+          <td class="money">${money(bill.subtotal || 0)}</td>
+          <td class="money">${money(bill.totalGst || 0)}</td>
+          <td class="money">${money(bill.grandTotal || 0)}</td>
+          <td>
+            <div class="actions">
+              <button type="button" class="small bill-pdf" data-id="${bill.id}">PDF</button>
+              ${canDelete ? `<button type="button" class="small danger bill-del" data-id="${bill.id}">Delete</button>` : ''}
+            </div>
+          </td>
+        </tr>
+      `;
+    })
+    .join('');
+
+  document.querySelectorAll('.bill-pdf').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-id');
+      window.open(urlWithAuth(`/api/bills/${id}.pdf`), '_blank');
+    });
+  });
+
+  if (canDelete) {
+    document.querySelectorAll('.bill-del').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        if (!confirm('Delete this bill?')) return;
+        try {
+          await api(`/api/bills/${id}`, 'DELETE');
+          await refresh();
+          showToast('Bill deleted');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    });
+  }
+}
+
+function renderBillingCompanies(rows) {
+  if (!billCompanyTbody) return;
+  billCompanyTbody.innerHTML = rows
+    .map(
+      (company) => `<tr>
+        <td>${escapeHtml(company.gstNo || '-')}</td>
+        <td>${escapeHtml(company.companyName || '-')}</td>
+        <td>${escapeHtml(company.contactPerson || '-')}</td>
+        <td>${escapeHtml(company.phone || '-')}</td>
+        <td>${escapeHtml(company.state || '-')}</td>
+        <td>${escapeHtml(company.address || '-')}</td>
+      </tr>`
+    )
+    .join('');
+}
+
 function filterEmployees(rows) {
   const q = (employeeSearchInput.value || '').trim().toLowerCase();
   if (!q) return rows;
@@ -1269,6 +1491,8 @@ async function refresh() {
     hasPermission('chini:view') ? api('/api/chini-expenses') : Promise.resolve([]),
     hasPermission('land:view') ? api('/api/lands') : Promise.resolve([]),
     hasPermission('vehicles:view') ? api('/api/vehicles') : Promise.resolve([]),
+    hasPermission('billing:view') ? api('/api/billing/companies') : Promise.resolve([]),
+    hasPermission('billing:view') ? api('/api/bills') : Promise.resolve([]),
     // Suppliers - assume permission check or open
     api('/api/suppliers').catch(() => []),
     hasPermission('attendance:report')
@@ -1287,6 +1511,8 @@ async function refresh() {
     chiniExpenses,
     landRecords,
     vehicles,
+    billingCompanies,
+    bills,
     suppliers,
     attendanceReport
   ] =
@@ -1308,6 +1534,8 @@ async function refresh() {
   chiniExpensesCache = chiniExpenses || [];
   landRecordsCache = landRecords || [];
   vehiclesCache = vehicles || [];
+  billingCompaniesCache = billingCompanies || [];
+  billsCache = bills || [];
   suppliersCache = suppliers || [];
   salaryRowsCache = (salary && salary.rows) || [];
   salaryLedgersCache = salaryLedgers || [];
@@ -1323,6 +1551,8 @@ async function refresh() {
   renderChiniRows(chiniExpensesCache);
   renderLandRows(landRecordsCache);
   renderVehicleRows(vehiclesCache);
+  renderBillingCompanies(billingCompaniesCache);
+  renderBills(filterBills(billsCache));
   renderSuppliers(suppliersCache);
 
   // Update detail view if active
@@ -1403,6 +1633,8 @@ logoutBtn.addEventListener('click', async () => {
   chiniExpensesCache = [];
   landRecordsCache = [];
   vehiclesCache = [];
+  billingCompaniesCache = [];
+  billsCache = [];
   salaryLedgersCache = [];
   if (autoRefreshTimer) {
     clearInterval(autoRefreshTimer);
@@ -1469,6 +1701,101 @@ chiniForm.addEventListener('submit', async (e) => {
   } catch (err) {
     showToast(err.message, 'error');
   }
+});
+
+async function lookupBillingCompanyByGst() {
+  const gstNo = normalizeGstNo(billCompanyGstNoInput?.value || '');
+  if (!gstNo) {
+    showToast('Enter GST number first', 'error');
+    return;
+  }
+  if (billCompanyGstNoInput) billCompanyGstNoInput.value = gstNo;
+  try {
+    const result = await api(`/api/billing/companies?gstNo=${encodeURIComponent(gstNo)}`);
+    if (result && result.company) {
+      fillBillCompanyFields(result.company);
+      showToast('Company details loaded by GST');
+      return;
+    }
+    showToast('GST not found in saved companies. Fill details and save bill.');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+billGstLookupBtn?.addEventListener('click', () => {
+  lookupBillingCompanyByGst().catch((err) => showToast(err.message, 'error'));
+});
+
+billCompanyGstNoInput?.addEventListener('change', () => {
+  const gst = normalizeGstNo(billCompanyGstNoInput.value);
+  billCompanyGstNoInput.value = gst;
+  if (gst.length === 15) {
+    lookupBillingCompanyByGst().catch((err) => showToast(err.message, 'error'));
+  }
+});
+
+addBillItemBtn?.addEventListener('click', () => {
+  billItemsState.push(emptyBillItem());
+  renderBillItems();
+});
+
+billForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(billForm);
+  const payload = {
+    invoiceNo: String(fd.get('invoiceNo') || '').trim(),
+    billDate: String(fd.get('billDate') || ''),
+    dueDate: String(fd.get('dueDate') || ''),
+    vehicleNo: String(fd.get('vehicleNo') || '').trim(),
+    placeOfSupply: String(fd.get('placeOfSupply') || '').trim(),
+    reverseCharge: fd.get('reverseCharge') === 'on',
+    notes: String(fd.get('notes') || '').trim(),
+    company: {
+      gstNo: normalizeGstNo(fd.get('gstNo')),
+      companyName: String(fd.get('companyName') || '').trim(),
+      address: String(fd.get('address') || '').trim(),
+      state: String(fd.get('state') || '').trim(),
+      stateCode: String(fd.get('stateCode') || '').trim(),
+      contactPerson: String(fd.get('contactPerson') || '').trim(),
+      phone: String(fd.get('phone') || '').trim(),
+      email: String(fd.get('email') || '').trim()
+    },
+    items: billItemsState
+      .map((item) => ({
+        description: String(item.description || '').trim(),
+        hsnSac: String(item.hsnSac || '').trim(),
+        unit: String(item.unit || '').trim(),
+        quantity: Number(item.quantity || 0),
+        rate: Number(item.rate || 0),
+        gstPercent: Number(item.gstPercent || 0)
+      }))
+      .filter((item) => item.description && item.quantity > 0 && item.rate >= 0)
+  };
+
+  if (!payload.items.length) {
+    showToast('Add at least one valid bill item', 'error');
+    return;
+  }
+
+  try {
+    const row = await api('/api/bills', 'POST', payload);
+    billForm.reset();
+    billItemsState = [emptyBillItem()];
+    renderBillItems();
+    setDefaultDates();
+    await refresh();
+    showToast('Bill saved');
+    if (row?.id) {
+      window.open(urlWithAuth(`/api/bills/${row.id}.pdf`), '_blank');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+billSearchInput?.addEventListener('input', () => {
+  renderBills(filterBills(billsCache));
 });
 
 // --- Supplier Management Functions ---
