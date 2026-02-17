@@ -43,6 +43,8 @@ const billGrandTotalEl = document.getElementById('billGrandTotal');
 const billTbody = document.querySelector('#billTable tbody');
 const billCompanyTbody = document.querySelector('#billCompanyTable tbody');
 const billSearchInput = document.getElementById('billSearchInput');
+const billSubmitBtn = document.getElementById('billSubmitBtn');
+const cancelBillEditBtn = document.getElementById('cancelBillEditBtn');
 const truckPelletTotalEl = document.getElementById('truckPelletTotal');
 const truckBriquetteTotalEl = document.getElementById('truckBriquetteTotal');
 const truckPelletRevenueEl = document.getElementById('truckPelletRevenue');
@@ -114,6 +116,7 @@ let editingTruckId = null;
 let editingLandId = null;
 let activeSalaryMonth = monthISO();
 let billItemsState = [];
+let editingBillId = null;
 
 function showToast(message, type = 'ok') {
   toastEl.textContent = message;
@@ -1300,6 +1303,51 @@ function fillBillCompanyFields(company) {
   if (billCompanyEmailInput) billCompanyEmailInput.value = company.email || '';
 }
 
+function setBillEditingMode(isEditing) {
+  if (billSubmitBtn) billSubmitBtn.textContent = isEditing ? 'Update Bill & Generate PDF' : 'Save Bill & Generate PDF';
+  if (cancelBillEditBtn) cancelBillEditBtn.classList.toggle('hidden', !isEditing);
+}
+
+function resetBillFormState() {
+  editingBillId = null;
+  if (billForm) billForm.reset();
+  billItemsState = [emptyBillItem()];
+  renderBillItems();
+  setDefaultDates();
+  setBillEditingMode(false);
+}
+
+function loadBillIntoForm(bill) {
+  if (!billForm || !bill) return;
+  const company = bill.company || {};
+  editingBillId = bill.id;
+  billForm.querySelector('input[name="invoiceNo"]').value = bill.invoiceNo || '';
+  billForm.querySelector('input[name="billDate"]').value = bill.billDate || todayISO();
+  billForm.querySelector('input[name="dueDate"]').value = bill.dueDate || '';
+  billForm.querySelector('input[name="vehicleNo"]').value = bill.vehicleNo || '';
+  const placeInput = billForm.querySelector('input[name="placeOfSupply"]');
+  if (placeInput) placeInput.value = bill.placeOfSupply || '';
+  const notesInput = billForm.querySelector('textarea[name="notes"]');
+  if (notesInput) notesInput.value = bill.notes || '';
+  const reverseInput = billForm.querySelector('input[name="reverseCharge"]');
+  if (reverseInput) reverseInput.checked = Boolean(bill.reverseCharge);
+  fillBillCompanyFields(company);
+  const loadedItems = Array.isArray(bill.items)
+    ? bill.items.map((item) => ({
+      description: item.description || '',
+      hsnSac: item.hsnSac || '',
+      unit: item.unit || 'Nos',
+      quantity: Number(item.quantity || 0),
+      rate: Number(item.rate || 0),
+      gstPercent: Number(item.gstPercent || 0)
+    }))
+    : [];
+  billItemsState = loadedItems.length ? loadedItems : [emptyBillItem()];
+  renderBillItems();
+  setBillEditingMode(true);
+  billForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function updateBillTotals() {
   const totals = calcBillTotals(billItemsState);
   if (billSubtotalEl) billSubtotalEl.textContent = money(totals.subtotal);
@@ -1381,6 +1429,7 @@ function filterBills(rows) {
 
 function renderBills(rows) {
   if (!billTbody) return;
+  const canEdit = hasPermission('billing:update');
   const canDelete = hasPermission('billing:delete');
   billTbody.innerHTML = rows
     .map((bill) => {
@@ -1396,6 +1445,7 @@ function renderBills(rows) {
           <td class="money">${money(bill.grandTotal || 0)}</td>
           <td>
             <div class="actions">
+              ${canEdit ? `<button type="button" class="small warn bill-edit" data-id="${bill.id}">Edit</button>` : ''}
               <button type="button" class="small bill-pdf" data-id="${bill.id}">PDF</button>
               ${canDelete ? `<button type="button" class="small danger bill-del" data-id="${bill.id}">Delete</button>` : ''}
             </div>
@@ -1411,6 +1461,18 @@ function renderBills(rows) {
       window.open(urlWithAuth(`/api/bills/${id}.pdf`), '_blank');
     });
   });
+
+  if (canEdit) {
+    document.querySelectorAll('.bill-edit').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-id');
+        const bill = billsCache.find((row) => String(row.id) === String(id));
+        if (!bill) return;
+        loadBillIntoForm(bill);
+        showToast('Bill loaded in form for editing');
+      });
+    });
+  }
 
   if (canDelete) {
     document.querySelectorAll('.bill-del').forEach((btn) => {
@@ -1714,10 +1776,14 @@ async function lookupBillingCompanyByGst() {
     const result = await api(`/api/billing/companies?gstNo=${encodeURIComponent(gstNo)}`);
     if (result && result.company) {
       fillBillCompanyFields(result.company);
-      showToast('Company details loaded by GST');
+      if (result.source === 'online') {
+        showToast('Company fetched online and saved in your system');
+      } else {
+        showToast('Company details loaded by GST');
+      }
       return;
     }
-    showToast('GST not found in saved companies. Fill details and save bill.');
+    showToast('GST not found locally or online. Fill details manually.');
   } catch (err) {
     showToast(err.message, 'error');
   }
@@ -1743,6 +1809,7 @@ addBillItemBtn?.addEventListener('click', () => {
 billForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(billForm);
+  const isEditing = Boolean(editingBillId);
   const payload = {
     invoiceNo: String(fd.get('invoiceNo') || '').trim(),
     billDate: String(fd.get('billDate') || ''),
@@ -1779,19 +1846,23 @@ billForm?.addEventListener('submit', async (e) => {
   }
 
   try {
-    const row = await api('/api/bills', 'POST', payload);
-    billForm.reset();
-    billItemsState = [emptyBillItem()];
-    renderBillItems();
-    setDefaultDates();
+    const row = isEditing
+      ? await api(`/api/bills/${encodeURIComponent(editingBillId)}`, 'PUT', payload)
+      : await api('/api/bills', 'POST', payload);
+    resetBillFormState();
     await refresh();
-    showToast('Bill saved');
+    showToast(isEditing ? 'Bill updated' : 'Bill saved');
     if (row?.id) {
       window.open(urlWithAuth(`/api/bills/${row.id}.pdf`), '_blank');
     }
   } catch (err) {
     showToast(err.message, 'error');
   }
+});
+
+cancelBillEditBtn?.addEventListener('click', () => {
+  resetBillFormState();
+  showToast('Edit cancelled');
 });
 
 billSearchInput?.addEventListener('input', () => {

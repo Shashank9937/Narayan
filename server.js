@@ -172,6 +172,160 @@ function normalizeBillCompany(data) {
   };
 }
 
+function extractExternalLookupPayload(responseJson) {
+  if (!responseJson || typeof responseJson !== 'object') return null;
+  const directCandidates = [
+    responseJson.data,
+    responseJson.result,
+    responseJson.payload,
+    responseJson.results,
+    responseJson.taxpayer,
+    responseJson
+  ].filter(Boolean);
+  for (const candidate of directCandidates) {
+    if (candidate && typeof candidate === 'object') {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function buildAddressFromPayload(payload) {
+  const addressObj =
+    payload?.pradr?.addr ||
+    payload?.principal_address ||
+    payload?.principalAddress ||
+    payload?.address ||
+    payload?.addr ||
+    null;
+
+  if (typeof payload?.address === 'string' && payload.address.trim()) {
+    return payload.address.trim();
+  }
+  if (!addressObj || typeof addressObj !== 'object') return '';
+
+  const parts = [
+    addressObj.bno,
+    addressObj.flno,
+    addressObj.bnm,
+    addressObj.st,
+    addressObj.loc,
+    addressObj.city,
+    addressObj.dst,
+    addressObj.state,
+    addressObj.pncd
+  ]
+    .map((v) => String(v || '').trim())
+    .filter(Boolean);
+  return parts.join(', ');
+}
+
+function mapExternalCompanyFromPayload(gstNo, payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const normalizedGst = normalizeGstNo(gstNo);
+  const companyName = String(
+    payload.companyName ||
+      payload.legalName ||
+      payload.legal_name ||
+      payload.tradeNam ||
+      payload.tradeName ||
+      payload.lgnm ||
+      payload.name ||
+      ''
+  ).trim();
+  const address = String(buildAddressFromPayload(payload) || '').trim();
+  const stateCode = String(
+    payload.stateCode ||
+      payload.state_code ||
+      payload.pradr?.addr?.stcd ||
+      payload.address?.stateCode ||
+      normalizedGst.slice(0, 2) ||
+      ''
+  ).trim();
+  const state = String(payload.state || payload.address?.state || '').trim();
+  const contactPerson = String(payload.contactPerson || payload.contact_person || '').trim();
+  const phone = String(payload.phone || payload.mobile || payload.mobileNo || '').trim();
+  const email = String(payload.email || '').trim();
+
+  if (!companyName || !address) return null;
+  return normalizeBillCompany({
+    gstNo: normalizedGst,
+    companyName,
+    address,
+    state,
+    stateCode,
+    contactPerson,
+    phone,
+    email
+  });
+}
+
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 7000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (_err) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function lookupGstOnline(gstNo) {
+  const normalized = normalizeGstNo(gstNo);
+  if (!isValidGstNo(normalized)) return null;
+
+  const timeoutMs = Number(process.env.GST_LOOKUP_TIMEOUT_MS || 7000);
+
+  // Generic provider support
+  const templateUrl = process.env.GST_LOOKUP_URL_TEMPLATE;
+  if (templateUrl) {
+    const url = String(templateUrl)
+      .replaceAll('{GSTIN}', encodeURIComponent(normalized))
+      .replaceAll('${GSTIN}', encodeURIComponent(normalized));
+    let headers = {};
+    const headersJson = process.env.GST_LOOKUP_HEADERS_JSON;
+    if (headersJson) {
+      try {
+        const parsed = JSON.parse(headersJson);
+        if (parsed && typeof parsed === 'object') headers = parsed;
+      } catch (_err) {
+        // ignore malformed env header json
+      }
+    }
+    const result = await fetchJsonWithTimeout(url, { headers }, timeoutMs);
+    const mapped = mapExternalCompanyFromPayload(normalized, extractExternalLookupPayload(result));
+    if (mapped) return mapped;
+  }
+
+  // ClearTax provider support (official docs based endpoint)
+  const clearEntityId = process.env.CLEARTAX_TAXABLE_ENTITY_ID;
+  const clearToken = process.env.CLEARTAX_AUTH_TOKEN;
+  if (clearEntityId && clearToken) {
+    const clearBase = (process.env.CLEARTAX_BASE_URL || 'https://api.clear.in').replace(/\/+$/, '');
+    const url = `${clearBase}/gst/api/v0.2/taxable_entities/${encodeURIComponent(
+      clearEntityId
+    )}/gstin_verification?gstin=${encodeURIComponent(normalized)}`;
+    const result = await fetchJsonWithTimeout(
+      url,
+      {
+        headers: {
+          'x-cleartax-auth-token': clearToken,
+          Accept: 'application/json'
+        }
+      },
+      timeoutMs
+    );
+    const mapped = mapExternalCompanyFromPayload(normalized, extractExternalLookupPayload(result));
+    if (mapped) return mapped;
+  }
+
+  return null;
+}
+
 function userView(user) {
   return {
     id: user.id,
@@ -1045,6 +1199,48 @@ function jsonStore() {
       }
       writeJsonDb(db);
       return row;
+    },
+    async updateBill(id, data) {
+      const db = readJsonDb();
+      const existing = (db.bills || []).find((b) => b.id === id);
+      if (!existing) return null;
+      const company = normalizeBillCompany(data.company || {});
+      const items = cleanInvoiceItems(data.items);
+      const totals = calcInvoiceTotals(items);
+      existing.invoiceNo = String(data.invoiceNo || '').trim();
+      existing.billDate = String(data.billDate);
+      existing.dueDate = data.dueDate ? String(data.dueDate) : '';
+      existing.vehicleNo = String(data.vehicleNo || '').trim();
+      existing.company = company;
+      existing.placeOfSupply = String(data.placeOfSupply || '').trim();
+      existing.reverseCharge = Boolean(data.reverseCharge);
+      existing.items = items;
+      existing.subtotal = totals.subtotal;
+      existing.totalGst = totals.totalGst;
+      existing.grandTotal = totals.grandTotal;
+      existing.notes = String(data.notes || '').trim();
+      existing.updatedAt = new Date().toISOString();
+
+      const existingCompany = (db.billingCompanies || []).find((c) => normalizeGstNo(c.gstNo) === company.gstNo);
+      if (existingCompany) {
+        existingCompany.companyName = company.companyName;
+        existingCompany.address = company.address;
+        existingCompany.state = company.state;
+        existingCompany.stateCode = company.stateCode;
+        existingCompany.contactPerson = company.contactPerson;
+        existingCompany.phone = company.phone;
+        existingCompany.email = company.email;
+        existingCompany.updatedAt = new Date().toISOString();
+      } else {
+        db.billingCompanies.push({
+          id: uid('bc'),
+          ...company,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+      }
+      writeJsonDb(db);
+      return existing;
     },
     async deleteBill(id) {
       const db = readJsonDb();
@@ -2236,6 +2432,89 @@ function postgresStore() {
       );
       return row;
     },
+    async updateBill(id, data) {
+      const company = normalizeBillCompany(data.company || {});
+      const items = cleanInvoiceItems(data.items);
+      const totals = calcInvoiceTotals(items);
+      await this.upsertBillingCompany(company);
+      const updatedAt = new Date().toISOString();
+      const res = await pool.query(
+        `UPDATE bills
+         SET invoice_no = $2,
+             bill_date = $3,
+             due_date = $4,
+             vehicle_no = $5,
+             company_gst_no = $6,
+             company_name = $7,
+             company_address = $8,
+             company_state = $9,
+             company_state_code = $10,
+             contact_person = $11,
+             company_phone = $12,
+             company_email = $13,
+             place_of_supply = $14,
+             reverse_charge = $15,
+             items = $16::jsonb,
+             subtotal = $17,
+             total_gst = $18,
+             grand_total = $19,
+             notes = $20,
+             updated_at = $21
+         WHERE id = $1
+         RETURNING *`,
+        [
+          id,
+          String(data.invoiceNo || '').trim(),
+          String(data.billDate),
+          data.dueDate ? String(data.dueDate) : null,
+          String(data.vehicleNo || '').trim() || null,
+          company.gstNo,
+          company.companyName,
+          company.address,
+          company.state || null,
+          company.stateCode || null,
+          company.contactPerson || null,
+          company.phone || null,
+          company.email || null,
+          String(data.placeOfSupply || '').trim() || null,
+          Boolean(data.reverseCharge),
+          JSON.stringify(items),
+          totals.subtotal,
+          totals.totalGst,
+          totals.grandTotal,
+          String(data.notes || '').trim() || null,
+          updatedAt
+        ]
+      );
+      if (!res.rows[0]) return null;
+      const r = res.rows[0];
+      return {
+        id: r.id,
+        invoiceNo: r.invoice_no,
+        billDate: String(r.bill_date).slice(0, 10),
+        dueDate: r.due_date ? String(r.due_date).slice(0, 10) : '',
+        vehicleNo: r.vehicle_no || '',
+        company: {
+          gstNo: normalizeGstNo(r.company_gst_no),
+          companyName: r.company_name,
+          address: r.company_address,
+          state: r.company_state || '',
+          stateCode: r.company_state_code || '',
+          contactPerson: r.contact_person || '',
+          phone: r.company_phone || '',
+          email: r.company_email || ''
+        },
+        placeOfSupply: r.place_of_supply || '',
+        reverseCharge: Boolean(r.reverse_charge),
+        items: Array.isArray(r.items) ? r.items : [],
+        subtotal: Number(r.subtotal || 0),
+        totalGst: Number(r.total_gst || 0),
+        grandTotal: Number(r.grand_total || 0),
+        notes: r.notes || '',
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      };
+    },
     async deleteBill(id) {
       const res = await pool.query('DELETE FROM bills WHERE id = $1', [id]);
       return res.rowCount > 0;
@@ -3329,8 +3608,16 @@ app.get('/api/billing/companies', auth, requirePermission('billing:view'), async
   try {
     const gstNo = normalizeGstNo(req.query.gstNo);
     if (gstNo) {
-      const company = await store.getBillingCompanyByGst(gstNo);
-      return res.json({ company: company || null });
+      const localCompany = await store.getBillingCompanyByGst(gstNo);
+      if (localCompany) return res.json({ company: localCompany, source: 'local' });
+
+      const onlineCompany = await lookupGstOnline(gstNo);
+      if (onlineCompany) {
+        const saved = await store.upsertBillingCompany(onlineCompany);
+        return res.json({ company: saved, source: 'online' });
+      }
+
+      return res.json({ company: null, source: 'none' });
     }
     const rows = await store.listBillingCompanies();
     return res.json(rows);
@@ -3407,6 +3694,50 @@ app.post('/api/bills', auth, requirePermission('billing:create'), async (req, re
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to create bill' });
+  }
+});
+
+app.put('/api/bills/:id', auth, requirePermission('billing:update'), async (req, res) => {
+  const { invoiceNo, billDate, dueDate, vehicleNo, placeOfSupply, reverseCharge, notes } = req.body || {};
+  const company = normalizeBillCompany((req.body && req.body.company) || {});
+  const items = cleanInvoiceItems((req.body && req.body.items) || []);
+
+  if (!invoiceNo || !billDate) {
+    return res.status(400).json({ error: 'invoiceNo and billDate are required' });
+  }
+  if (!company.gstNo || !company.companyName || !company.address) {
+    return res.status(400).json({ error: 'Company GST, name and address are required' });
+  }
+  if (!isValidGstNo(company.gstNo)) {
+    return res.status(400).json({ error: 'Enter a valid 15-character GST number' });
+  }
+  if (!items.length) {
+    return res.status(400).json({ error: 'Add at least one valid bill item' });
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(billDate))) {
+    return res.status(400).json({ error: 'billDate must be in YYYY-MM-DD format' });
+  }
+  if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(dueDate))) {
+    return res.status(400).json({ error: 'dueDate must be in YYYY-MM-DD format' });
+  }
+
+  try {
+    const row = await store.updateBill(req.params.id, {
+      invoiceNo,
+      billDate,
+      dueDate,
+      vehicleNo,
+      company,
+      placeOfSupply,
+      reverseCharge: Boolean(reverseCharge),
+      items,
+      notes
+    });
+    if (!row) return res.status(404).json({ error: 'Bill not found' });
+    return res.json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to update bill' });
   }
 });
 
