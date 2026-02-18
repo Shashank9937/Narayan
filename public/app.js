@@ -20,11 +20,15 @@ const backToSuppliersBtn = document.getElementById('backToSuppliersBtn');
 const supTotalMaterialEl = document.getElementById('supTotalMaterial');
 const supTotalPaidEl = document.getElementById('supTotalPaid');
 const supPendingBalanceEl = document.getElementById('supPendingBalance');
+const supplierForm = document.getElementById('supplierForm');
 const txSupplierIdInput = document.getElementById('txSupplierId');
 const txTypeSelect = document.getElementById('txType');
 const txTruckFields = document.getElementById('txTruckFields');
 const supplierTransactionForm = document.getElementById('supplierTransactionForm');
-const addSupplierBtn = document.getElementById('addSupplierBtn');
+const txAmountInput = supplierTransactionForm?.querySelector('input[name="amount"]');
+const txQuantityInput = supplierTransactionForm?.querySelector('input[name="quantity"]');
+const txRateInput = supplierTransactionForm?.querySelector('input[name="rate"]');
+const txPaidNowInput = document.getElementById('txPaidNow');
 const billForm = document.getElementById('billForm');
 const billItemsTbody = document.getElementById('billItemsTbody');
 const addBillItemBtn = document.getElementById('addBillItemBtn');
@@ -267,7 +271,7 @@ function initSorting() {
 }
 
 function setDefaultDates() {
-  [attendanceForm, advanceForm, truckForm, expenseForm, investmentForm, chiniForm, vehicleForm, billForm].forEach((form) => {
+  [attendanceForm, advanceForm, truckForm, expenseForm, investmentForm, chiniForm, vehicleForm, supplierTransactionForm, billForm].forEach((form) => {
     if (!form) return;
     const dateInput = form.querySelector('input[type="date"]');
     if (dateInput) dateInput.value = todayISO();
@@ -333,11 +337,16 @@ function applyRoleUI() {
   setFormEnabled('chiniPanel', hasPermission('chini:create'));
   setFormEnabled('landPanel', hasPermission('land:create'));
   setFormEnabled('vehiclePanel', hasPermission('vehicles:create'));
+  setFormEnabled('supplierCreatePanel', hasPermission('suppliers:create'));
   setFormEnabled('billPanel', hasPermission('billing:create'));
+  if (supplierTransactionForm) {
+    const canCreateSupplierTx = hasPermission('suppliers:create');
+    supplierTransactionForm.querySelectorAll('input,select,textarea,button').forEach((el) => {
+      el.disabled = !canCreateSupplierTx;
+    });
+  }
 
-  // Suppliers - show for all logged-in users
-  if (addSupplierBtn) addSupplierBtn.style.display = 'block';
-
+  setPanelVisible('supplierSection', hasPermission('suppliers:view'));
   setPanelVisible('salaryPanel', hasPermission('salary:view'));
   setPanelVisible('salaryLedgerPanel', hasPermission('salaryledger:view'));
   setPanelVisible('truckReportPanel', hasPermission('trucks:view'));
@@ -1555,8 +1564,7 @@ async function refresh() {
     hasPermission('vehicles:view') ? api('/api/vehicles') : Promise.resolve([]),
     hasPermission('billing:view') ? api('/api/billing/companies') : Promise.resolve([]),
     hasPermission('billing:view') ? api('/api/bills') : Promise.resolve([]),
-    // Suppliers - assume permission check or open
-    api('/api/suppliers').catch(() => []),
+    hasPermission('suppliers:view') ? api('/api/suppliers') : Promise.resolve([]),
     hasPermission('attendance:report')
       ? api(`/api/attendance-report?month=${attendanceMonthInput.value || month}`)
       : Promise.resolve({ rows: [] })
@@ -1871,67 +1879,102 @@ billSearchInput?.addEventListener('input', () => {
 
 // --- Supplier Management Functions ---
 
-function renderSuppliers(rows) {
-  if (!supplierGrid) return;
-  supplierGrid.innerHTML = rows.map(s => {
-    const initials = getInitials(s.name);
-
-    // Get material breakdown from transactions
-    const materialBreakdown = {};
-    let totalQuantity = 0;
-
-    // Assuming we have access to transactions via suppliersCache with embedded data
-    // If not, we'll need to fetch separately - for now show totals
-
-    return `
-      <div class="employee-card supplier-card" onclick="viewSupplierDetail('${s.id}')">
-        <div class="employee-header">
-          <div class="avatar supplier-avatar">${initials}</div>
-          <div class="employee-info">
-            <h3>${s.name}</h3>
-            <span class="role-badge supplier-role">Supplier</span>
-          </div>
-        </div>
-        <div class="employee-stats">
-          <div class="stat-item">
-            <span class="stat-label">Total Deliveries</span>
-            <span class="stat-value">${s.totalTrucks || 0}</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">Total Material</span>
-            <span class="stat-value">${s.totalMaterialAmount ? s.totalMaterialAmount.toFixed(2) + ' Qntl' : '0 Qntl'}</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">Pending Balance</span>
-            <span class="stat-value money supplier-pending">${money(s.balance || 0)}</span>
-          </div>
-        </div>
-        <div class="employee-actions">
-           <button class="small danger stop-prop" onclick="deleteSupplier(event, '${s.id}')">Delete</button>
-        </div>
-      </div>
-    `;
-  }).join('');
+function setSupplierTransactionTypeUI() {
+  const isTruck = (txTypeSelect?.value || 'truck') === 'truck';
+  if (txTruckFields) {
+    txTruckFields.classList.toggle('hidden', !isTruck);
+    txTruckFields.querySelectorAll('input').forEach((el) => {
+      el.disabled = !isTruck;
+    });
+  }
+  if (txPaidNowInput) {
+    txPaidNowInput.disabled = !isTruck;
+    if (!isTruck) txPaidNowInput.value = '0';
+  }
 }
 
-async function viewSupplierDetail(id) {
-  const supplier = suppliersCache.find(s => s.id === id);
+function autoComputeSupplierAmount() {
+  if (!txAmountInput || !txTypeSelect || txTypeSelect.value !== 'truck') return;
+  const qty = Number(txQuantityInput?.value || 0);
+  const rate = Number(txRateInput?.value || 0);
+  if (Number.isFinite(qty) && qty > 0 && Number.isFinite(rate) && rate >= 0) {
+    txAmountInput.value = (qty * rate).toFixed(2);
+  }
+}
+
+function renderSuppliers(rows) {
+  if (!supplierGrid) return;
+  const canDelete = hasPermission('suppliers:delete');
+  supplierGrid.innerHTML = rows
+    .map((s) => {
+      const initials = getInitials(s.name);
+      return `
+        <div class="employee-card supplier-card" onclick="viewSupplierDetail('${s.id}')">
+          <div class="employee-header">
+            <div class="avatar supplier-avatar">${initials}</div>
+            <div class="employee-info">
+              <h3>${escapeHtml(s.name || '-')}</h3>
+              <span class="role-badge supplier-role">${escapeHtml(s.materialType || 'Supplier')}</span>
+            </div>
+          </div>
+          <div class="employee-stats">
+            <div class="stat-item">
+              <span class="stat-label">Phone</span>
+              <span class="stat-value">${escapeHtml(s.phone || '-')}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Opening</span>
+              <span class="stat-value money">${money(s.openingBalance || 0)}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Material Value</span>
+              <span class="stat-value money">${money(s.totalMaterialAmount || 0)}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Total Paid</span>
+              <span class="stat-value money">${money(s.totalPaid || 0)}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Pending Balance</span>
+              <span class="stat-value money supplier-pending">${money(s.balance || 0)}</span>
+            </div>
+          </div>
+          <div class="employee-actions">
+            ${canDelete ? `<button class="small danger stop-prop" onclick="deleteSupplier(event, '${s.id}')">Delete</button>` : ''}
+          </div>
+        </div>
+      `;
+    })
+    .join('');
+}
+
+window.viewSupplierDetail = async (id) => {
+  const supplier = suppliersCache.find((s) => s.id === id);
   if (!supplier) return;
-
   activeSupplierId = id;
-  supplierListPanel.classList.add('hidden');
-  supplierDetailPanel.classList.remove('hidden');
-
+  supplierListPanel?.classList.add('hidden');
+  supplierDetailPanel?.classList.remove('hidden');
   if (supplierDetailName) supplierDetailName.textContent = supplier.name;
   if (txSupplierIdInput) txSupplierIdInput.value = id;
 
-  // Fetch transactions
   try {
     const txs = await api(`/api/suppliers/${id}/transactions`);
     renderSupplierTransactions(txs, supplier);
   } catch (err) {
     showToast(err.message, 'error');
   }
+};
+
+function supplierTxDetails(tx) {
+  if (tx.type === 'truck') {
+    const qtyText = tx.quantity != null ? tx.quantity : '-';
+    const rateText = tx.rate != null ? money(tx.rate) : '-';
+    const paidNowText = tx.paidNow != null ? money(tx.paidNow || 0) : money(0);
+    return `Truck: ${tx.truckNumber || '-'} | Challan: ${tx.challanNo || '-'} | Mat: ${tx.material || '-'} | Qty: ${qtyText} | Rate: ${rateText} | Paid Now: ${paidNowText}`;
+  }
+  const mode = tx.paymentMode || '-';
+  const ref = tx.paymentRef || '-';
+  return `Mode: ${mode} | Ref: ${ref} | ${tx.note || 'Payment Entry'}`;
 }
 
 function renderSupplierTransactions(txs, supplier) {
@@ -1940,42 +1983,48 @@ function renderSupplierTransactions(txs, supplier) {
     if (supTotalPaidEl) supTotalPaidEl.textContent = money(supplier.totalPaid || 0);
     if (supPendingBalanceEl) supPendingBalanceEl.textContent = money(supplier.balance || 0);
   }
-
-  if (supplierTxTbody) {
-    supplierTxTbody.innerHTML = txs.map(t => {
-      const isTruck = t.type === 'truck';
+  if (!supplierTxTbody) return;
+  const canDelete = hasPermission('suppliers:delete');
+  supplierTxTbody.innerHTML = (txs || [])
+    .map((tx) => {
+      const isTruck = tx.type === 'truck';
       const badgeClass = isTruck ? 'truck' : 'payment';
       const amountClass = isTruck ? 'danger' : 'success';
-
-      let details = '';
-      if (isTruck) {
-        details = `Truck: ${t.truckNumber || '-'}, Mat: ${t.material || '-'}, Qty: ${t.quantity || '-'} @ ${t.rate || '-'}`;
-      } else {
-        details = t.note || 'Payment';
-      }
-
       return `
-         <tr>
-           <td>${t.date}</td>
-           <td><span class="tx-badge ${badgeClass}">${t.type}</span></td>
-           <td>${details}</td>
-           <td class="money tx-amount-${amountClass}">${money(t.amount)}</td>
-           <td>
-              <button class="small danger" onclick="deleteSupplierTx('${t.id}')">Del</button>
-           </td>
-         </tr>
-       `;
-    }).join('');
-  }
+        <tr>
+          <td>${escapeHtml(tx.date || '-')}</td>
+          <td><span class="tx-badge ${badgeClass}">${escapeHtml(tx.type || '-')}</span></td>
+          <td>${escapeHtml(supplierTxDetails(tx))}</td>
+          <td class="money tx-amount-${amountClass}">${money(tx.amount || 0)}</td>
+          <td class="money">${money(tx.balanceAfter || 0)}</td>
+          <td>
+            <button class="small" onclick="openSupplierReceipt('${tx.id}')">Receipt</button>
+          </td>
+          <td>
+            ${canDelete ? `<button class="small danger" onclick="deleteSupplierTx('${tx.id}')">Del</button>` : ''}
+          </td>
+        </tr>
+      `;
+    })
+    .join('');
 }
+
+window.openSupplierReceipt = (id) => {
+  window.open(urlWithAuth(`/api/supplier-transactions/${id}/receipt.pdf`), '_blank');
+};
 
 window.deleteSupplier = async (e, id) => {
   e.stopPropagation();
-  if (!confirm('Delete this supplier?')) return;
+  if (!confirm('Delete this supplier and all transactions?')) return;
   try {
     await api(`/api/suppliers/${id}`, 'DELETE');
-    showToast('Supplier deleted');
+    if (activeSupplierId === id) {
+      activeSupplierId = null;
+      supplierDetailPanel?.classList.add('hidden');
+      supplierListPanel?.classList.remove('hidden');
+    }
     await refresh();
+    showToast('Supplier deleted');
   } catch (err) {
     showToast(err.message, 'error');
   }
@@ -1984,61 +2033,95 @@ window.deleteSupplier = async (e, id) => {
 window.deleteSupplierTx = async (id) => {
   if (!confirm('Delete this transaction?')) return;
   try {
-    await api(`/api/transactions/${id}`, 'DELETE'); // generalized endpoint or supplier specific?
-    // Using generalized based on plan, or verify server.js. 
-    // Checking server.js: app.delete('/api/supplier-transactions/:id'...)
-    // Wait, let me check server.js routes again to be precise. 
-    // Attempting safely:
     await api(`/api/supplier-transactions/${id}`, 'DELETE');
+    await refresh();
     showToast('Transaction deleted');
-    // Refresh detail view
-    const sup = suppliersCache.find(s => s.id === activeSupplierId);
-    if (sup) {
-      // We need to refresh parent data too to update balance
-      await refresh();
-      // Refresh stays on same view? refresh() keeps view but might need to re-open detail?
-      // refresh() calls renderSuppliers, which shows list. 
-      // logic in refresh() handles activeSupplierId check.
-    }
   } catch (err) {
     showToast(err.message, 'error');
   }
 };
 
-// Back button
-if (document.getElementById('backToSuppliersBtn')) {
-  document.getElementById('backToSuppliersBtn').addEventListener('click', () => {
-    activeSupplierId = null;
-    supplierDetailPanel.classList.add('hidden');
-    supplierListPanel.classList.remove('hidden');
-  });
-}
+backToSuppliersBtn?.addEventListener('click', () => {
+  activeSupplierId = null;
+  supplierDetailPanel?.classList.add('hidden');
+  supplierListPanel?.classList.remove('hidden');
+});
 
-// Transaction Form
-if (supplierTransactionForm) {
-  supplierTransactionForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const fd = new FormData(supplierTransactionForm);
-    try {
-      await api(`/api/suppliers/${activeSupplierId}/transactions`, 'POST', {
-        date: fd.get('date'),
-        type: fd.get('type'),
-        amount: fd.get('amount'),
-        truckNumber: fd.get('truckNumber'),
-        material: fd.get('material'),
-        quantity: fd.get('quantity'),
-        rate: fd.get('rate'),
-        note: fd.get('note')
-      });
-      supplierTransactionForm.reset();
-      setDefaultDates();
-      await refresh();
-      showToast('Transaction added');
-    } catch (err) {
-      showToast(err.message, 'error');
+txTypeSelect?.addEventListener('change', () => {
+  setSupplierTransactionTypeUI();
+});
+txQuantityInput?.addEventListener('input', autoComputeSupplierAmount);
+txRateInput?.addEventListener('input', autoComputeSupplierAmount);
+
+supplierForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(supplierForm);
+  try {
+    await api('/api/suppliers', 'POST', {
+      name: fd.get('name'),
+      phone: fd.get('phone'),
+      alternatePhone: fd.get('alternatePhone'),
+      email: fd.get('email'),
+      gstNo: fd.get('gstNo'),
+      address: fd.get('address'),
+      materialType: fd.get('materialType'),
+      paymentTerms: fd.get('paymentTerms'),
+      openingBalance: fd.get('openingBalance') || 0
+    });
+    supplierForm.reset();
+    const openingInput = supplierForm.querySelector('input[name="openingBalance"]');
+    if (openingInput) openingInput.value = '0';
+    await refresh();
+    showToast('Supplier added');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+supplierTransactionForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!activeSupplierId) {
+    showToast('Open a supplier first', 'error');
+    return;
+  }
+  const fd = new FormData(supplierTransactionForm);
+  try {
+    const result = await api(`/api/suppliers/${activeSupplierId}/transactions`, 'POST', {
+      date: fd.get('date'),
+      type: fd.get('type'),
+      amount: fd.get('amount'),
+      paidNow: fd.get('paidNow') || 0,
+      truckNumber: fd.get('truckNumber'),
+      challanNo: fd.get('challanNo'),
+      material: fd.get('material'),
+      quantity: fd.get('quantity'),
+      rate: fd.get('rate'),
+      paymentMode: fd.get('paymentMode'),
+      paymentRef: fd.get('paymentRef'),
+      note: fd.get('note'),
+      sendSms: fd.get('sendSms') === '1'
+    });
+    supplierTransactionForm.reset();
+    setDefaultDates();
+    if (txSupplierIdInput) txSupplierIdInput.value = activeSupplierId;
+    setSupplierTransactionTypeUI();
+    await refresh();
+
+    let message = result?.autoPaymentTransaction
+      ? 'Material and partial payment saved'
+      : 'Transaction added';
+    if (result?.sms?.ok) message += ' + SMS sent';
+    if (result?.sms && !result.sms.ok && !result.sms.skipped) {
+      showToast(`${message} (SMS failed)`, 'error');
+      return;
     }
-  });
-}
+    showToast(message);
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+setSupplierTransactionTypeUI();
 
 landForm.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -2085,21 +2168,6 @@ vehicleForm?.addEventListener('submit', async (e) => {
     showToast(err.message, 'error');
   }
 });
-
-if (addSupplierBtn) {
-  addSupplierBtn.addEventListener('click', async () => {
-    const name = prompt('Enter Supplier Name:');
-    if (name && name.trim()) {
-      try {
-        await api('/api/suppliers', 'POST', { name: name.trim() });
-        showToast('Supplier added successfully');
-        await refresh();
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
-    }
-  });
-}
 
 changePasswordForm.addEventListener('submit', async (e) => {
   e.preventDefault();

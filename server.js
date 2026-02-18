@@ -52,6 +52,10 @@ const ROLE_PERMISSIONS = {
     'vehicles:create',
     'vehicles:update',
     'vehicles:delete',
+    'suppliers:view',
+    'suppliers:create',
+    'suppliers:update',
+    'suppliers:delete',
     'billing:view',
     'billing:create',
     'billing:update',
@@ -88,6 +92,10 @@ const ROLE_PERMISSIONS = {
     'vehicles:create',
     'vehicles:update',
     'vehicles:delete',
+    'suppliers:view',
+    'suppliers:create',
+    'suppliers:update',
+    'suppliers:delete',
     'billing:view',
     'billing:create',
     'billing:update',
@@ -170,6 +178,158 @@ function normalizeBillCompany(data) {
     phone: String(data.phone || '').trim(),
     email: String(data.email || '').trim()
   };
+}
+
+function toSafeNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeSupplier(data) {
+  const openingBalance = toSafeNumber(data.openingBalance, 0);
+  return {
+    name: String(data.name || '').trim(),
+    phone: String(data.phone || data.contact || '').trim(),
+    alternatePhone: String(data.alternatePhone || '').trim(),
+    email: String(data.email || '').trim(),
+    gstNo: normalizeGstNo(data.gstNo || ''),
+    address: String(data.address || '').trim(),
+    materialType: String(data.materialType || '').trim(),
+    paymentTerms: String(data.paymentTerms || '').trim(),
+    openingBalance
+  };
+}
+
+function normalizeSupplierTransaction(data, supplierId) {
+  const type = String(data.type || '').trim().toLowerCase();
+  const amount = toSafeNumber(data.amount, 0);
+  const quantity = data.quantity == null || data.quantity === '' ? null : toSafeNumber(data.quantity, NaN);
+  const rate = data.rate == null || data.rate === '' ? null : toSafeNumber(data.rate, NaN);
+  const paidNow = data.paidNow == null || data.paidNow === '' ? 0 : toSafeNumber(data.paidNow, NaN);
+  return {
+    supplierId,
+    date: String(data.date || '').trim(),
+    type,
+    amount,
+    truckNumber: String(data.truckNumber || '').trim(),
+    challanNo: String(data.challanNo || '').trim(),
+    material: String(data.material || '').trim(),
+    quantity: Number.isFinite(quantity) ? quantity : null,
+    rate: Number.isFinite(rate) ? rate : null,
+    paidNow: Number.isFinite(paidNow) ? paidNow : NaN,
+    paymentMode: String(data.paymentMode || '').trim(),
+    paymentRef: String(data.paymentRef || '').trim(),
+    note: String(data.note || '').trim(),
+    isAutoPayment: Boolean(data.isAutoPayment),
+    linkedTransactionId: String(data.linkedTransactionId || '').trim()
+  };
+}
+
+function sortSupplierTransactionsChronological(rows) {
+  return [...(rows || [])].sort((a, b) => {
+    const aDate = String(a.date || '');
+    const bDate = String(b.date || '');
+    if (aDate !== bDate) return aDate.localeCompare(bDate);
+    const aTs = String(a.createdAt || '');
+    const bTs = String(b.createdAt || '');
+    if (aTs !== bTs) return aTs.localeCompare(bTs);
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
+}
+
+function enrichSupplierTransactionsWithRunningBalance(supplier, rows) {
+  const openingBalance = toSafeNumber(supplier?.openingBalance, 0);
+  let runningBalance = openingBalance;
+  const chronological = sortSupplierTransactionsChronological(rows);
+  const withBalanceAsc = chronological.map((row) => {
+    const amount = toSafeNumber(row.amount, 0);
+    if (row.type === 'truck') runningBalance += amount;
+    if (row.type === 'payment') runningBalance -= amount;
+    return {
+      ...row,
+      balanceAfter: runningBalance
+    };
+  });
+  return withBalanceAsc.sort((a, b) => {
+    const aDate = String(a.date || '');
+    const bDate = String(b.date || '');
+    if (aDate !== bDate) return bDate.localeCompare(aDate);
+    const aTs = String(a.createdAt || '');
+    const bTs = String(b.createdAt || '');
+    if (aTs !== bTs) return bTs.localeCompare(aTs);
+    return String(b.id || '').localeCompare(String(a.id || ''));
+  });
+}
+
+function moneyInr(value) {
+  return `₹${toSafeNumber(value, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+async function sendSupplierSmsNotification({ supplier, message, meta }) {
+  const phone = String((supplier && supplier.phone) || '').trim();
+  if (!phone || !message) return { ok: false, skipped: true, reason: 'phone_or_message_missing' };
+
+  const timeoutMs = Math.max(1000, toSafeNumber(process.env.SUPPLIER_SMS_TIMEOUT_MS, 7000));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    // Twilio path
+    const twilioSid = process.env.TWILIO_ACCOUNT_SID;
+    const twilioToken = process.env.TWILIO_AUTH_TOKEN;
+    const twilioFrom = process.env.TWILIO_FROM_NUMBER;
+    if (twilioSid && twilioToken && twilioFrom) {
+      const body = new URLSearchParams();
+      body.set('To', phone);
+      body.set('From', twilioFrom);
+      body.set('Body', message);
+      const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(twilioSid)}/Messages.json`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64')}`,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: body.toString(),
+        signal: controller.signal
+      });
+      if (response.ok) return { ok: true, provider: 'twilio' };
+      const text = await response.text().catch(() => '');
+      return { ok: false, provider: 'twilio', reason: text || `http_${response.status}` };
+    }
+
+    // Generic webhook path
+    const webhookUrl = process.env.SUPPLIER_SMS_WEBHOOK_URL;
+    if (!webhookUrl) return { ok: false, skipped: true, reason: 'provider_not_configured' };
+    let headers = { 'Content-Type': 'application/json' };
+    const customHeaders = process.env.SUPPLIER_SMS_WEBHOOK_HEADERS_JSON;
+    if (customHeaders) {
+      try {
+        const parsed = JSON.parse(customHeaders);
+        if (parsed && typeof parsed === 'object') headers = { ...headers, ...parsed };
+      } catch (_err) {
+        // Ignore malformed headers JSON.
+      }
+    }
+    const response = await fetch(webhookUrl, {
+      method: String(process.env.SUPPLIER_SMS_WEBHOOK_METHOD || 'POST').toUpperCase(),
+      headers,
+      body: JSON.stringify({
+        to: phone,
+        message,
+        supplierId: supplier.id,
+        supplierName: supplier.name,
+        meta: meta || {}
+      }),
+      signal: controller.signal
+    });
+    if (response.ok) return { ok: true, provider: 'webhook' };
+    const text = await response.text().catch(() => '');
+    return { ok: false, provider: 'webhook', reason: text || `http_${response.status}` };
+  } catch (err) {
+    return { ok: false, reason: err?.message || 'sms_send_failed' };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function extractExternalLookupPayload(responseJson) {
@@ -1005,79 +1165,152 @@ function jsonStore() {
     // Supplier Management
     async listSuppliers() {
       const db = readJsonDb();
-      return db.suppliers.map(s => {
-        const txs = db.supplierTransactions.filter(t => t.supplierId === s.id);
-        const totalTrucks = txs.filter(t => t.type === 'truck').length;
-        const totalMaterialAmount = txs.filter(t => t.type === 'truck').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-        const totalMaterialQuantity = txs.filter(t => t.type === 'truck').reduce((sum, t) => sum + (Number(t.quantity) || 0), 0);
-        const totalPaid = txs.filter(t => t.type === 'payment').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-        const balance = totalMaterialAmount - totalPaid;
-        return {
-          ...s,
-          totalTrucks,
-          totalMaterialAmount,
-          totalMaterialQuantity,
-          totalPaid,
-          balance
-        };
-      }).sort((a, b) => a.name.localeCompare(b.name));
+      return (db.suppliers || [])
+        .map((supplier) => {
+          const txs = (db.supplierTransactions || []).filter((t) => t.supplierId === supplier.id);
+          const openingBalance = toSafeNumber(supplier.openingBalance, 0);
+          const totalTrucks = txs.filter((t) => t.type === 'truck').length;
+          const totalMaterialAmount = txs
+            .filter((t) => t.type === 'truck')
+            .reduce((sum, t) => sum + toSafeNumber(t.amount, 0), 0);
+          const totalMaterialQuantity = txs
+            .filter((t) => t.type === 'truck')
+            .reduce((sum, t) => sum + toSafeNumber(t.quantity, 0), 0);
+          const totalPaid = txs
+            .filter((t) => t.type === 'payment')
+            .reduce((sum, t) => sum + toSafeNumber(t.amount, 0), 0);
+          const balance = openingBalance + totalMaterialAmount - totalPaid;
+          return {
+            ...supplier,
+            phone: String(supplier.phone || supplier.contact || '').trim(),
+            contact: String(supplier.phone || supplier.contact || '').trim(),
+            alternatePhone: String(supplier.alternatePhone || '').trim(),
+            email: String(supplier.email || '').trim(),
+            gstNo: normalizeGstNo(supplier.gstNo || ''),
+            address: String(supplier.address || '').trim(),
+            materialType: String(supplier.materialType || '').trim(),
+            paymentTerms: String(supplier.paymentTerms || '').trim(),
+            openingBalance,
+            totalTrucks,
+            totalMaterialAmount,
+            totalMaterialQuantity,
+            totalPaid,
+            balance
+          };
+        })
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    },
+    async getSupplierById(id) {
+      const rows = await this.listSuppliers();
+      return rows.find((row) => row.id === id) || null;
     },
     async createSupplier(data) {
       const db = readJsonDb();
+      const supplier = normalizeSupplier(data || {});
+      const now = new Date().toISOString();
       const row = {
         id: uid('sup'),
-        name: String(data.name).trim(),
-        contact: String(data.contact || '').trim(),
-        address: String(data.address || '').trim(),
-        createdAt: new Date().toISOString()
+        ...supplier,
+        contact: supplier.phone,
+        createdAt: now,
+        updatedAt: now
       };
       db.suppliers.push(row);
       writeJsonDb(db);
-      return row;
+      return (await this.getSupplierById(row.id)) || row;
     },
     async updateSupplier(id, data) {
       const db = readJsonDb();
-      const sup = db.suppliers.find(s => s.id === id);
-      if (!sup) return null;
-      sup.name = String(data.name).trim();
-      sup.contact = String(data.contact || '').trim();
-      sup.address = String(data.address || '').trim();
-      sup.updatedAt = new Date().toISOString();
+      const supplier = db.suppliers.find((s) => s.id === id);
+      if (!supplier) return null;
+      const normalized = normalizeSupplier(data || {});
+      supplier.name = normalized.name;
+      supplier.phone = normalized.phone;
+      supplier.contact = normalized.phone;
+      supplier.alternatePhone = normalized.alternatePhone;
+      supplier.email = normalized.email;
+      supplier.gstNo = normalized.gstNo;
+      supplier.address = normalized.address;
+      supplier.materialType = normalized.materialType;
+      supplier.paymentTerms = normalized.paymentTerms;
+      supplier.openingBalance = normalized.openingBalance;
+      supplier.updatedAt = new Date().toISOString();
       writeJsonDb(db);
-      return sup;
+      return (await this.getSupplierById(id)) || supplier;
     },
     async deleteSupplier(id) {
       const db = readJsonDb();
       const before = db.suppliers.length;
-      db.suppliers = db.suppliers.filter(s => s.id !== id);
+      db.suppliers = db.suppliers.filter((s) => s.id !== id);
       if (before === db.suppliers.length) return false;
-      // Cascade delete transactions
-      db.supplierTransactions = db.supplierTransactions.filter(t => t.supplierId !== id);
+      db.supplierTransactions = (db.supplierTransactions || []).filter((t) => t.supplierId !== id);
       writeJsonDb(db);
       return true;
     },
     async listSupplierTransactions(supplierId) {
       const db = readJsonDb();
-      return db.supplierTransactions
-        .filter(t => t.supplierId === supplierId)
-        .sort((a, b) => a.date < b.date ? 1 : -1);
+      return (db.supplierTransactions || [])
+        .filter((t) => t.supplierId === supplierId)
+        .map((t) => ({
+          ...t,
+          amount: toSafeNumber(t.amount, 0),
+          quantity: t.quantity == null || t.quantity === '' ? null : toSafeNumber(t.quantity, 0),
+          rate: t.rate == null || t.rate === '' ? null : toSafeNumber(t.rate, 0),
+          paidNow: t.paidNow == null || t.paidNow === '' ? 0 : toSafeNumber(t.paidNow, 0),
+          paymentMode: String(t.paymentMode || '').trim(),
+          paymentRef: String(t.paymentRef || '').trim(),
+          challanNo: String(t.challanNo || '').trim(),
+          note: String(t.note || '').trim(),
+          isAutoPayment: Boolean(t.isAutoPayment)
+        }))
+        .sort((a, b) => {
+          if (a.date !== b.date) return b.date.localeCompare(a.date);
+          const aTs = String(a.createdAt || '');
+          const bTs = String(b.createdAt || '');
+          if (aTs !== bTs) return bTs.localeCompare(aTs);
+          return String(b.id || '').localeCompare(String(a.id || ''));
+        });
+    },
+    async getSupplierTransactionById(id) {
+      const db = readJsonDb();
+      const tx = (db.supplierTransactions || []).find((row) => row.id === id);
+      if (!tx) return null;
+      return {
+        ...tx,
+        amount: toSafeNumber(tx.amount, 0),
+        quantity: tx.quantity == null || tx.quantity === '' ? null : toSafeNumber(tx.quantity, 0),
+        rate: tx.rate == null || tx.rate === '' ? null : toSafeNumber(tx.rate, 0),
+        paidNow: tx.paidNow == null || tx.paidNow === '' ? 0 : toSafeNumber(tx.paidNow, 0),
+        paymentMode: String(tx.paymentMode || '').trim(),
+        paymentRef: String(tx.paymentRef || '').trim(),
+        challanNo: String(tx.challanNo || '').trim(),
+        note: String(tx.note || '').trim(),
+        isAutoPayment: Boolean(tx.isAutoPayment)
+      };
     },
     async createSupplierTransaction(data) {
       const db = readJsonDb();
-      // data.type must be 'truck' or 'payment'
+      const tx = normalizeSupplierTransaction(data || {}, data.supplierId);
+      const now = new Date().toISOString();
       const row = {
         id: uid('stx'),
-        supplierId: data.supplierId,
-        date: data.date,
-        type: data.type, // 'truck' | 'payment'
-        amount: Number(data.amount),
-        // Optional fields for 'truck' type
-        truckNumber: data.truckNumber ? String(data.truckNumber).trim() : undefined,
-        material: data.material ? String(data.material).trim() : undefined,
-        quantity: data.quantity ? Number(data.quantity) : undefined,
-        rate: data.rate ? Number(data.rate) : undefined,
-        note: data.note ? String(data.note).trim() : '',
-        createdAt: new Date().toISOString()
+        supplierId: tx.supplierId,
+        date: tx.date,
+        type: tx.type,
+        amount: tx.amount,
+        truckNumber: tx.truckNumber || '',
+        challanNo: tx.challanNo || '',
+        material: tx.material || '',
+        quantity: tx.quantity,
+        rate: tx.rate,
+        paidNow: tx.paidNow > 0 ? tx.paidNow : 0,
+        paymentMode: tx.paymentMode || '',
+        paymentRef: tx.paymentRef || '',
+        note: tx.note || '',
+        isAutoPayment: Boolean(tx.isAutoPayment),
+        linkedTransactionId: tx.linkedTransactionId || '',
+        createdAt: now,
+        updatedAt: now
       };
       db.supplierTransactions.push(row);
       writeJsonDb(db);
@@ -1085,16 +1318,23 @@ function jsonStore() {
     },
     async updateSupplierTransaction(id, data) {
       const db = readJsonDb();
-      const tx = db.supplierTransactions.find(t => t.id === id);
+      const tx = db.supplierTransactions.find((row) => row.id === id);
       if (!tx) return null;
-      tx.date = data.date;
-      tx.type = data.type;
-      tx.amount = Number(data.amount);
-      tx.truckNumber = data.truckNumber ? String(data.truckNumber).trim() : undefined;
-      tx.material = data.material ? String(data.material).trim() : undefined;
-      tx.quantity = data.quantity ? Number(data.quantity) : undefined;
-      tx.rate = data.rate ? Number(data.rate) : undefined;
-      tx.note = data.note ? String(data.note).trim() : '';
+      const normalized = normalizeSupplierTransaction(data || {}, tx.supplierId);
+      tx.date = normalized.date;
+      tx.type = normalized.type;
+      tx.amount = normalized.amount;
+      tx.truckNumber = normalized.truckNumber || '';
+      tx.challanNo = normalized.challanNo || '';
+      tx.material = normalized.material || '';
+      tx.quantity = normalized.quantity;
+      tx.rate = normalized.rate;
+      tx.paidNow = normalized.paidNow > 0 ? normalized.paidNow : 0;
+      tx.paymentMode = normalized.paymentMode || '';
+      tx.paymentRef = normalized.paymentRef || '';
+      tx.note = normalized.note || '';
+      tx.isAutoPayment = Boolean(normalized.isAutoPayment);
+      tx.linkedTransactionId = normalized.linkedTransactionId || '';
       tx.updatedAt = new Date().toISOString();
       writeJsonDb(db);
       return tx;
@@ -1102,7 +1342,7 @@ function jsonStore() {
     async deleteSupplierTransaction(id) {
       const db = readJsonDb();
       const before = db.supplierTransactions.length;
-      db.supplierTransactions = db.supplierTransactions.filter(t => t.id !== id);
+      db.supplierTransactions = db.supplierTransactions.filter((t) => t.id !== id);
       if (before === db.supplierTransactions.length) return false;
       writeJsonDb(db);
       return true;
@@ -1412,6 +1652,58 @@ function postgresStore() {
           note TEXT,
           created_at TIMESTAMPTZ NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS suppliers (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          phone TEXT,
+          alternate_phone TEXT,
+          email TEXT,
+          gst_no TEXT,
+          address TEXT,
+          material_type TEXT,
+          payment_terms TEXT,
+          opening_balance NUMERIC(14,2) NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL,
+          updated_at TIMESTAMPTZ
+        );
+        ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS phone TEXT;
+        ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS alternate_phone TEXT;
+        ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS email TEXT;
+        ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS gst_no TEXT;
+        ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS address TEXT;
+        ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS material_type TEXT;
+        ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS payment_terms TEXT;
+        ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS opening_balance NUMERIC(14,2) NOT NULL DEFAULT 0;
+        ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+        CREATE TABLE IF NOT EXISTS supplier_transactions (
+          id TEXT PRIMARY KEY,
+          supplier_id TEXT NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+          date DATE NOT NULL,
+          type TEXT NOT NULL,
+          amount NUMERIC(14,2) NOT NULL,
+          truck_number TEXT,
+          challan_no TEXT,
+          material TEXT,
+          quantity NUMERIC(14,3),
+          rate NUMERIC(14,2),
+          paid_now NUMERIC(14,2),
+          payment_mode TEXT,
+          payment_ref TEXT,
+          note TEXT,
+          linked_transaction_id TEXT,
+          is_auto_payment BOOLEAN NOT NULL DEFAULT FALSE,
+          created_at TIMESTAMPTZ NOT NULL,
+          updated_at TIMESTAMPTZ
+        );
+        ALTER TABLE supplier_transactions ADD COLUMN IF NOT EXISTS challan_no TEXT;
+        ALTER TABLE supplier_transactions ADD COLUMN IF NOT EXISTS paid_now NUMERIC(14,2);
+        ALTER TABLE supplier_transactions ADD COLUMN IF NOT EXISTS payment_mode TEXT;
+        ALTER TABLE supplier_transactions ADD COLUMN IF NOT EXISTS payment_ref TEXT;
+        ALTER TABLE supplier_transactions ADD COLUMN IF NOT EXISTS linked_transaction_id TEXT;
+        ALTER TABLE supplier_transactions ADD COLUMN IF NOT EXISTS is_auto_payment BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE supplier_transactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
 
         CREATE TABLE IF NOT EXISTS billing_companies (
           id TEXT PRIMARY KEY,
@@ -2232,6 +2524,334 @@ function postgresStore() {
     },
     async deleteLandRecord(id) {
       const res = await pool.query('DELETE FROM land_records WHERE id = $1', [id]);
+      return res.rowCount > 0;
+    },
+    async listSuppliers() {
+      const res = await pool.query(
+        `SELECT
+           s.id,
+           s.name,
+           s.phone,
+           s.alternate_phone,
+           s.email,
+           s.gst_no,
+           s.address,
+           s.material_type,
+           s.payment_terms,
+           s.opening_balance,
+           s.created_at,
+           s.updated_at,
+           COALESCE(SUM(CASE WHEN t.type = 'truck' THEN t.amount ELSE 0 END), 0) AS total_material_amount,
+           COALESCE(SUM(CASE WHEN t.type = 'truck' THEN t.quantity ELSE 0 END), 0) AS total_material_quantity,
+           COALESCE(SUM(CASE WHEN t.type = 'truck' THEN 1 ELSE 0 END), 0)::int AS total_trucks,
+           COALESCE(SUM(CASE WHEN t.type = 'payment' THEN t.amount ELSE 0 END), 0) AS total_paid
+         FROM suppliers s
+         LEFT JOIN supplier_transactions t ON t.supplier_id = s.id
+         GROUP BY
+           s.id, s.name, s.phone, s.alternate_phone, s.email, s.gst_no, s.address,
+           s.material_type, s.payment_terms, s.opening_balance, s.created_at, s.updated_at
+         ORDER BY s.name ASC`
+      );
+      return res.rows.map((r) => {
+        const openingBalance = toSafeNumber(r.opening_balance, 0);
+        const totalMaterialAmount = toSafeNumber(r.total_material_amount, 0);
+        const totalPaid = toSafeNumber(r.total_paid, 0);
+        return {
+          id: r.id,
+          name: r.name,
+          phone: r.phone || '',
+          contact: r.phone || '',
+          alternatePhone: r.alternate_phone || '',
+          email: r.email || '',
+          gstNo: normalizeGstNo(r.gst_no || ''),
+          address: r.address || '',
+          materialType: r.material_type || '',
+          paymentTerms: r.payment_terms || '',
+          openingBalance,
+          totalTrucks: Number(r.total_trucks || 0),
+          totalMaterialAmount,
+          totalMaterialQuantity: toSafeNumber(r.total_material_quantity, 0),
+          totalPaid,
+          balance: openingBalance + totalMaterialAmount - totalPaid,
+          createdAt: r.created_at ? new Date(r.created_at).toISOString() : '',
+          updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : ''
+        };
+      });
+    },
+    async getSupplierById(id) {
+      const res = await pool.query(
+        `SELECT
+           s.id,
+           s.name,
+           s.phone,
+           s.alternate_phone,
+           s.email,
+           s.gst_no,
+           s.address,
+           s.material_type,
+           s.payment_terms,
+           s.opening_balance,
+           s.created_at,
+           s.updated_at,
+           COALESCE(SUM(CASE WHEN t.type = 'truck' THEN t.amount ELSE 0 END), 0) AS total_material_amount,
+           COALESCE(SUM(CASE WHEN t.type = 'truck' THEN t.quantity ELSE 0 END), 0) AS total_material_quantity,
+           COALESCE(SUM(CASE WHEN t.type = 'truck' THEN 1 ELSE 0 END), 0)::int AS total_trucks,
+           COALESCE(SUM(CASE WHEN t.type = 'payment' THEN t.amount ELSE 0 END), 0) AS total_paid
+         FROM suppliers s
+         LEFT JOIN supplier_transactions t ON t.supplier_id = s.id
+         WHERE s.id = $1
+         GROUP BY
+           s.id, s.name, s.phone, s.alternate_phone, s.email, s.gst_no, s.address,
+           s.material_type, s.payment_terms, s.opening_balance, s.created_at, s.updated_at`,
+        [id]
+      );
+      if (!res.rows[0]) return null;
+      const r = res.rows[0];
+      const openingBalance = toSafeNumber(r.opening_balance, 0);
+      const totalMaterialAmount = toSafeNumber(r.total_material_amount, 0);
+      const totalPaid = toSafeNumber(r.total_paid, 0);
+      return {
+        id: r.id,
+        name: r.name,
+        phone: r.phone || '',
+        contact: r.phone || '',
+        alternatePhone: r.alternate_phone || '',
+        email: r.email || '',
+        gstNo: normalizeGstNo(r.gst_no || ''),
+        address: r.address || '',
+        materialType: r.material_type || '',
+        paymentTerms: r.payment_terms || '',
+        openingBalance,
+        totalTrucks: Number(r.total_trucks || 0),
+        totalMaterialAmount,
+        totalMaterialQuantity: toSafeNumber(r.total_material_quantity, 0),
+        totalPaid,
+        balance: openingBalance + totalMaterialAmount - totalPaid,
+        createdAt: r.created_at ? new Date(r.created_at).toISOString() : '',
+        updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : ''
+      };
+    },
+    async createSupplier(data) {
+      const supplier = normalizeSupplier(data || {});
+      const now = new Date().toISOString();
+      const row = {
+        id: uid('sup'),
+        ...supplier,
+        createdAt: now,
+        updatedAt: now
+      };
+      await pool.query(
+        `INSERT INTO suppliers
+          (id, name, phone, alternate_phone, email, gst_no, address, material_type, payment_terms, opening_balance, created_at, updated_at)
+         VALUES
+          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [
+          row.id,
+          row.name,
+          row.phone || null,
+          row.alternatePhone || null,
+          row.email || null,
+          row.gstNo || null,
+          row.address || null,
+          row.materialType || null,
+          row.paymentTerms || null,
+          row.openingBalance,
+          row.createdAt,
+          row.updatedAt
+        ]
+      );
+      return await this.getSupplierById(row.id);
+    },
+    async updateSupplier(id, data) {
+      const supplier = normalizeSupplier(data || {});
+      const res = await pool.query(
+        `UPDATE suppliers
+         SET name = $2,
+             phone = $3,
+             alternate_phone = $4,
+             email = $5,
+             gst_no = $6,
+             address = $7,
+             material_type = $8,
+             payment_terms = $9,
+             opening_balance = $10,
+             updated_at = $11
+         WHERE id = $1
+         RETURNING id`,
+        [
+          id,
+          supplier.name,
+          supplier.phone || null,
+          supplier.alternatePhone || null,
+          supplier.email || null,
+          supplier.gstNo || null,
+          supplier.address || null,
+          supplier.materialType || null,
+          supplier.paymentTerms || null,
+          supplier.openingBalance,
+          new Date().toISOString()
+        ]
+      );
+      if (!res.rows[0]) return null;
+      return await this.getSupplierById(id);
+    },
+    async deleteSupplier(id) {
+      const res = await pool.query('DELETE FROM suppliers WHERE id = $1', [id]);
+      return res.rowCount > 0;
+    },
+    async listSupplierTransactions(supplierId) {
+      const res = await pool.query(
+        `SELECT *
+         FROM supplier_transactions
+         WHERE supplier_id = $1
+         ORDER BY date DESC, created_at DESC, id DESC`,
+        [supplierId]
+      );
+      return res.rows.map((r) => ({
+        id: r.id,
+        supplierId: r.supplier_id,
+        date: String(r.date).slice(0, 10),
+        type: r.type,
+        amount: toSafeNumber(r.amount, 0),
+        truckNumber: r.truck_number || '',
+        challanNo: r.challan_no || '',
+        material: r.material || '',
+        quantity: r.quantity == null ? null : toSafeNumber(r.quantity, 0),
+        rate: r.rate == null ? null : toSafeNumber(r.rate, 0),
+        paidNow: r.paid_now == null ? 0 : toSafeNumber(r.paid_now, 0),
+        paymentMode: r.payment_mode || '',
+        paymentRef: r.payment_ref || '',
+        note: r.note || '',
+        linkedTransactionId: r.linked_transaction_id || '',
+        isAutoPayment: Boolean(r.is_auto_payment),
+        createdAt: r.created_at ? new Date(r.created_at).toISOString() : '',
+        updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : ''
+      }));
+    },
+    async getSupplierTransactionById(id) {
+      const res = await pool.query('SELECT * FROM supplier_transactions WHERE id = $1', [id]);
+      if (!res.rows[0]) return null;
+      const r = res.rows[0];
+      return {
+        id: r.id,
+        supplierId: r.supplier_id,
+        date: String(r.date).slice(0, 10),
+        type: r.type,
+        amount: toSafeNumber(r.amount, 0),
+        truckNumber: r.truck_number || '',
+        challanNo: r.challan_no || '',
+        material: r.material || '',
+        quantity: r.quantity == null ? null : toSafeNumber(r.quantity, 0),
+        rate: r.rate == null ? null : toSafeNumber(r.rate, 0),
+        paidNow: r.paid_now == null ? 0 : toSafeNumber(r.paid_now, 0),
+        paymentMode: r.payment_mode || '',
+        paymentRef: r.payment_ref || '',
+        note: r.note || '',
+        linkedTransactionId: r.linked_transaction_id || '',
+        isAutoPayment: Boolean(r.is_auto_payment),
+        createdAt: r.created_at ? new Date(r.created_at).toISOString() : '',
+        updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : ''
+      };
+    },
+    async createSupplierTransaction(data) {
+      const tx = normalizeSupplierTransaction(data || {}, data.supplierId);
+      const now = new Date().toISOString();
+      const row = {
+        id: uid('stx'),
+        supplierId: tx.supplierId,
+        date: tx.date,
+        type: tx.type,
+        amount: tx.amount,
+        truckNumber: tx.truckNumber || '',
+        challanNo: tx.challanNo || '',
+        material: tx.material || '',
+        quantity: tx.quantity,
+        rate: tx.rate,
+        paidNow: tx.paidNow > 0 ? tx.paidNow : 0,
+        paymentMode: tx.paymentMode || '',
+        paymentRef: tx.paymentRef || '',
+        note: tx.note || '',
+        linkedTransactionId: tx.linkedTransactionId || '',
+        isAutoPayment: Boolean(tx.isAutoPayment),
+        createdAt: now,
+        updatedAt: now
+      };
+      await pool.query(
+        `INSERT INTO supplier_transactions
+          (id, supplier_id, date, type, amount, truck_number, challan_no, material, quantity, rate, paid_now, payment_mode, payment_ref, note, linked_transaction_id, is_auto_payment, created_at, updated_at)
+         VALUES
+          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+        [
+          row.id,
+          row.supplierId,
+          row.date,
+          row.type,
+          row.amount,
+          row.truckNumber || null,
+          row.challanNo || null,
+          row.material || null,
+          row.quantity == null ? null : row.quantity,
+          row.rate == null ? null : row.rate,
+          row.paidNow || null,
+          row.paymentMode || null,
+          row.paymentRef || null,
+          row.note || null,
+          row.linkedTransactionId || null,
+          row.isAutoPayment,
+          row.createdAt,
+          row.updatedAt
+        ]
+      );
+      return row;
+    },
+    async updateSupplierTransaction(id, data) {
+      const existing = await this.getSupplierTransactionById(id);
+      if (!existing) return null;
+      const tx = normalizeSupplierTransaction(data || {}, existing.supplierId);
+      const updatedAt = new Date().toISOString();
+      const res = await pool.query(
+        `UPDATE supplier_transactions
+         SET date = $2,
+             type = $3,
+             amount = $4,
+             truck_number = $5,
+             challan_no = $6,
+             material = $7,
+             quantity = $8,
+             rate = $9,
+             paid_now = $10,
+             payment_mode = $11,
+             payment_ref = $12,
+             note = $13,
+             linked_transaction_id = $14,
+             is_auto_payment = $15,
+             updated_at = $16
+         WHERE id = $1
+         RETURNING *`,
+        [
+          id,
+          tx.date,
+          tx.type,
+          tx.amount,
+          tx.truckNumber || null,
+          tx.challanNo || null,
+          tx.material || null,
+          tx.quantity == null ? null : tx.quantity,
+          tx.rate == null ? null : tx.rate,
+          tx.paidNow > 0 ? tx.paidNow : null,
+          tx.paymentMode || null,
+          tx.paymentRef || null,
+          tx.note || null,
+          tx.linkedTransactionId || null,
+          Boolean(tx.isAutoPayment),
+          updatedAt
+        ]
+      );
+      if (!res.rows[0]) return null;
+      return await this.getSupplierTransactionById(id);
+    },
+    async deleteSupplierTransaction(id) {
+      const res = await pool.query('DELETE FROM supplier_transactions WHERE id = $1', [id]);
       return res.rowCount > 0;
     },
     async listBillingCompanies() {
@@ -3601,6 +4221,339 @@ app.delete('/api/lands/:id', auth, requirePermission('land:delete'), async (req,
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to delete land record' });
+  }
+});
+
+app.get('/api/suppliers', auth, requirePermission('suppliers:view'), async (_req, res) => {
+  try {
+    const rows = await store.listSuppliers();
+    return res.json(rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to fetch suppliers' });
+  }
+});
+
+app.post('/api/suppliers', auth, requirePermission('suppliers:create'), async (req, res) => {
+  const supplier = normalizeSupplier(req.body || {});
+  if (!supplier.name) {
+    return res.status(400).json({ error: 'Supplier name is required' });
+  }
+  if (!Number.isFinite(supplier.openingBalance)) {
+    return res.status(400).json({ error: 'openingBalance must be a valid number' });
+  }
+  try {
+    const row = await store.createSupplier(supplier);
+    return res.status(201).json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to create supplier' });
+  }
+});
+
+app.put('/api/suppliers/:id', auth, requirePermission('suppliers:update'), async (req, res) => {
+  const supplier = normalizeSupplier(req.body || {});
+  if (!supplier.name) {
+    return res.status(400).json({ error: 'Supplier name is required' });
+  }
+  if (!Number.isFinite(supplier.openingBalance)) {
+    return res.status(400).json({ error: 'openingBalance must be a valid number' });
+  }
+  try {
+    const row = await store.updateSupplier(req.params.id, supplier);
+    if (!row) return res.status(404).json({ error: 'Supplier not found' });
+    return res.json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to update supplier' });
+  }
+});
+
+app.delete('/api/suppliers/:id', auth, requirePermission('suppliers:delete'), async (req, res) => {
+  try {
+    const deleted = await store.deleteSupplier(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Supplier not found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to delete supplier' });
+  }
+});
+
+app.get('/api/suppliers/:id/transactions', auth, requirePermission('suppliers:view'), async (req, res) => {
+  try {
+    const supplier = await store.getSupplierById(req.params.id);
+    if (!supplier) return res.status(404).json({ error: 'Supplier not found' });
+    const rows = await store.listSupplierTransactions(req.params.id);
+    return res.json(enrichSupplierTransactionsWithRunningBalance(supplier, rows));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to fetch supplier transactions' });
+  }
+});
+
+app.post('/api/suppliers/:id/transactions', auth, requirePermission('suppliers:create'), async (req, res) => {
+  const supplierId = req.params.id;
+  let supplier;
+  try {
+    supplier = await store.getSupplierById(supplierId);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to load supplier' });
+  }
+  if (!supplier) {
+    return res.status(404).json({ error: 'Supplier not found' });
+  }
+
+  const tx = normalizeSupplierTransaction(req.body || {}, supplierId);
+  if (!tx.date || !/^\d{4}-\d{2}-\d{2}$/.test(tx.date)) {
+    return res.status(400).json({ error: 'date must be in YYYY-MM-DD format' });
+  }
+  if (!['truck', 'payment'].includes(tx.type)) {
+    return res.status(400).json({ error: 'type must be truck or payment' });
+  }
+
+  let amount = tx.amount;
+  if ((!Number.isFinite(amount) || amount <= 0) && tx.type === 'truck' && Number.isFinite(tx.quantity) && tx.quantity > 0 && Number.isFinite(tx.rate) && tx.rate >= 0) {
+    amount = Number((tx.quantity * tx.rate).toFixed(2));
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return res.status(400).json({ error: 'amount must be a positive number' });
+  }
+  if (tx.type === 'truck') {
+    if (!tx.material) return res.status(400).json({ error: 'material is required for truck entry' });
+    if (!Number.isFinite(tx.quantity) || tx.quantity <= 0) {
+      return res.status(400).json({ error: 'quantity must be a positive number for truck entry' });
+    }
+    if (tx.rate != null && (!Number.isFinite(tx.rate) || tx.rate < 0)) {
+      return res.status(400).json({ error: 'rate must be zero or positive' });
+    }
+  }
+  if (!Number.isFinite(tx.paidNow) || tx.paidNow < 0) {
+    return res.status(400).json({ error: 'paidNow must be zero or positive' });
+  }
+  if (tx.type === 'truck' && tx.paidNow > amount) {
+    return res.status(400).json({ error: 'paidNow cannot be greater than material amount' });
+  }
+
+  try {
+    const primaryTx = await store.createSupplierTransaction({
+      ...tx,
+      amount,
+      paidNow: tx.type === 'truck' ? tx.paidNow : 0,
+      isAutoPayment: false
+    });
+
+    let autoPaymentTx = null;
+    if (tx.type === 'truck' && tx.paidNow > 0) {
+      autoPaymentTx = await store.createSupplierTransaction({
+        supplierId,
+        date: tx.date,
+        type: 'payment',
+        amount: tx.paidNow,
+        paymentMode: tx.paymentMode,
+        paymentRef: tx.paymentRef,
+        note: tx.note
+          ? `Partial payment against truck (${tx.note})`
+          : 'Partial payment against truck material entry',
+        linkedTransactionId: primaryTx.id,
+        isAutoPayment: true
+      });
+    }
+
+    const updatedSupplier = await store.getSupplierById(supplierId);
+    const rows = await store.listSupplierTransactions(supplierId);
+    const enriched = enrichSupplierTransactionsWithRunningBalance(updatedSupplier, rows);
+    const primaryWithBalance = enriched.find((row) => row.id === primaryTx.id) || primaryTx;
+    const autoPaymentWithBalance =
+      autoPaymentTx && (enriched.find((row) => row.id === autoPaymentTx.id) || autoPaymentTx);
+
+    const smsRequested = !(req.body && (req.body.sendSms === false || req.body.sendSms === 'false'));
+    let sms = { ok: false, skipped: true, reason: 'not_requested' };
+    if (smsRequested && updatedSupplier?.phone) {
+      const balanceNow = autoPaymentWithBalance
+        ? toSafeNumber(autoPaymentWithBalance.balanceAfter, updatedSupplier.balance)
+        : toSafeNumber(primaryWithBalance.balanceAfter, updatedSupplier.balance);
+      const amountText = moneyInr(amount);
+      const paidNowText = moneyInr(tx.paidNow);
+      const balanceText = moneyInr(balanceNow);
+      const message =
+        tx.type === 'truck'
+          ? `${APP_NAME}: Delivery logged for ${updatedSupplier.name}. Material ${amountText}, paid ${paidNowText}, balance ${balanceText}.`
+          : `${APP_NAME}: Payment received from ${updatedSupplier.name} of ${amountText}. Balance ${balanceText}.`;
+      sms = await sendSupplierSmsNotification({
+        supplier: updatedSupplier,
+        message,
+        meta: {
+          supplierId: updatedSupplier.id,
+          transactionId: primaryTx.id,
+          autoPaymentTransactionId: autoPaymentTx ? autoPaymentTx.id : ''
+        }
+      });
+    }
+
+    return res.status(201).json({
+      transaction: primaryWithBalance,
+      autoPaymentTransaction: autoPaymentWithBalance || null,
+      supplierBalance: updatedSupplier?.balance ?? null,
+      sms
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to create supplier transaction' });
+  }
+});
+
+app.put('/api/supplier-transactions/:id', auth, requirePermission('suppliers:update'), async (req, res) => {
+  let existing;
+  try {
+    existing = await store.getSupplierTransactionById(req.params.id);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to load transaction' });
+  }
+  if (!existing) return res.status(404).json({ error: 'Transaction not found' });
+
+  const tx = normalizeSupplierTransaction(req.body || {}, existing.supplierId);
+  if (!tx.date || !/^\d{4}-\d{2}-\d{2}$/.test(tx.date)) {
+    return res.status(400).json({ error: 'date must be in YYYY-MM-DD format' });
+  }
+  if (!['truck', 'payment'].includes(tx.type)) {
+    return res.status(400).json({ error: 'type must be truck or payment' });
+  }
+  let amount = tx.amount;
+  if ((!Number.isFinite(amount) || amount <= 0) && tx.type === 'truck' && Number.isFinite(tx.quantity) && tx.quantity > 0 && Number.isFinite(tx.rate) && tx.rate >= 0) {
+    amount = Number((tx.quantity * tx.rate).toFixed(2));
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return res.status(400).json({ error: 'amount must be a positive number' });
+  }
+  if (tx.type === 'truck') {
+    if (!tx.material) return res.status(400).json({ error: 'material is required for truck entry' });
+    if (!Number.isFinite(tx.quantity) || tx.quantity <= 0) {
+      return res.status(400).json({ error: 'quantity must be a positive number for truck entry' });
+    }
+    if (tx.rate != null && (!Number.isFinite(tx.rate) || tx.rate < 0)) {
+      return res.status(400).json({ error: 'rate must be zero or positive' });
+    }
+  }
+  if (!Number.isFinite(tx.paidNow) || tx.paidNow < 0) {
+    return res.status(400).json({ error: 'paidNow must be zero or positive' });
+  }
+  if (tx.type === 'truck' && tx.paidNow > amount) {
+    return res.status(400).json({ error: 'paidNow cannot be greater than material amount' });
+  }
+
+  try {
+    const updated = await store.updateSupplierTransaction(req.params.id, {
+      ...tx,
+      amount,
+      paidNow: tx.type === 'truck' ? tx.paidNow : 0,
+      supplierId: existing.supplierId
+    });
+    if (!updated) return res.status(404).json({ error: 'Transaction not found' });
+
+    const supplier = await store.getSupplierById(existing.supplierId);
+    const rows = await store.listSupplierTransactions(existing.supplierId);
+    const enriched = enrichSupplierTransactionsWithRunningBalance(supplier, rows);
+    return res.json(enriched.find((row) => row.id === req.params.id) || updated);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to update supplier transaction' });
+  }
+});
+
+app.delete('/api/supplier-transactions/:id', auth, requirePermission('suppliers:delete'), async (req, res) => {
+  try {
+    const deleted = await store.deleteSupplierTransaction(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Transaction not found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to delete supplier transaction' });
+  }
+});
+
+app.get('/api/supplier-transactions/:id/receipt.pdf', auth, requirePermission('suppliers:view'), async (req, res) => {
+  try {
+    const tx = await store.getSupplierTransactionById(req.params.id);
+    if (!tx) return res.status(404).json({ error: 'Transaction not found' });
+    const supplier = await store.getSupplierById(tx.supplierId);
+    if (!supplier) return res.status(404).json({ error: 'Supplier not found' });
+    const allRows = await store.listSupplierTransactions(tx.supplierId);
+    const enrichedRows = enrichSupplierTransactionsWithRunningBalance(supplier, allRows);
+    const enrichedTx = enrichedRows.find((row) => row.id === tx.id) || tx;
+
+    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    const safeSupplierName = String(supplier.name || 'supplier').replace(/[^a-z0-9_-]/gi, '-');
+    const safeReceiptId = String(tx.id || 'receipt').replace(/[^a-z0-9_-]/gi, '-');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="supplier-receipt-${safeSupplierName}-${safeReceiptId}.pdf"`);
+    doc.pipe(res);
+
+    const pageWidth = doc.page.width;
+    const left = 40;
+    const width = pageWidth - 80;
+    const colors = {
+      border: '#CFD8E6',
+      heading: '#0C2E66',
+      text: '#1A2738',
+      muted: '#5E6A7A',
+      panel: '#F6F9FF'
+    };
+    let y = 40;
+
+    doc.save().roundedRect(left, y, width, 74, 8).fill(colors.panel).restore();
+    doc.save().roundedRect(left, y, width, 74, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
+    doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(18).text('SUPPLIER RECEIPT', left + 12, y + 12);
+    doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(12).text(APP_NAME, left + 12, y + 40);
+    doc.font('Helvetica').fontSize(9).fillColor(colors.muted);
+    doc.text(`Receipt ID: ${tx.id}`, left + width - 220, y + 14, { width: 208, align: 'right' });
+    doc.text(`Date: ${tx.date}`, left + width - 220, y + 30, { width: 208, align: 'right' });
+    doc.text(`Type: ${tx.type === 'truck' ? 'Material Delivery' : 'Payment'}`, left + width - 220, y + 46, {
+      width: 208,
+      align: 'right'
+    });
+    y += 88;
+
+    doc.save().roundedRect(left, y, width, 120, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
+    doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(10).text('Supplier', left + 10, y + 10);
+    doc.fillColor(colors.text).font('Helvetica').fontSize(10);
+    doc.text(`Name: ${supplier.name || '-'}`, left + 10, y + 28);
+    doc.text(`Phone: ${supplier.phone || '-'}`, left + 10, y + 44);
+    doc.text(`Email: ${supplier.email || '-'}`, left + 10, y + 60);
+    doc.text(`GST No: ${supplier.gstNo || '-'}`, left + 10, y + 76);
+    doc.text(`Address: ${supplier.address || '-'}`, left + 10, y + 92, { width: width - 20 });
+    y += 132;
+
+    doc.save().roundedRect(left, y, width, 176, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
+    doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(10).text('Transaction Details', left + 10, y + 10);
+    doc.fillColor(colors.text).font('Helvetica').fontSize(10);
+    doc.text(`Amount: ${moneyInr(tx.amount)}`, left + 10, y + 30);
+    doc.text(`Balance After Entry: ${moneyInr(enrichedTx.balanceAfter)}`, left + 10, y + 46);
+    doc.text(`Opening Balance: ${moneyInr(supplier.openingBalance)}`, left + 10, y + 62);
+    if (tx.type === 'truck') {
+      doc.text(`Truck No: ${tx.truckNumber || '-'}`, left + 10, y + 82);
+      doc.text(`Challan No: ${tx.challanNo || '-'}`, left + 10, y + 98);
+      doc.text(`Material: ${tx.material || '-'}`, left + 10, y + 114);
+      doc.text(`Quantity: ${tx.quantity == null ? '-' : tx.quantity}`, left + 10, y + 130);
+      doc.text(`Rate: ${tx.rate == null ? '-' : moneyInr(tx.rate)}`, left + 220, y + 130);
+      doc.text(`Paid Now: ${moneyInr(tx.paidNow || 0)}`, left + 10, y + 146);
+    } else {
+      doc.text(`Payment Mode: ${tx.paymentMode || '-'}`, left + 10, y + 82);
+      doc.text(`Reference: ${tx.paymentRef || '-'}`, left + 10, y + 98);
+    }
+    doc.text(`Note: ${tx.note || '-'}`, left + 10, y + 162, { width: width - 20 });
+
+    const footerY = doc.page.height - 74;
+    doc.save().moveTo(left, footerY).lineTo(left + width, footerY).lineWidth(1).strokeColor(colors.border).stroke().restore();
+    doc.fillColor(colors.muted).font('Helvetica').fontSize(9);
+    doc.text(`Generated by ${APP_NAME}`, left, footerY + 8, { width, align: 'left' });
+    doc.text(`Authorized Signature`, left, footerY + 8, { width, align: 'right' });
+    doc.end();
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to generate supplier receipt' });
   }
 });
 

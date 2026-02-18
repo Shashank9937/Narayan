@@ -639,8 +639,24 @@
       <div id="supplierListPanel" class="panel">
         <div class="row wrap">
           <h2>Supplier Management</h2>
-          <button id="addSupplierBtn" class="primary">+ Add Supplier</button>
         </div>
+        <section id="supplierCreatePanel" class="panel supplier-form-panel">
+          <h3>Add Supplier</h3>
+          <form id="supplierForm" class="supplier-create-form">
+            <div class="supplier-form-grid two">
+              <input name="name" placeholder="Supplier Name" required />
+              <input name="phone" placeholder="Phone Number (for SMS)" />
+              <input name="alternatePhone" placeholder="Alternate Phone (optional)" />
+              <input name="email" type="email" placeholder="Email (optional)" />
+              <input name="gstNo" placeholder="GST No (optional)" />
+              <input name="materialType" placeholder="Main Material (e.g. Coal, Husk)" />
+              <input name="openingBalance" type="number" step="0.01" value="0" placeholder="Opening Balance" />
+              <input name="paymentTerms" placeholder="Payment Terms (e.g. weekly)" />
+            </div>
+            <textarea name="address" placeholder="Supplier Address"></textarea>
+            <button type="submit">Add Supplier</button>
+          </form>
+        </section>
         <div id="supplierGrid" class="employee-grid">
           <!-- Supplier Cards Injected Here -->
         </div>
@@ -682,6 +698,7 @@
 
               <div id="txTruckFields">
                 <input name="truckNumber" placeholder="Truck Number" />
+                <input name="challanNo" placeholder="Challan Number" />
                 <input name="material" placeholder="Material (e.g. Coal)" />
                 <div class="row">
                   <input name="quantity" type="number" step="0.01" placeholder="Qty" />
@@ -689,8 +706,25 @@
                 </div>
               </div>
 
-              <input name="amount" type="number" step="0.01" placeholder="Total Amount (₹)" required />
+              <div class="row">
+                <input name="amount" type="number" step="0.01" placeholder="Total Amount (₹)" required />
+                <input id="txPaidNow" name="paidNow" type="number" step="0.01" placeholder="Paid Now (₹)" value="0" />
+              </div>
+              <div id="txPaymentMetaFields" class="row wrap">
+                <select name="paymentMode">
+                  <option value="">Payment Mode</option>
+                  <option value="cash">Cash</option>
+                  <option value="upi">UPI</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="cheque">Cheque</option>
+                </select>
+                <input name="paymentRef" placeholder="Payment Ref / UTR / Cheque No" />
+              </div>
               <input name="note" placeholder="Note (optional)" />
+              <label class="inline-check">
+                <input name="sendSms" type="checkbox" value="1" checked />
+                Send SMS update to supplier
+              </label>
               <button type="submit">Add Entry</button>
             </form>
           </section>
@@ -705,6 +739,8 @@
                     <th>Type</th>
                     <th>Details</th>
                     <th>Amount</th>
+                    <th>Balance</th>
+                    <th>Receipt</th>
                     <th>Actions</th>
                   </tr>
                 </thead>

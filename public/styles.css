@@ -841,6 +841,30 @@ th.sortable.desc::after {
   background: rgba(248, 252, 255, 0.85);
 }
 
+.supplier-create-form {
+  display: grid;
+  gap: 0.72rem;
+}
+
+.supplier-form-grid {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.supplier-form-grid.two {
+  grid-template-columns: repeat(2, minmax(200px, 1fr));
+}
+
+.supplier-create-form textarea {
+  min-height: 84px;
+}
+
+#supplierTransactionForm .row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 0.6rem;
+}
+
 .bill-grid {
   display: grid;
   gap: 0.7rem;
@@ -1079,6 +1103,11 @@ body.dark-mode button.emp-edit {
   }
 
   .supplier-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .supplier-form-grid.two,
+  #supplierTransactionForm .row {
     grid-template-columns: 1fr;
   }
 
