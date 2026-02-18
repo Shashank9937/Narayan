@@ -1977,6 +1977,15 @@ function supplierTxDetails(tx) {
   return `Mode: ${mode} | Ref: ${ref} | ${tx.note || 'Payment Entry'}`;
 }
 
+function smsReasonText(reason) {
+  const key = String(reason || '').trim().toLowerCase();
+  if (key === 'provider_not_configured') return 'SMS gateway not configured';
+  if (key === 'phone_or_message_missing') return 'supplier phone number missing';
+  if (key === 'not_requested') return 'SMS not requested';
+  if (!key) return 'unknown reason';
+  return key.replace(/_/g, ' ');
+}
+
 function renderSupplierTransactions(txs, supplier) {
   if (supplier) {
     if (supTotalMaterialEl) supTotalMaterialEl.textContent = money(supplier.totalMaterialAmount || 0);
@@ -1998,7 +2007,7 @@ function renderSupplierTransactions(txs, supplier) {
           <td class="money tx-amount-${amountClass}">${money(tx.amount || 0)}</td>
           <td class="money">${money(tx.balanceAfter || 0)}</td>
           <td>
-            <button class="small" onclick="openSupplierReceipt('${tx.id}')">Receipt</button>
+            <button class="small" onclick="openSupplierReceipt('${tx.id}')">Print PDF</button>
           </td>
           <td>
             ${canDelete ? `<button class="small danger" onclick="deleteSupplierTx('${tx.id}')">Del</button>` : ''}
@@ -2110,9 +2119,21 @@ supplierTransactionForm?.addEventListener('submit', async (e) => {
     let message = result?.autoPaymentTransaction
       ? 'Material and partial payment saved'
       : 'Transaction added';
-    if (result?.sms?.ok) message += ' + SMS sent';
-    if (result?.sms && !result.sms.ok && !result.sms.skipped) {
-      showToast(`${message} (SMS failed)`, 'error');
+    const sms = result?.sms;
+    if (sms?.ok) {
+      showToast(`${message} + SMS sent`);
+      return;
+    }
+    if (sms?.skipped) {
+      if (sms.reason === 'not_requested') {
+        showToast(message);
+        return;
+      }
+      showToast(`${message} (SMS not sent: ${smsReasonText(sms.reason)})`, 'error');
+      return;
+    }
+    if (sms && !sms.ok) {
+      showToast(`${message} (SMS failed: ${smsReasonText(sms.reason)})`, 'error');
       return;
     }
     showToast(message);

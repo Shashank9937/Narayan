@@ -131,6 +131,21 @@ function normalizeGstNo(gstNo) {
     .trim();
 }
 
+function normalizePhoneNumber(phone) {
+  const raw = String(phone || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('+')) {
+    return `+${raw.slice(1).replace(/\D+/g, '')}`;
+  }
+  const digits = raw.replace(/\D+/g, '');
+  if (!digits) return '';
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.length === 11 && digits.startsWith('0')) return `+91${digits.slice(1)}`;
+  if (digits.length === 12 && digits.startsWith('91')) return `+${digits}`;
+  if (digits.length > 10) return `+${digits}`;
+  return digits;
+}
+
 function isValidGstNo(gstNo) {
   return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(normalizeGstNo(gstNo));
 }
@@ -189,8 +204,8 @@ function normalizeSupplier(data) {
   const openingBalance = toSafeNumber(data.openingBalance, 0);
   return {
     name: String(data.name || '').trim(),
-    phone: String(data.phone || data.contact || '').trim(),
-    alternatePhone: String(data.alternatePhone || '').trim(),
+    phone: normalizePhoneNumber(data.phone || data.contact || ''),
+    alternatePhone: normalizePhoneNumber(data.alternatePhone || ''),
     email: String(data.email || '').trim(),
     gstNo: normalizeGstNo(data.gstNo || ''),
     address: String(data.address || '').trim(),
@@ -266,7 +281,7 @@ function moneyInr(value) {
 }
 
 async function sendSupplierSmsNotification({ supplier, message, meta }) {
-  const phone = String((supplier && supplier.phone) || '').trim();
+  const phone = normalizePhoneNumber((supplier && supplier.phone) || '');
   if (!phone || !message) return { ok: false, skipped: true, reason: 'phone_or_message_missing' };
 
   const timeoutMs = Math.max(1000, toSafeNumber(process.env.SUPPLIER_SMS_TIMEOUT_MS, 7000));
@@ -4484,6 +4499,16 @@ app.get('/api/supplier-transactions/:id/receipt.pdf', auth, requirePermission('s
     const enrichedRows = enrichSupplierTransactionsWithRunningBalance(supplier, allRows);
     const enrichedTx = enrichedRows.find((row) => row.id === tx.id) || tx;
 
+    const openingBalance = toSafeNumber(supplier.openingBalance, 0);
+    const totalQuantity = toSafeNumber(supplier.totalMaterialQuantity, 0);
+    const totalMaterialAmount = toSafeNumber(supplier.totalMaterialAmount, 0);
+    const totalPaid = toSafeNumber(supplier.totalPaid, 0);
+    const totalToGive = openingBalance + totalMaterialAmount;
+    const remaining = totalToGive - totalPaid;
+    const thisEntryAmount = toSafeNumber(tx.amount, 0);
+    const thisEntryPaid = tx.type === 'payment' ? thisEntryAmount : toSafeNumber(tx.paidNow, 0);
+    const thisEntryRemaining = tx.type === 'truck' ? Math.max(0, thisEntryAmount - thisEntryPaid) : 0;
+
     const doc = new PDFDocument({ margin: 40, size: 'A4' });
     const safeSupplierName = String(supplier.name || 'supplier').replace(/[^a-z0-9_-]/gi, '-');
     const safeReceiptId = String(tx.id || 'receipt').replace(/[^a-z0-9_-]/gi, '-');
@@ -4503,53 +4528,89 @@ app.get('/api/supplier-transactions/:id/receipt.pdf', auth, requirePermission('s
     };
     let y = 40;
 
-    doc.save().roundedRect(left, y, width, 74, 8).fill(colors.panel).restore();
-    doc.save().roundedRect(left, y, width, 74, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
-    doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(18).text('SUPPLIER RECEIPT', left + 12, y + 12);
-    doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(12).text(APP_NAME, left + 12, y + 40);
+    doc.save().roundedRect(left, y, width, 84, 8).fill(colors.panel).restore();
+    doc.save().roundedRect(left, y, width, 84, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
+    doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(17).text('SUPPLIER RECEIPT', left + 12, y + 14);
+    doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(12).text(APP_NAME, left + 12, y + 42);
+    doc.font('Helvetica').fontSize(9).fillColor(colors.muted).text('Printable copy for supplier acknowledgement', left + 12, y + 60);
     doc.font('Helvetica').fontSize(9).fillColor(colors.muted);
-    doc.text(`Receipt ID: ${tx.id}`, left + width - 220, y + 14, { width: 208, align: 'right' });
-    doc.text(`Date: ${tx.date}`, left + width - 220, y + 30, { width: 208, align: 'right' });
-    doc.text(`Type: ${tx.type === 'truck' ? 'Material Delivery' : 'Payment'}`, left + width - 220, y + 46, {
-      width: 208,
+    doc.text(`Receipt ID: ${tx.id}`, left + width - 260, y + 14, { width: 248, align: 'right' });
+    doc.text(`Date: ${tx.date}`, left + width - 260, y + 30, { width: 248, align: 'right' });
+    doc.text(`Type: ${tx.type === 'truck' ? 'Material Delivery' : 'Payment'}`, left + width - 260, y + 46, {
+      width: 248,
       align: 'right'
     });
-    y += 88;
+    doc.text(`Supplier: ${supplier.name || '-'}`, left + width - 260, y + 62, { width: 248, align: 'right' });
+    y += 98;
 
-    doc.save().roundedRect(left, y, width, 120, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
-    doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(10).text('Supplier', left + 10, y + 10);
+    const topBoxHeight = 138;
+    doc.save().roundedRect(left, y, width, topBoxHeight, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
+    doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(10).text('Supplier Details', left + 10, y + 10);
     doc.fillColor(colors.text).font('Helvetica').fontSize(10);
     doc.text(`Name: ${supplier.name || '-'}`, left + 10, y + 28);
     doc.text(`Phone: ${supplier.phone || '-'}`, left + 10, y + 44);
     doc.text(`Email: ${supplier.email || '-'}`, left + 10, y + 60);
     doc.text(`GST No: ${supplier.gstNo || '-'}`, left + 10, y + 76);
     doc.text(`Address: ${supplier.address || '-'}`, left + 10, y + 92, { width: width - 20 });
-    y += 132;
-
-    doc.save().roundedRect(left, y, width, 176, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
-    doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(10).text('Transaction Details', left + 10, y + 10);
+    doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(10).text('Transaction Details', left + width / 2 + 8, y + 10);
     doc.fillColor(colors.text).font('Helvetica').fontSize(10);
-    doc.text(`Amount: ${moneyInr(tx.amount)}`, left + 10, y + 30);
-    doc.text(`Balance After Entry: ${moneyInr(enrichedTx.balanceAfter)}`, left + 10, y + 46);
-    doc.text(`Opening Balance: ${moneyInr(supplier.openingBalance)}`, left + 10, y + 62);
+    doc.text(`Entry Amount: ${moneyInr(thisEntryAmount)}`, left + width / 2 + 8, y + 28);
+    doc.text(`Entry Paid: ${moneyInr(thisEntryPaid)}`, left + width / 2 + 8, y + 44);
+    doc.text(`Entry Remaining: ${moneyInr(thisEntryRemaining)}`, left + width / 2 + 8, y + 60);
+    doc.text(`Balance After Entry: ${moneyInr(enrichedTx.balanceAfter)}`, left + width / 2 + 8, y + 76);
     if (tx.type === 'truck') {
-      doc.text(`Truck No: ${tx.truckNumber || '-'}`, left + 10, y + 82);
-      doc.text(`Challan No: ${tx.challanNo || '-'}`, left + 10, y + 98);
-      doc.text(`Material: ${tx.material || '-'}`, left + 10, y + 114);
-      doc.text(`Quantity: ${tx.quantity == null ? '-' : tx.quantity}`, left + 10, y + 130);
-      doc.text(`Rate: ${tx.rate == null ? '-' : moneyInr(tx.rate)}`, left + 220, y + 130);
-      doc.text(`Paid Now: ${moneyInr(tx.paidNow || 0)}`, left + 10, y + 146);
+      doc.text(`Truck No: ${tx.truckNumber || '-'}`, left + width / 2 + 8, y + 92);
+      doc.text(`Challan No: ${tx.challanNo || '-'}`, left + width / 2 + 8, y + 108);
+      doc.text(`Material: ${tx.material || '-'}`, left + width / 2 + 8, y + 124);
+      doc.text(
+        `Quantity: ${tx.quantity == null ? '-' : tx.quantity} | Rate: ${tx.rate == null ? '-' : moneyInr(tx.rate)}`,
+        left + width / 2 + 8,
+        y + 140,
+        { width: width / 2 - 16 }
+      );
     } else {
-      doc.text(`Payment Mode: ${tx.paymentMode || '-'}`, left + 10, y + 82);
-      doc.text(`Reference: ${tx.paymentRef || '-'}`, left + 10, y + 98);
+      doc.text(`Payment Mode: ${tx.paymentMode || '-'}`, left + width / 2 + 8, y + 92);
+      doc.text(`Reference: ${tx.paymentRef || '-'}`, left + width / 2 + 8, y + 108);
     }
-    doc.text(`Note: ${tx.note || '-'}`, left + 10, y + 162, { width: width - 20 });
+    y += topBoxHeight + 12;
+
+    const summaryHeight = 138;
+    doc.save().roundedRect(left, y, width, summaryHeight, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
+    doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(10).text('Supplier Financial Summary', left + 10, y + 10);
+
+    const summaryRows = [
+      ['Total Quantity', `${totalQuantity}`],
+      ['Total Material Value', moneyInr(totalMaterialAmount)],
+      ['Total Paid', moneyInr(totalPaid)],
+      ['Total To Give', moneyInr(totalToGive)],
+      ['Remaining Balance', moneyInr(remaining)]
+    ];
+    let sy = y + 30;
+    summaryRows.forEach(([label, value], index) => {
+      if (index % 2 === 0) {
+        doc.save().rect(left + 8, sy - 3, width - 16, 20).fill('#F8FBFF').restore();
+      }
+      doc.fillColor(colors.text).font('Helvetica').fontSize(10);
+      doc.text(label, left + 14, sy);
+      doc.font('Helvetica-Bold').text(value, left + 14, sy, { width: width - 28, align: 'right' });
+      sy += 22;
+    });
+    y += summaryHeight + 14;
+
+    doc.save().roundedRect(left, y, width, 56, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
+    doc.fillColor(colors.text).font('Helvetica').fontSize(9.5);
+    doc.text(`Note: ${tx.note || '-'}`, left + 10, y + 10, { width: width - 20 });
+    doc.text('This receipt can be printed and signed by supplier and company representative.', left + 10, y + 32, {
+      width: width - 20
+    });
 
     const footerY = doc.page.height - 74;
     doc.save().moveTo(left, footerY).lineTo(left + width, footerY).lineWidth(1).strokeColor(colors.border).stroke().restore();
     doc.fillColor(colors.muted).font('Helvetica').fontSize(9);
     doc.text(`Generated by ${APP_NAME}`, left, footerY + 8, { width, align: 'left' });
-    doc.text(`Authorized Signature`, left, footerY + 8, { width, align: 'right' });
+    doc.text(`Company Signature`, left, footerY + 8, { width, align: 'right' });
+    doc.text('Supplier Signature', left, footerY + 42, { width, align: 'left' });
+    doc.text('Date', left, footerY + 42, { width, align: 'right' });
     doc.end();
   } catch (err) {
     console.error(err);
