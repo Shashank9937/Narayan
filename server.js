@@ -227,6 +227,15 @@ function toSafeNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function parseBooleanInput(value, fallback = false) {
+  if (value == null) return fallback;
+  if (typeof value === 'boolean') return value;
+  const text = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y', 'on'].includes(text)) return true;
+  if (['0', 'false', 'no', 'n', 'off', ''].includes(text)) return false;
+  return fallback;
+}
+
 function normalizeSupplier(data) {
   const openingBalance = toSafeNumber(data.openingBalance, 0);
   return {
@@ -1100,6 +1109,7 @@ function jsonStore() {
         quantity,
         pricePerQuintal: pricePerQuintal ?? undefined,
         totalAmount: totalAmount ?? undefined,
+        marked: parseBooleanInput(data.marked, false),
         party: party || undefined,
         client: data.client ? String(data.client).trim() : '',
         origin: data.origin ? String(data.origin).trim() : '',
@@ -1135,6 +1145,8 @@ function jsonStore() {
       truck.quantity = quantity;
       truck.pricePerQuintal = pricePerQuintal ?? undefined;
       truck.totalAmount = totalAmount ?? undefined;
+      if (data.marked != null) truck.marked = parseBooleanInput(data.marked, false);
+      if (truck.marked == null) truck.marked = false;
       truck.party = party || undefined;
       truck.client = data.client ? String(data.client).trim() : '';
       truck.origin = data.origin ? String(data.origin).trim() : '';
@@ -1157,7 +1169,26 @@ function jsonStore() {
       let rows = db.trucks;
       if (filter?.dateFrom) rows = rows.filter((t) => t.date >= filter.dateFrom);
       if (filter?.dateTo) rows = rows.filter((t) => t.date <= filter.dateTo);
-      return rows;
+      return rows.map((t) => ({
+        ...t,
+        party: t.party || 'narayan',
+        client: t.client || '',
+        marked: Boolean(t.marked)
+      }));
+    },
+    async setTruckMarked(id, marked) {
+      const db = readJsonDb();
+      const truck = db.trucks.find((t) => t.id === id);
+      if (!truck) return null;
+      truck.marked = parseBooleanInput(marked, false);
+      truck.updatedAt = new Date().toISOString();
+      writeJsonDb(db);
+      return {
+        ...truck,
+        party: truck.party || 'narayan',
+        client: truck.client || '',
+        marked: Boolean(truck.marked)
+      };
     },
     async listExpenses(filter) {
       const db = readJsonDb();
@@ -1830,14 +1861,18 @@ function postgresStore() {
           truck_number TEXT NOT NULL,
           driver_name TEXT,
           raw_material TEXT NOT NULL,
+          client TEXT,
           quantity NUMERIC(12,2) NOT NULL,
           price_per_quintal NUMERIC(12,2),
           total_amount NUMERIC(12,2),
+          marked BOOLEAN NOT NULL DEFAULT FALSE,
           origin TEXT,
           destination TEXT,
           notes TEXT,
           created_at TIMESTAMPTZ NOT NULL
         );
+        ALTER TABLE trucks ADD COLUMN IF NOT EXISTS client TEXT;
+        ALTER TABLE trucks ADD COLUMN IF NOT EXISTS marked BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE trucks ADD COLUMN IF NOT EXISTS price_per_quintal NUMERIC(12,2);
         ALTER TABLE trucks ADD COLUMN IF NOT EXISTS total_amount NUMERIC(12,2);
         ALTER TABLE trucks ADD COLUMN IF NOT EXISTS party TEXT;
@@ -2595,9 +2630,11 @@ function postgresStore() {
         truckNumber: String(data.truckNumber).trim(),
         driverName: data.driverName ? String(data.driverName).trim() : '',
         rawMaterial: String(data.rawMaterial).trim(),
+        client: data.client ? String(data.client).trim() : '',
         quantity,
         pricePerQuintal: pricePerQuintal ?? undefined,
         totalAmount: totalAmount ?? undefined,
+        marked: parseBooleanInput(data.marked, false),
         party: party || undefined,
         origin: data.origin ? String(data.origin).trim() : '',
         destination: data.destination ? String(data.destination).trim() : '',
@@ -2607,17 +2644,19 @@ function postgresStore() {
 
       await pool.query(
         `INSERT INTO trucks (
-          id, date, truck_number, driver_name, raw_material, quantity, price_per_quintal, total_amount, party, origin, destination, notes, created_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          id, date, truck_number, driver_name, raw_material, client, quantity, price_per_quintal, total_amount, marked, party, origin, destination, notes, created_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
         [
           row.id,
           row.date,
           row.truckNumber,
           row.driverName,
           row.rawMaterial,
+          row.client,
           row.quantity,
           row.pricePerQuintal ?? null,
           row.totalAmount ?? null,
+          row.marked,
           row.party ?? null,
           row.origin,
           row.destination,
@@ -2627,6 +2666,106 @@ function postgresStore() {
       );
 
       return row;
+    },
+    async updateTruck(id, data) {
+      const existing = await pool.query('SELECT * FROM trucks WHERE id = $1', [id]);
+      if (!existing.rows[0]) return null;
+      const current = existing.rows[0];
+
+      const quantity = Number(data.quantity);
+      const pricePerQuintal =
+        data.pricePerQuintal != null && data.pricePerQuintal !== ''
+          ? Number(data.pricePerQuintal)
+          : null;
+      const totalAmount =
+        pricePerQuintal != null && !Number.isNaN(pricePerQuintal) ? pricePerQuintal * quantity : null;
+      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
+        ? String(data.party).toLowerCase()
+        : (current.party || 'narayan');
+      const marked = data.marked == null
+        ? parseBooleanInput(current.marked, false)
+        : parseBooleanInput(data.marked, false);
+      const client = data.client != null ? String(data.client).trim() : String(current.client || '');
+
+      const res = await pool.query(
+        `UPDATE trucks
+           SET date = $2,
+               truck_number = $3,
+               driver_name = $4,
+               raw_material = $5,
+               client = $6,
+               quantity = $7,
+               price_per_quintal = $8,
+               total_amount = $9,
+               marked = $10,
+               party = $11,
+               origin = $12,
+               destination = $13,
+               notes = $14
+         WHERE id = $1
+         RETURNING *`,
+        [
+          id,
+          data.date,
+          String(data.truckNumber).trim(),
+          data.driverName ? String(data.driverName).trim() : '',
+          String(data.rawMaterial).trim(),
+          client,
+          quantity,
+          pricePerQuintal ?? null,
+          totalAmount ?? null,
+          marked,
+          party || null,
+          data.origin ? String(data.origin).trim() : '',
+          data.destination ? String(data.destination).trim() : '',
+          data.notes ? String(data.notes).trim() : ''
+        ]
+      );
+      if (!res.rows[0]) return null;
+      const r = res.rows[0];
+      return {
+        id: r.id,
+        date: String(r.date).slice(0, 10),
+        truckNumber: r.truck_number,
+        driverName: r.driver_name || '',
+        rawMaterial: r.raw_material,
+        client: r.client || '',
+        quantity: Number(r.quantity),
+        pricePerQuintal: r.price_per_quintal != null ? Number(r.price_per_quintal) : null,
+        totalAmount: r.total_amount != null ? Number(r.total_amount) : null,
+        marked: Boolean(r.marked),
+        party: r.party || 'narayan',
+        origin: r.origin || '',
+        destination: r.destination || '',
+        notes: r.notes || ''
+      };
+    },
+    async setTruckMarked(id, marked) {
+      const res = await pool.query(
+        `UPDATE trucks
+            SET marked = $2
+          WHERE id = $1
+          RETURNING *`,
+        [id, parseBooleanInput(marked, false)]
+      );
+      if (!res.rows[0]) return null;
+      const r = res.rows[0];
+      return {
+        id: r.id,
+        date: String(r.date).slice(0, 10),
+        truckNumber: r.truck_number,
+        driverName: r.driver_name || '',
+        rawMaterial: r.raw_material,
+        client: r.client || '',
+        quantity: Number(r.quantity),
+        pricePerQuintal: r.price_per_quintal != null ? Number(r.price_per_quintal) : null,
+        totalAmount: r.total_amount != null ? Number(r.total_amount) : null,
+        marked: Boolean(r.marked),
+        party: r.party || 'narayan',
+        origin: r.origin || '',
+        destination: r.destination || '',
+        notes: r.notes || ''
+      };
     },
     async deleteTruck(id) {
       const res = await pool.query('DELETE FROM trucks WHERE id = $1', [id]);
@@ -2652,10 +2791,12 @@ function postgresStore() {
         truckNumber: r.truck_number,
         driverName: r.driver_name || '',
         rawMaterial: r.raw_material,
+        client: r.client || '',
         quantity: Number(r.quantity),
         pricePerQuintal: r.price_per_quintal != null ? Number(r.price_per_quintal) : null,
         totalAmount: r.total_amount != null ? Number(r.total_amount) : null,
-        party: r.party || null,
+        marked: Boolean(r.marked),
+        party: r.party || 'narayan',
         origin: r.origin || '',
         destination: r.destination || '',
         notes: r.notes || ''
@@ -4429,8 +4570,10 @@ app.post('/api/trucks', auth, requirePermission('trucks:create'), async (req, re
     truckNumber,
     driverName,
     rawMaterial,
+    client,
     quantity,
     pricePerQuintal,
+    marked,
     party,
     origin,
     destination,
@@ -4452,8 +4595,10 @@ app.post('/api/trucks', auth, requirePermission('trucks:create'), async (req, re
       truckNumber,
       driverName,
       rawMaterial,
+      client,
       quantity: qty,
       pricePerQuintal: pricePerQuintal != null && pricePerQuintal !== '' ? pricePerQuintal : undefined,
+      marked: parseBooleanInput(marked, false),
       party,
       origin,
       destination,
@@ -4483,8 +4628,10 @@ app.put('/api/trucks/:id', auth, requirePermission('trucks:update'), async (req,
     truckNumber,
     driverName,
     rawMaterial,
+    client,
     quantity,
     pricePerQuintal,
+    marked,
     party,
     origin,
     destination,
@@ -4506,8 +4653,10 @@ app.put('/api/trucks/:id', auth, requirePermission('trucks:update'), async (req,
       truckNumber,
       driverName,
       rawMaterial,
+      client,
       quantity: qty,
       pricePerQuintal: pricePerQuintal != null && pricePerQuintal !== '' ? pricePerQuintal : undefined,
+      marked: marked == null ? undefined : parseBooleanInput(marked, false),
       party,
       origin,
       destination,
@@ -4518,6 +4667,21 @@ app.put('/api/trucks/:id', auth, requirePermission('trucks:update'), async (req,
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to update truck entry' });
+  }
+});
+
+app.put('/api/trucks/:id/mark', auth, requirePermission('trucks:update'), async (req, res) => {
+  const { marked } = req.body;
+  if (marked == null) {
+    return res.status(400).json({ error: 'marked is required' });
+  }
+  try {
+    const row = await store.setTruckMarked(req.params.id, parseBooleanInput(marked, false));
+    if (!row) return res.status(404).json({ error: 'Truck entry not found' });
+    return res.json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to mark truck entry' });
   }
 });
 

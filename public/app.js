@@ -63,6 +63,7 @@ const truckBriquetteRevenueMaaVaishnoEl = document.getElementById('truckBriquett
 const truckTotalCountEl = document.getElementById('truckTotalCount');
 const truckTotalQuantityEl = document.getElementById('truckTotalQuantity');
 const truckTotalAmountAllEl = document.getElementById('truckTotalAmountAll');
+const truckMarkedCountEl = document.getElementById('truckMarkedCount');
 
 const attendanceEmployeeEl = document.getElementById('attendanceEmployee');
 const advanceEmployeeEl = document.getElementById('advanceEmployee');
@@ -84,6 +85,7 @@ const attendanceForm = document.getElementById('attendanceForm');
 const advanceForm = document.getElementById('advanceForm');
 const salaryLedgerForm = document.getElementById('salaryLedgerForm');
 const truckForm = document.getElementById('truckForm');
+const truckCancelEditBtn = document.getElementById('truckCancelEditBtn');
 const expenseForm = document.getElementById('expenseForm');
 const expenseCancelEditBtn = document.getElementById('expenseCancelEditBtn');
 const investmentForm = document.getElementById('investmentForm');
@@ -105,6 +107,7 @@ const refreshAttendanceReportBtn = document.getElementById('refreshAttendanceRep
 const attendanceMonthInput = document.getElementById('attendanceMonthInput');
 const employeeSearchInput = document.getElementById('employeeSearchInput');
 const truckSearchInput = document.getElementById('truckSearchInput');
+const truckShowMarkedOnlyInput = document.getElementById('truckShowMarkedOnly');
 const salaryEmployeeSelect = document.getElementById('salaryEmployeeSelect');
 const salaryMonthInput = document.getElementById('salaryMonthInput');
 const salaryLedgerEmployeeSelect = document.getElementById('salaryLedgerEmployee');
@@ -427,7 +430,7 @@ function applyRoleUI() {
   setFormEnabled('attendancePanel', hasPermission('attendance:create'));
   setFormEnabled('advancePanel', hasPermission('advances:create'));
   setFormEnabled('salaryLedgerPanel', hasPermission('salaryledger:update'));
-  setFormEnabled('truckPanel', hasPermission('trucks:create'));
+  setFormEnabled('truckPanel', hasPermission('trucks:create') || hasPermission('trucks:update'));
   setFormEnabled('expensePanel', hasPermission('expenses:create') || hasPermission('expenses:update'));
   setFormEnabled('investmentPanel', hasPermission('investments:create'));
   setFormEnabled('chiniPanel', hasPermission('chini:create'));
@@ -567,6 +570,13 @@ function resetEmployeeFormMode() {
   if (employeeFormTitle) employeeFormTitle.textContent = 'Add Employee';
   if (employeeSubmitBtn) employeeSubmitBtn.textContent = 'Add Employee';
   if (employeeCancelEditBtn) employeeCancelEditBtn.classList.add('hidden');
+}
+
+function resetTruckFormMode() {
+  editingTruckId = null;
+  const submitBtn = truckForm?.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.textContent = 'Add Truck Entry';
+  if (truckCancelEditBtn) truckCancelEditBtn.classList.add('hidden');
 }
 
 function enterEmployeeEditMode(employee) {
@@ -1005,6 +1015,13 @@ function truckMaterialLabel(material) {
 function renderTruckRows(rows) {
   const canEdit = hasPermission('trucks:update');
   const canDelete = hasPermission('trucks:delete');
+  const normalizedRows = (rows || []).map((row) => ({
+    ...row,
+    party: row.party || 'narayan',
+    client: row.client || '',
+    marked: Boolean(row.marked)
+  }));
+
   const normalizeTruckAmount = (row) => {
     const directAmount = Number(row.totalAmount);
     if (Number.isFinite(directAmount)) return directAmount;
@@ -1012,11 +1029,12 @@ function renderTruckRows(rows) {
     const rate = Number(row.pricePerQuintal) || 0;
     return qty * rate;
   };
-  const totalTruckCount = rows.length;
-  const totalTruckQuantity = rows.reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
-  const totalTruckAmount = rows.reduce((sum, row) => sum + normalizeTruckAmount(row), 0);
 
-  // Calculate material-specific totals (quantity and revenue)
+  const totalTruckCount = normalizedRows.length;
+  const markedTruckCount = normalizedRows.reduce((sum, row) => sum + Number(Boolean(row.marked)), 0);
+  const totalTruckQuantity = normalizedRows.reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
+  const totalTruckAmount = normalizedRows.reduce((sum, row) => sum + normalizeTruckAmount(row), 0);
+
   let pelletTotal = 0;
   let briquetteTotal = 0;
   let pelletRevenue = 0;
@@ -1026,7 +1044,7 @@ function renderTruckRows(rows) {
   let briquetteRevenueNarayan = 0;
   let briquetteRevenueMaaVaishno = 0;
 
-  rows.forEach(row => {
+  normalizedRows.forEach((row) => {
     const qty = Number(row.quantity) || 0;
     const amount = normalizeTruckAmount(row);
     const material = truckMaterialKey(row.rawMaterial);
@@ -1044,31 +1062,24 @@ function renderTruckRows(rows) {
   });
 
   if (truckTotalCountEl) truckTotalCountEl.textContent = String(totalTruckCount);
+  if (truckMarkedCountEl) truckMarkedCountEl.textContent = String(markedTruckCount);
   if (truckTotalQuantityEl) truckTotalQuantityEl.textContent = `${totalTruckQuantity.toFixed(2)} Qntl`;
   if (truckTotalAmountAllEl) truckTotalAmountAllEl.textContent = money(totalTruckAmount);
-
-  // Update material stats display
   if (truckPelletTotalEl) truckPelletTotalEl.textContent = `${pelletTotal.toFixed(2)} Qntl`;
   if (truckBriquetteTotalEl) truckBriquetteTotalEl.textContent = `${briquetteTotal.toFixed(2)} Qntl`;
   if (truckPelletRevenueEl) truckPelletRevenueEl.textContent = money(pelletRevenue);
   if (truckPelletRevenueNarayanEl) truckPelletRevenueNarayanEl.textContent = `Narayan: ${money(pelletRevenueNarayan)}`;
-  if (truckPelletRevenueMaaVaishnoEl) {
-    truckPelletRevenueMaaVaishnoEl.textContent = `Maa Vaishno: ${money(pelletRevenueMaaVaishno)}`;
-  }
+  if (truckPelletRevenueMaaVaishnoEl) truckPelletRevenueMaaVaishnoEl.textContent = `Maa Vaishno: ${money(pelletRevenueMaaVaishno)}`;
   if (truckBriquetteRevenueEl) truckBriquetteRevenueEl.textContent = money(briquetteRevenue);
-  if (truckBriquetteRevenueNarayanEl) {
-    truckBriquetteRevenueNarayanEl.textContent = `Narayan: ${money(briquetteRevenueNarayan)}`;
-  }
-  if (truckBriquetteRevenueMaaVaishnoEl) {
-    truckBriquetteRevenueMaaVaishnoEl.textContent = `Maa Vaishno: ${money(briquetteRevenueMaaVaishno)}`;
-  }
-  const narayanTotal = rows
+  if (truckBriquetteRevenueNarayanEl) truckBriquetteRevenueNarayanEl.textContent = `Narayan: ${money(briquetteRevenueNarayan)}`;
+  if (truckBriquetteRevenueMaaVaishnoEl) truckBriquetteRevenueMaaVaishnoEl.textContent = `Maa Vaishno: ${money(briquetteRevenueMaaVaishno)}`;
+
+  const narayanTotal = normalizedRows
     .filter((t) => t.party === 'narayan' && t.totalAmount != null)
     .reduce((sum, t) => sum + Number(t.totalAmount), 0);
-  const maaVaishnoTotal = rows
+  const maaVaishnoTotal = normalizedRows
     .filter((t) => t.party === 'maa_vaishno' && t.totalAmount != null)
     .reduce((sum, t) => sum + Number(t.totalAmount), 0);
-
   const totalsEl = document.getElementById('truckPartyTotals');
   if (totalsEl) {
     totalsEl.innerHTML = `
@@ -1082,10 +1093,9 @@ function renderTruckRows(rows) {
       .map((t, idx) => {
         const materialKey = truckMaterialKey(t.rawMaterial);
         const materialLabel = truckMaterialLabel(t.rawMaterial);
-        const customOption =
-          materialKey && !['pellet', 'briquettes'].includes(materialKey)
-            ? `<option value="${escapeHtml(materialLabel)}" selected>${escapeHtml(materialLabel)}</option>`
-            : '';
+        const customOption = materialKey && !['pellet', 'briquettes'].includes(materialKey)
+          ? `<option value="${escapeHtml(materialLabel)}" selected>${escapeHtml(materialLabel)}</option>`
+          : '';
         const materialCell = canEdit
           ? `<select class="truck-material-select" data-id="${t.id}">
               <option value="Pellet" ${materialKey === 'pellet' ? 'selected' : ''}>Pellet</option>
@@ -1093,20 +1103,23 @@ function renderTruckRows(rows) {
               ${customOption}
             </select>`
           : escapeHtml(materialLabel);
-        return `<tr>
+        return `<tr class="${t.marked ? 'truck-marked-row' : ''}">
           <td>${idx + 1}</td>
           <td>${t.date}</td>
-          <td>${t.truckNumber}</td>
-          <td>${t.driverName || '-'}</td>
+          <td>${escapeHtml(t.truckNumber || '-')}</td>
+          <td>${escapeHtml(t.driverName || '-')}</td>
           <td>${materialCell}</td>
+          <td>${escapeHtml(t.client || '-')}</td>
           <td>${t.quantity}</td>
           <td>${t.pricePerQuintal != null ? money(t.pricePerQuintal) : '-'}</td>
           <td>${t.totalAmount != null ? money(t.totalAmount) : '-'}</td>
-          <td>${t.origin || '-'}</td>
-          <td>${t.destination || '-'}</td>
+          <td>${escapeHtml(t.origin || '-')}</td>
+          <td>${escapeHtml(t.destination || '-')}</td>
+          <td>${normalizeTruckMarkedText(Boolean(t.marked))}</td>
           <td>
             <div class="actions">
               ${canEdit ? `<button type="button" class="small warn truck-edit" data-id="${t.id}">Edit</button>` : ''}
+              ${canEdit ? `<button type="button" class="small secondary truck-mark" data-id="${t.id}">${normalizeTruckMarkLabel(Boolean(t.marked))}</button>` : ''}
               ${canDelete ? `<button type="button" class="small danger truck-del" data-id="${t.id}">Delete</button>` : ''}
               ${!canEdit && !canDelete ? '-' : ''}
             </div>
@@ -1116,8 +1129,8 @@ function renderTruckRows(rows) {
       .join('');
   };
 
-  const narayanRows = rows.filter((t) => t.party === 'narayan');
-  const maaVaishnoRows = rows.filter((t) => t.party === 'maa_vaishno');
+  const narayanRows = normalizedRows.filter((t) => t.party === 'narayan');
+  const maaVaishnoRows = normalizedRows.filter((t) => t.party === 'maa_vaishno');
   renderTruckTable(truckNarayanTbody, narayanRows);
   renderTruckTable(truckMaaVaishnoTbody, maaVaishnoRows);
 
@@ -1125,7 +1138,7 @@ function renderTruckRows(rows) {
     document.querySelectorAll('.truck-material-select').forEach((select) => {
       select.addEventListener('change', async () => {
         const id = select.getAttribute('data-id');
-        const current = trucksCache.find((t) => String(t.id) === String(id));
+        const current = findTruckById(id);
         if (!current) {
           showToast('Truck entry not found for material update', 'error');
           await refresh();
@@ -1142,8 +1155,10 @@ function renderTruckRows(rows) {
             truckNumber: current.truckNumber,
             driverName: current.driverName || '',
             rawMaterial: nextMaterial,
+            client: current.client || '',
             quantity: current.quantity,
             pricePerQuintal: current.pricePerQuintal != null ? current.pricePerQuintal : undefined,
+            marked: Boolean(current.marked),
             party: current.party || 'narayan',
             origin: current.origin || '',
             destination: current.destination || '',
@@ -1161,9 +1176,9 @@ function renderTruckRows(rows) {
     });
 
     document.querySelectorAll('.truck-edit').forEach((btn) => {
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', () => {
         const id = btn.getAttribute('data-id');
-        const current = trucksCache.find((t) => String(t.id) === String(id));
+        const current = findTruckById(id);
         if (!current) {
           showToast('Truck entry not found for editing', 'error');
           return;
@@ -1173,20 +1188,46 @@ function renderTruckRows(rows) {
         truckForm.querySelector('select[name="party"]').value = current.party || 'narayan';
         truckForm.querySelector('input[name="truckNumber"]').value = current.truckNumber || '';
         truckForm.querySelector('input[name="driverName"]').value = current.driverName || '';
-        truckForm.querySelector('[name="rawMaterial"]').value = truckMaterialLabel(current.rawMaterial);
+        const materialSelect = truckForm.querySelector('[name="rawMaterial"]');
+        if (materialSelect) {
+          const label = truckMaterialLabel(current.rawMaterial);
+          materialSelect.value = ['Pellet', 'Briquettes'].includes(label) ? label : 'Pellet';
+        }
         const clientInput = truckForm.querySelector('input[name="client"]');
         if (clientInput) clientInput.value = current.client || '';
         truckForm.querySelector('input[name="quantity"]').value = current.quantity != null ? String(current.quantity) : '';
-        truckForm.querySelector('input[name="pricePerQuintal"]').value =
-          current.pricePerQuintal != null ? String(current.pricePerQuintal) : '';
+        truckForm.querySelector('input[name="pricePerQuintal"]').value = current.pricePerQuintal != null ? String(current.pricePerQuintal) : '';
         truckForm.querySelector('input[name="origin"]').value = current.origin || '';
         truckForm.querySelector('input[name="destination"]').value = current.destination || '';
         truckForm.querySelector('input[name="notes"]').value = current.notes || '';
         const submitBtn = truckForm.querySelector('button[type="submit"]');
         if (submitBtn) submitBtn.textContent = 'Update Truck Entry';
+        if (truckCancelEditBtn) truckCancelEditBtn.classList.remove('hidden');
         updateTruckTotal();
         truckForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
         showToast('Truck loaded. Update fields and click "Update Truck Entry".');
+      });
+    });
+
+    document.querySelectorAll('.truck-mark').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        const current = findTruckById(id);
+        if (!current) {
+          showToast('Truck entry not found for marking', 'error');
+          return;
+        }
+        const nextMarked = !Boolean(current.marked);
+        btn.disabled = true;
+        try {
+          await api(`/api/trucks/${id}/mark`, 'PUT', { marked: nextMarked });
+          await refresh();
+          showToast(normalizeTruckMarkActionText(nextMarked));
+        } catch (err) {
+          showToast(err.message, 'error');
+        } finally {
+          btn.disabled = false;
+        }
       });
     });
   }
@@ -1865,12 +1906,60 @@ function filterEmployees(rows) {
 
 function filterTrucks(rows) {
   const q = (truckSearchInput.value || '').trim().toLowerCase();
-  if (!q) return rows;
-  return rows.filter((t) =>
-    `${t.truckNumber} ${t.driverName || ''} ${t.rawMaterial} ${partyLabel(t.party)} ${t.quantity || ''} ${t.origin || ''} ${t.destination || ''}`
+  let filtered = rows;
+  if (truckShowMarkedOnlyInput?.checked) {
+    filtered = filtered.filter((t) => Boolean(t.marked));
+  }
+  if (!q) return filtered;
+  return filtered.filter((t) =>
+    `${t.truckNumber} ${t.driverName || ''} ${t.rawMaterial} ${partyLabel(t.party)} ${t.client || ''} ${t.quantity || ''} ${t.origin || ''} ${t.destination || ''} ${t.notes || ''}`
       .toLowerCase()
       .includes(q)
   );
+}
+
+function sortTrucksForDisplay(rows) {
+  return [...rows].sort((a, b) => {
+    const markedDelta = Number(Boolean(b.marked)) - Number(Boolean(a.marked));
+    if (markedDelta !== 0) return markedDelta;
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    const aTime = String(a.updatedAt || a.createdAt || '');
+    const bTime = String(b.updatedAt || b.createdAt || '');
+    if (aTime !== bTime) return aTime < bTime ? 1 : -1;
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
+}
+
+function getVisibleTruckRows() {
+  return sortTrucksForDisplay(filterTrucks(trucksCache));
+}
+
+function renderVisibleTrucks() {
+  renderTruckRows(getVisibleTruckRows());
+}
+
+function normalizeTruckMarkedText(marked) {
+  return marked ? 'Yes' : 'No';
+}
+
+function normalizeTruckMarkLabel(marked) {
+  return marked ? 'Unmark' : 'Mark';
+}
+
+function normalizeTruckMarkActionText(marked) {
+  return marked ? 'Truck unmarked' : 'Truck marked';
+}
+
+function findTruckById(id) {
+  return trucksCache.find((t) => String(t.id) === String(id));
+}
+
+function clearTruckEditState(message) {
+  if (truckForm) truckForm.reset();
+  resetTruckFormMode();
+  setDefaultDates();
+  updateTruckTotal();
+  if (message) showToast(message);
 }
 
 function urlWithAuth(url) {
@@ -1973,7 +2062,7 @@ async function refresh() {
     renderSalaryRows(salaryRowsCache);
     renderSalarySummaries(salaryRowsCache);
     renderSalaryLedgers(salaryLedgersCache);
-    renderTruckRows(filterTrucks(trucksCache).sort((a, b) => (a.date < b.date ? 1 : -1)));
+    renderVisibleTrucks();
     renderExpenseRows(expensesCache);
     renderExpenseSalaryGiven();
     renderInvestmentRows(investmentsCache);
@@ -2023,6 +2112,7 @@ async function bootstrapSession() {
     setVisibility(true);
     applyRoleUI();
     resetEmployeeFormMode();
+    resetTruckFormMode();
     setDefaultDates();
     await refresh();
     ensureAutoRefresh();
@@ -2049,6 +2139,7 @@ loginForm.addEventListener('submit', async (e) => {
     setVisibility(true);
     applyRoleUI();
     resetEmployeeFormMode();
+    resetTruckFormMode();
     setDefaultDates();
     await refresh();
     ensureAutoRefresh();
@@ -2079,7 +2170,9 @@ logoutBtn.addEventListener('click', async () => {
   billsCache = [];
   salaryLedgersCache = [];
   resetEmployeeFormMode();
+  resetTruckFormMode();
   if (employeeForm) employeeForm.reset();
+  if (truckForm) truckForm.reset();
   if (autoRefreshTimer) {
     clearInterval(autoRefreshTimer);
     autoRefreshTimer = null;
@@ -2783,17 +2876,16 @@ truckForm.addEventListener('submit', async (e) => {
       destination: fd.get('destination'),
       notes: fd.get('notes')
     });
-    truckForm.reset();
-    editingTruckId = null;
-    const submitBtn = truckForm.querySelector('button[type="submit"]');
-    if (submitBtn) submitBtn.textContent = 'Add Truck Entry';
-    setDefaultDates();
-    updateTruckTotal();
+    clearTruckEditState();
     await refresh();
     showToast(method === 'PUT' ? 'Truck entry updated' : 'Truck entry added');
   } catch (err) {
     showToast(err.message, 'error');
   }
+});
+
+truckCancelEditBtn?.addEventListener('click', () => {
+  clearTruckEditState('Truck edit cancelled');
 });
 
 refreshAttendanceReportBtn.addEventListener('click', async () => {
@@ -2822,7 +2914,11 @@ employeeSearchInput.addEventListener('input', () => {
 });
 
 truckSearchInput.addEventListener('input', () => {
-  renderTruckRows(filterTrucks(trucksCache).sort((a, b) => (a.date < b.date ? 1 : -1)));
+  renderVisibleTrucks();
+});
+
+truckShowMarkedOnlyInput?.addEventListener('change', () => {
+  renderVisibleTrucks();
 });
 
 expenseFilterBtn?.addEventListener('click', () => {

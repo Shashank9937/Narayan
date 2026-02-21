@@ -1035,6 +1035,14 @@ th.sortable.desc::after {
   font-size: 0.8rem;
 }
 
+.truck-marked-row td {
+  background: rgba(232, 255, 239) !important;
+}
+
+.truck-marked-row:hover td {
+  background: rgba(217, 249, 228) !important;
+}
+
 .tx-badge {
   display: inline-flex;
   align-items: center;

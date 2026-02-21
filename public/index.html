@@ -305,7 +305,10 @@
             <input name="origin" placeholder="Origin" />
             <input name="destination" placeholder="Destination" />
             <input name="notes" placeholder="Notes" />
-            <button type="submit">Add Truck Entry</button>
+            <div class="row wrap">
+              <button type="submit">Add Truck Entry</button>
+              <button id="truckCancelEditBtn" type="button" class="small warn hidden">Cancel Edit</button>
+            </div>
           </form>
         </section>
       </div>
@@ -315,6 +318,10 @@
           <h2>Truck Report</h2>
           <div class="row">
             <input id="truckSearchInput" type="text" placeholder="Search truck/material/driver/quantity" />
+            <label class="inline-check">
+              <input id="truckShowMarkedOnly" type="checkbox" />
+              <span>Show Marked Only</span>
+            </label>
             <button id="toggleTruckExportOptions" class="small">Download Truck Report</button>
           </div>
         </div>
@@ -363,6 +370,10 @@
             <div id="truckTotalAmountAll" class="value money">₹0</div>
           </div>
           <div class="summary-stat">
+            <div class="label">Marked Trucks</div>
+            <div id="truckMarkedCount" class="value">0</div>
+          </div>
+          <div class="summary-stat">
             <div class="label">Total Pellets Sold</div>
             <div id="truckPelletTotal" class="value">0 Qntl</div>
           </div>
@@ -396,11 +407,13 @@
                     <th>Truck</th>
                     <th>Driver</th>
                     <th>Material</th>
+                    <th>Client</th>
                     <th>Qty (Qntl)</th>
                     <th>Price/Qntl</th>
                     <th>Total</th>
                     <th>Origin</th>
                     <th>Destination</th>
+                    <th>Marked</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -419,11 +432,13 @@
                     <th>Truck</th>
                     <th>Driver</th>
                     <th>Material</th>
+                    <th>Client</th>
                     <th>Qty (Qntl)</th>
                     <th>Price/Qntl</th>
                     <th>Total</th>
                     <th>Origin</th>
                     <th>Destination</th>
+                    <th>Marked</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
