@@ -518,6 +518,26 @@ function csvEscape(value) {
   return str;
 }
 
+function truckPartyKey(value) {
+  const normalized = String(value || '')
+    .toLowerCase()
+    .trim();
+  if (!normalized) return '';
+  if (normalized === 'narayan' || normalized === 'n') return 'narayan';
+  if (['maa_vaishno', 'maa', 'vaishno', 'm'].includes(normalized)) return 'maa_vaishno';
+  return '';
+}
+
+function truckMaterialKey(value) {
+  const normalized = String(value || '')
+    .toLowerCase()
+    .trim();
+  if (!normalized) return '';
+  if (['pellet', 'pellets'].includes(normalized)) return 'pellet';
+  if (['briquette', 'briquettes'].includes(normalized)) return 'briquettes';
+  return '';
+}
+
 function defaultUsers() {
   return [
     {
@@ -5151,7 +5171,30 @@ app.get('/api/export/salary.csv', auth, requirePermission('export:view'), async 
 
 app.get('/api/export/trucks.csv', auth, requirePermission('export:view'), async (req, res) => {
   try {
-    const rows = await store.listTrucks({ dateFrom: req.query.dateFrom, dateTo: req.query.dateTo });
+    const partyQuery = String(req.query.party || '').trim().toLowerCase();
+    const materialQuery = String(req.query.material || '').trim().toLowerCase();
+    let partyFilter = '';
+    let materialFilter = '';
+    if (partyQuery && partyQuery !== 'all') {
+      partyFilter = truckPartyKey(partyQuery);
+      if (!partyFilter) {
+        return res.status(400).json({ error: 'party must be all, narayan, or maa_vaishno' });
+      }
+    }
+    if (materialQuery && materialQuery !== 'all') {
+      materialFilter = truckMaterialKey(materialQuery);
+      if (!materialFilter) {
+        return res.status(400).json({ error: 'material must be all, pellet, or briquettes' });
+      }
+    }
+
+    const rows = (await store.listTrucks({ dateFrom: req.query.dateFrom, dateTo: req.query.dateTo })).filter((t) => {
+      const rowParty = truckPartyKey(t.party || 'narayan') || 'narayan';
+      const rowMaterial = truckMaterialKey(t.rawMaterial);
+      if (partyFilter && rowParty !== partyFilter) return false;
+      if (materialFilter && rowMaterial !== materialFilter) return false;
+      return true;
+    });
 
     const header = [
       'Date',
@@ -5187,12 +5230,155 @@ app.get('/api/export/trucks.csv', auth, requirePermission('export:view'), async 
       )
     );
 
+    const fileSuffix = [partyFilter || 'all', materialFilter || 'all'].join('-');
     res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="truck-report.csv"');
+    res.setHeader('Content-Disposition', `attachment; filename="truck-report-${fileSuffix}.csv"`);
     return res.send(lines.join('\n'));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to export truck CSV' });
+  }
+});
+
+app.get('/api/export/trucks.pdf', auth, requirePermission('export:view'), async (req, res) => {
+  try {
+    const partyQuery = String(req.query.party || '').trim().toLowerCase();
+    const materialQuery = String(req.query.material || '').trim().toLowerCase();
+    let partyFilter = '';
+    let materialFilter = '';
+    if (partyQuery && partyQuery !== 'all') {
+      partyFilter = truckPartyKey(partyQuery);
+      if (!partyFilter) {
+        return res.status(400).json({ error: 'party must be all, narayan, or maa_vaishno' });
+      }
+    }
+    if (materialQuery && materialQuery !== 'all') {
+      materialFilter = truckMaterialKey(materialQuery);
+      if (!materialFilter) {
+        return res.status(400).json({ error: 'material must be all, pellet, or briquettes' });
+      }
+    }
+
+    const rows = (await store.listTrucks({ dateFrom: req.query.dateFrom, dateTo: req.query.dateTo }))
+      .filter((t) => {
+        const rowParty = truckPartyKey(t.party || 'narayan') || 'narayan';
+        const rowMaterial = truckMaterialKey(t.rawMaterial);
+        if (partyFilter && rowParty !== partyFilter) return false;
+        if (materialFilter && rowMaterial !== materialFilter) return false;
+        return true;
+      })
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+    const fileSuffix = [partyFilter || 'all', materialFilter || 'all'].join('-');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="truck-report-${fileSuffix}.pdf"`);
+    const doc = new PDFDocument({ margin: 28, size: 'A4' });
+    doc.pipe(res);
+
+    const pageWidth = doc.page.width - 56;
+    const left = 28;
+    const heading = `${APP_NAME} - Truck Report`;
+    const generatedAt = new Date().toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    const partyLabel = partyFilter ? (partyFilter === 'narayan' ? 'Narayan' : 'Maa Vaishno') : 'All';
+    const materialLabel = materialFilter
+      ? materialFilter === 'pellet'
+        ? 'Pellet'
+        : 'Briquettes'
+      : 'All';
+    const totalQty = rows.reduce((sum, r) => sum + Number(r.quantity || 0), 0);
+    const totalAmount = rows.reduce((sum, r) => sum + Number(r.totalAmount || 0), 0);
+
+    doc.font('Helvetica-Bold').fontSize(17).fillColor('#0f3b74').text(heading, left, 26, { width: pageWidth });
+    doc
+      .font('Helvetica')
+      .fontSize(10)
+      .fillColor('#26364a')
+      .text(`Generated: ${generatedAt}`, left, 50, { width: pageWidth });
+    doc
+      .font('Helvetica')
+      .fontSize(10)
+      .fillColor('#26364a')
+      .text(`Filters: Party=${partyLabel} | Material=${materialLabel}`, left, 65, { width: pageWidth });
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(10)
+      .fillColor('#111827')
+      .text(`Records: ${rows.length} | Total Qty: ${totalQty.toFixed(2)} | Total Amount: ${moneyInr(totalAmount)}`, left, 80, {
+        width: pageWidth
+      });
+
+    let y = 106;
+    const headerTop = y;
+    const widths = [66, 58, 72, 76, 52, 52, 68];
+    const cols = ['Date', 'Party', 'Material', 'Truck', 'Qty', 'Rate', 'Amount'];
+    doc.save().roundedRect(left, headerTop - 2, pageWidth, 20, 4).fill('#e6efff').restore();
+    let x = left + 2;
+    cols.forEach((col, idx) => {
+      doc.font('Helvetica-Bold').fontSize(9).fillColor('#13315a').text(col, x, headerTop + 3, { width: widths[idx] });
+      x += widths[idx];
+    });
+    y = headerTop + 22;
+
+    const renderHeader = () => {
+      doc.save().roundedRect(left, 26, pageWidth, 20, 4).fill('#e6efff').restore();
+      let hx = left + 2;
+      cols.forEach((col, idx) => {
+        doc.font('Helvetica-Bold').fontSize(9).fillColor('#13315a').text(col, hx, 31, { width: widths[idx] });
+        hx += widths[idx];
+      });
+      y = 50;
+    };
+
+    if (!rows.length) {
+      doc.font('Helvetica').fontSize(11).fillColor('#374151').text('No truck entries found for selected filters.', left, y + 8, {
+        width: pageWidth
+      });
+      doc.end();
+      return;
+    }
+
+    rows.forEach((r) => {
+      if (y > doc.page.height - 48) {
+        doc.addPage();
+        renderHeader();
+      }
+      const party = truckPartyKey(r.party || 'narayan') === 'maa_vaishno' ? 'Maa Vaishno' : 'Narayan';
+      const material = truckMaterialKey(r.rawMaterial) === 'briquettes' ? 'Briquettes' : 'Pellet';
+      const values = [
+        r.date || '-',
+        party,
+        material,
+        r.truckNumber || '-',
+        Number(r.quantity || 0).toFixed(2),
+        r.pricePerQuintal != null ? moneyInr(r.pricePerQuintal) : '-',
+        r.totalAmount != null ? moneyInr(r.totalAmount) : '-'
+      ];
+      let rowX = left + 2;
+      values.forEach((val, idx) => {
+        doc.font('Helvetica').fontSize(9).fillColor('#111827').text(String(val), rowX, y, { width: widths[idx] });
+        rowX += widths[idx];
+      });
+      doc
+        .save()
+        .moveTo(left, y + 13)
+        .lineTo(left + pageWidth, y + 13)
+        .strokeColor('#e5e7eb')
+        .lineWidth(0.8)
+        .stroke()
+        .restore();
+      y += 14;
+    });
+
+    doc.end();
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to export truck PDF' });
   }
 });
 

@@ -86,6 +86,7 @@ const changePasswordForm = document.getElementById('changePasswordForm');
 
 const downloadSalaryCsvBtn = document.getElementById('downloadSalaryCsv');
 const downloadTruckCsvBtn = document.getElementById('downloadTruckCsv');
+const downloadTruckPdfBtn = document.getElementById('downloadTruckPdf');
 const downloadAttendanceCsvBtn = document.getElementById('downloadAttendanceCsv');
 const refreshAttendanceReportBtn = document.getElementById('refreshAttendanceReport');
 const attendanceMonthInput = document.getElementById('attendanceMonthInput');
@@ -496,18 +497,33 @@ function applyRoleUI() {
 
   downloadSalaryCsvBtn.disabled = !hasPermission('export:view');
   downloadTruckCsvBtn.disabled = !hasPermission('export:view');
+  if (downloadTruckPdfBtn) downloadTruckPdfBtn.disabled = !hasPermission('export:view');
   downloadAttendanceCsvBtn.disabled = !hasPermission('export:view');
 }
 
 async function api(url, method = 'GET', body) {
   const headers = { 'Content-Type': 'application/json' };
   if (token()) headers.Authorization = `Bearer ${token()}`;
+  const controller = new AbortController();
+  const timeoutMs = method === 'GET' ? 15000 : 20000;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  let res;
 
-  const res = await fetch(url, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined
-  });
+  try {
+    res = await fetch(url, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error(`Request timeout (${timeoutMs / 1000}s): ${url}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (res.status === 401) {
     setToken('');
@@ -520,7 +536,10 @@ async function api(url, method = 'GET', body) {
     throw new Error(err.error || 'Request failed');
   }
 
-  return res.json();
+  if (res.status === 204) return {};
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) return res.json();
+  return res.text();
 }
 
 function renderCards(data) {
@@ -2897,6 +2916,51 @@ function downloadWithAuth(url) {
     .catch((err) => showToast(err.message, 'error'));
 }
 
+function normalizeTruckPartyFilter(raw) {
+  const value = String(raw || '').trim().toLowerCase();
+  if (!value || value === 'all') return 'all';
+  if (value === 'n' || value === 'narayan') return 'narayan';
+  if (value === 'm' || value === 'maa' || value === 'maa_vaishno' || value === 'vaishno') return 'maa_vaishno';
+  return null;
+}
+
+function normalizeTruckMaterialFilter(raw) {
+  const value = truckMaterialKey(raw);
+  if (!value || value === 'all') return 'all';
+  if (value === 'pellet') return 'pellet';
+  if (value === 'briquettes') return 'briquettes';
+  return null;
+}
+
+function askTruckExportFilters() {
+  const partyAnswer = prompt(
+    'Truck report party filter?\nType: all, narayan, maa_vaishno',
+    'all'
+  );
+  if (partyAnswer == null) return null;
+  const party = normalizeTruckPartyFilter(partyAnswer);
+  if (!party) {
+    showToast('Invalid party. Use all, narayan, or maa_vaishno.', 'error');
+    return null;
+  }
+
+  const materialAnswer = prompt(
+    'Truck report material filter?\nType: all, pellet, briquettes',
+    'all'
+  );
+  if (materialAnswer == null) return null;
+  const material = normalizeTruckMaterialFilter(materialAnswer);
+  if (!material) {
+    showToast('Invalid material. Use all, pellet, or briquettes.', 'error');
+    return null;
+  }
+
+  const params = new URLSearchParams();
+  if (party !== 'all') params.set('party', party);
+  if (material !== 'all') params.set('material', material);
+  return params.toString();
+}
+
 downloadSalaryCsvBtn.addEventListener('click', () => {
   downloadWithAuth(`/api/export/salary.csv?month=${getActiveSalaryMonth()}`);
 });
@@ -2912,7 +2976,17 @@ salaryMonthInput?.addEventListener('change', async () => {
 });
 
 downloadTruckCsvBtn.addEventListener('click', () => {
-  downloadWithAuth('/api/export/trucks.csv');
+  const query = askTruckExportFilters();
+  if (query == null) return;
+  const url = query ? `/api/export/trucks.csv?${query}` : '/api/export/trucks.csv';
+  downloadWithAuth(url);
+});
+
+downloadTruckPdfBtn?.addEventListener('click', () => {
+  const query = askTruckExportFilters();
+  if (query == null) return;
+  const url = query ? `/api/export/trucks.pdf?${query}` : '/api/export/trucks.pdf';
+  downloadWithAuth(url);
 });
 
 downloadAttendanceCsvBtn.addEventListener('click', () => {
