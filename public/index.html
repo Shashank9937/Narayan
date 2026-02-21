@@ -347,8 +347,38 @@
           <h2>Truck Report</h2>
           <div class="row">
             <input id="truckSearchInput" type="text" placeholder="Search truck/material/driver/quantity" />
-            <button id="downloadTruckCsv" class="small">Download Truck CSV</button>
-            <button id="downloadTruckPdf" class="small">Download Truck PDF</button>
+            <button id="toggleTruckExportOptions" class="small">Download Truck Report</button>
+          </div>
+        </div>
+        <div id="truckExportOptions" class="truck-export-options hidden">
+          <div class="truck-export-grid">
+            <div>
+              <label for="truckExportParty">Party</label>
+              <select id="truckExportParty">
+                <option value="narayan">Narayan</option>
+                <option value="maa_vaishno">Maheshnu (Maa Vaishno)</option>
+                <option value="all">All Parties</option>
+              </select>
+            </div>
+            <div>
+              <label for="truckExportMaterial">Material</label>
+              <select id="truckExportMaterial">
+                <option value="pellet">Pellet</option>
+                <option value="briquettes">Briquettes</option>
+                <option value="all">All Materials</option>
+              </select>
+            </div>
+            <div>
+              <label for="truckExportFormat">Format</label>
+              <select id="truckExportFormat">
+                <option value="csv">CSV</option>
+                <option value="pdf">PDF</option>
+              </select>
+            </div>
+          </div>
+          <div class="row wrap mt-sm">
+            <button id="downloadTruckReportBtn" class="small">Download Selected Report</button>
+            <button id="closeTruckExportOptions" class="small secondary" type="button">Close</button>
           </div>
         </div>
         <div class="summary-stat-grid mb-lg">

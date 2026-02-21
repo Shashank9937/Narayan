@@ -87,8 +87,13 @@ const vehicleForm = document.getElementById('vehicleForm');
 const changePasswordForm = document.getElementById('changePasswordForm');
 
 const downloadSalaryCsvBtn = document.getElementById('downloadSalaryCsv');
-const downloadTruckCsvBtn = document.getElementById('downloadTruckCsv');
-const downloadTruckPdfBtn = document.getElementById('downloadTruckPdf');
+const toggleTruckExportOptionsBtn = document.getElementById('toggleTruckExportOptions');
+const truckExportOptionsEl = document.getElementById('truckExportOptions');
+const truckExportPartySelect = document.getElementById('truckExportParty');
+const truckExportMaterialSelect = document.getElementById('truckExportMaterial');
+const truckExportFormatSelect = document.getElementById('truckExportFormat');
+const downloadTruckReportBtn = document.getElementById('downloadTruckReportBtn');
+const closeTruckExportOptionsBtn = document.getElementById('closeTruckExportOptions');
 const downloadAttendanceCsvBtn = document.getElementById('downloadAttendanceCsv');
 const refreshAttendanceReportBtn = document.getElementById('refreshAttendanceReport');
 const attendanceMonthInput = document.getElementById('attendanceMonthInput');
@@ -497,9 +502,16 @@ function applyRoleUI() {
   setPanelVisible('billCompanyPanel', hasPermission('billing:view'));
   setPanelVisible('changePasswordPanel', true);
 
+  const canExport = hasPermission('export:view');
   downloadSalaryCsvBtn.disabled = !hasPermission('export:view');
-  downloadTruckCsvBtn.disabled = !hasPermission('export:view');
-  if (downloadTruckPdfBtn) downloadTruckPdfBtn.disabled = !hasPermission('export:view');
+  if (toggleTruckExportOptionsBtn) toggleTruckExportOptionsBtn.disabled = !canExport;
+  if (downloadTruckReportBtn) downloadTruckReportBtn.disabled = !canExport;
+  if (truckExportPartySelect) truckExportPartySelect.disabled = !canExport;
+  if (truckExportMaterialSelect) truckExportMaterialSelect.disabled = !canExport;
+  if (truckExportFormatSelect) truckExportFormatSelect.disabled = !canExport;
+  if (!canExport) {
+    truckExportOptionsEl?.classList.add('hidden');
+  }
   downloadAttendanceCsvBtn.disabled = !hasPermission('export:view');
 }
 
@@ -2981,29 +2993,21 @@ function normalizeTruckMaterialFilter(raw) {
   return null;
 }
 
-function askTruckExportFilters() {
-  const partyAnswer = prompt(
-    'Truck report party filter?\nType: all, narayan, maa_vaishno',
-    'all'
-  );
-  if (partyAnswer == null) return null;
-  const party = normalizeTruckPartyFilter(partyAnswer);
+function buildTruckExportParams() {
+  const party = normalizeTruckPartyFilter(truckExportPartySelect?.value || 'narayan');
+  const material = normalizeTruckMaterialFilter(truckExportMaterialSelect?.value || 'pellet');
   if (!party) {
-    showToast('Invalid party. Use all, narayan, or maa_vaishno.', 'error');
+    showToast('Invalid party filter', 'error');
     return null;
   }
-
-  const materialAnswer = prompt(
-    'Truck report material filter?\nType: all, pellet, briquettes',
-    'all'
-  );
-  if (materialAnswer == null) return null;
-  const material = normalizeTruckMaterialFilter(materialAnswer);
   if (!material) {
-    showToast('Invalid material. Use all, pellet, or briquettes.', 'error');
+    showToast('Invalid material filter', 'error');
     return null;
   }
-
+  if (party === 'all' && material === 'all') {
+    showToast('Please choose party or material filter. Full export is blocked.', 'error');
+    return null;
+  }
   const params = new URLSearchParams();
   if (party !== 'all') params.set('party', party);
   if (material !== 'all') params.set('material', material);
@@ -3024,18 +3028,22 @@ salaryMonthInput?.addEventListener('change', async () => {
   }
 });
 
-downloadTruckCsvBtn.addEventListener('click', () => {
-  const query = askTruckExportFilters();
-  if (query == null) return;
-  const url = query ? `/api/export/trucks.csv?${query}` : '/api/export/trucks.csv';
-  downloadWithAuth(url);
+toggleTruckExportOptionsBtn?.addEventListener('click', () => {
+  truckExportOptionsEl?.classList.toggle('hidden');
 });
 
-downloadTruckPdfBtn?.addEventListener('click', () => {
-  const query = askTruckExportFilters();
+closeTruckExportOptionsBtn?.addEventListener('click', () => {
+  truckExportOptionsEl?.classList.add('hidden');
+});
+
+downloadTruckReportBtn?.addEventListener('click', () => {
+  const query = buildTruckExportParams();
   if (query == null) return;
-  const url = query ? `/api/export/trucks.pdf?${query}` : '/api/export/trucks.pdf';
+  const format = String(truckExportFormatSelect?.value || 'csv').trim().toLowerCase() === 'pdf' ? 'pdf' : 'csv';
+  const base = format === 'pdf' ? '/api/export/trucks.pdf' : '/api/export/trucks.csv';
+  const url = query ? `${base}?${query}` : base;
   downloadWithAuth(url);
+  showToast(`Truck ${format.toUpperCase()} download started`);
 });
 
 downloadAttendanceCsvBtn.addEventListener('click', () => {
