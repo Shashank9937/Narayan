@@ -193,12 +193,51 @@
       </section>
 
       <section class="panel" id="salaryLedgerPanel">
-        <h2>Salary Ledger (Separate From Monthly Advances)</h2>
+        <div class="row wrap">
+          <h2>Salary Ledger (Section Wise + All Time)</h2>
+          <input id="salaryLedgerSearchInput" type="text" placeholder="Search employee/role in ledger" />
+        </div>
+        <p class="hint">Section A: Salary till 15 Jul 2025 | Section B: 16 Jul 2025 to 31 Dec 2025</p>
         <form id="salaryLedgerForm" class="salary-ledger-form">
           <select name="employeeId" id="salaryLedgerEmployee" required></select>
-          <input name="totalPaid" type="number" min="0" step="0.01" placeholder="Total Paid (All Time)" required />
-          <input name="totalToGive" type="number" min="0" step="0.01" placeholder="Total To Give (All Time)" required />
-          <div class="hint">Remaining: <strong id="salaryLedgerRemainingPreview">₹0</strong></div>
+          <div class="row wrap salary-ledger-tools">
+            <button id="salaryLedgerAutoFillBtn" type="button" class="small">Auto Fill by Monthly Salary</button>
+            <button id="salaryLedgerResetBtn" type="button" class="small warn">Clear Form</button>
+          </div>
+          <div class="salary-ledger-period-grid">
+            <section class="summary-box salary-ledger-period-card">
+              <h3>Section A: Till 15 Jul 2025</h3>
+              <input name="period1ToGive" type="number" min="0" step="0.01"
+                placeholder="Section A Total To Give" required />
+              <input name="period1Paid" type="number" min="0" step="0.01" placeholder="Section A Total Paid"
+                required />
+              <div class="hint">Section A Remaining: <strong id="salaryLedgerPeriod1RemainingPreview">₹0</strong>
+              </div>
+            </section>
+            <section class="summary-box salary-ledger-period-card">
+              <h3>Section B: 16 Jul 2025 to 31 Dec 2025</h3>
+              <input name="period2ToGive" type="number" min="0" step="0.01"
+                placeholder="Section B Total To Give" required />
+              <input name="period2Paid" type="number" min="0" step="0.01" placeholder="Section B Total Paid"
+                required />
+              <div class="hint">Section B Remaining: <strong id="salaryLedgerPeriod2RemainingPreview">₹0</strong>
+              </div>
+            </section>
+          </div>
+          <div class="summary-stat-grid salary-ledger-live-summary">
+            <div class="summary-stat">
+              <div class="label">Computed Total To Give</div>
+              <div id="salaryLedgerComputedToGive" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Computed Total Paid</div>
+              <div id="salaryLedgerComputedPaid" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Remaining</div>
+              <div id="salaryLedgerRemainingPreview" class="value">₹0</div>
+            </div>
+          </div>
           <input name="note" placeholder="Note (optional)" />
           <button type="submit">Save Salary Ledger</button>
         </form>
@@ -211,6 +250,26 @@
             <div class="label">Sum Total To Give (All Employees)</div>
             <div id="salaryLedgerTotalToGiveSum" class="value">₹0</div>
           </div>
+          <div class="summary-stat">
+            <div class="label">Sum Remaining (All Employees)</div>
+            <div id="salaryLedgerTotalRemainingSum" class="value">₹0</div>
+          </div>
+          <div class="summary-stat">
+            <div class="label">Section A Paid Sum</div>
+            <div id="salaryLedgerPeriod1PaidSum" class="value">₹0</div>
+          </div>
+          <div class="summary-stat">
+            <div class="label">Section A To Give Sum</div>
+            <div id="salaryLedgerPeriod1ToGiveSum" class="value">₹0</div>
+          </div>
+          <div class="summary-stat">
+            <div class="label">Section B Paid Sum</div>
+            <div id="salaryLedgerPeriod2PaidSum" class="value">₹0</div>
+          </div>
+          <div class="summary-stat">
+            <div class="label">Section B To Give Sum</div>
+            <div id="salaryLedgerPeriod2ToGiveSum" class="value">₹0</div>
+          </div>
         </div>
         <div class="table-wrap">
           <table id="salaryLedgerTable">
@@ -219,6 +278,12 @@
                   <th>Employee</th>
                   <th>Role</th>
                   <th>Date</th>
+                  <th>Section A To Give</th>
+                  <th>Section A Paid</th>
+                  <th>Section A Remaining</th>
+                  <th>Section B To Give</th>
+                  <th>Section B Paid</th>
+                  <th>Section B Remaining</th>
                   <th>Total Salary</th>
                   <th>Total Paid</th>
                   <th>Total To Give</th>

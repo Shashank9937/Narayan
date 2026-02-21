@@ -640,6 +640,32 @@ th.sortable.desc::after {
   margin-bottom: 1rem;
 }
 
+.salary-ledger-tools,
+.salary-ledger-period-grid,
+.salary-ledger-live-summary {
+  grid-column: 1 / -1;
+}
+
+.salary-ledger-tools {
+  justify-content: flex-end;
+}
+
+.salary-ledger-period-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.salary-ledger-period-card h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: var(--primary);
+}
+
+.salary-ledger-period-card .hint {
+  margin-top: 0.35rem;
+}
+
 .salary-ledger-form .hint {
   display: inline-flex;
   align-items: center;
@@ -1119,6 +1145,10 @@ body.dark-mode button.emp-edit {
 
   .salary-ledger-form {
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
+  .salary-ledger-tools {
+    justify-content: flex-start;
   }
 
   .bill-grid.three {

@@ -793,6 +793,10 @@ function jsonStore() {
         const ledger = db.salaryLedgers.find((l) => l.employeeId === e.id);
         const totalSalary = Number(ledger?.totalSalary || 0);
         const amountGiven = Number(ledger?.amountGiven || 0);
+        const period1ToGive = Number(ledger?.period1ToGive || 0);
+        const period1Paid = Number(ledger?.period1Paid || 0);
+        const period2ToGive = Number(ledger?.period2ToGive || 0);
+        const period2Paid = Number(ledger?.period2Paid || 0);
         const remaining = Math.max(0, totalSalary - amountGiven);
         return {
           employeeId: e.id,
@@ -802,6 +806,10 @@ function jsonStore() {
           amountGiven,
           totalPaid: amountGiven,
           totalToGive: totalSalary,
+          period1ToGive,
+          period1Paid,
+          period2ToGive,
+          period2Paid,
           remaining,
           note: ledger?.note || '',
           pending: remaining,
@@ -809,15 +817,33 @@ function jsonStore() {
         };
       });
     },
-    async upsertSalaryLedger(employeeId, totalSalary, amountGiven, note, totalToGive) {
+    async upsertSalaryLedger(
+      employeeId,
+      totalSalary,
+      amountGiven,
+      note,
+      totalToGive,
+      period1ToGive,
+      period1Paid,
+      period2ToGive,
+      period2Paid
+    ) {
       const db = readJsonDb();
       const paid = Number(amountGiven);
       const computedTotal =
         totalToGive != null && totalToGive !== '' ? Number(totalToGive) : Number(totalSalary);
+      const section1ToGive = Number(period1ToGive || 0);
+      const section1Paid = Number(period1Paid || 0);
+      const section2ToGive = Number(period2ToGive || 0);
+      const section2Paid = Number(period2Paid || 0);
       const existing = db.salaryLedgers.find((l) => l.employeeId === employeeId);
       if (existing) {
         existing.totalSalary = computedTotal;
         existing.amountGiven = paid;
+        existing.period1ToGive = section1ToGive;
+        existing.period1Paid = section1Paid;
+        existing.period2ToGive = section2ToGive;
+        existing.period2Paid = section2Paid;
         existing.note = String(note || '').trim();
         existing.updatedAt = new Date().toISOString();
         writeJsonDb(db);
@@ -828,6 +854,10 @@ function jsonStore() {
         employeeId,
         totalSalary: computedTotal,
         amountGiven: paid,
+        period1ToGive: section1ToGive,
+        period1Paid: section1Paid,
+        period2ToGive: section2ToGive,
+        period2Paid: section2Paid,
         note: String(note || '').trim(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -1599,6 +1629,10 @@ function postgresStore() {
           updated_at TIMESTAMPTZ NOT NULL
         );
         ALTER TABLE salary_ledgers ADD COLUMN IF NOT EXISTS note TEXT;
+        ALTER TABLE salary_ledgers ADD COLUMN IF NOT EXISTS period1_to_give NUMERIC(12,2) NOT NULL DEFAULT 0;
+        ALTER TABLE salary_ledgers ADD COLUMN IF NOT EXISTS period1_paid NUMERIC(12,2) NOT NULL DEFAULT 0;
+        ALTER TABLE salary_ledgers ADD COLUMN IF NOT EXISTS period2_to_give NUMERIC(12,2) NOT NULL DEFAULT 0;
+        ALTER TABLE salary_ledgers ADD COLUMN IF NOT EXISTS period2_paid NUMERIC(12,2) NOT NULL DEFAULT 0;
 
         CREATE TABLE IF NOT EXISTS trucks (
           id TEXT PRIMARY KEY,
@@ -2021,6 +2055,10 @@ function postgresStore() {
                 e.role,
                 COALESCE(sl.total_salary, 0) AS total_salary,
                 COALESCE(sl.amount_given, 0) AS amount_given,
+                COALESCE(sl.period1_to_give, 0) AS period1_to_give,
+                COALESCE(sl.period1_paid, 0) AS period1_paid,
+                COALESCE(sl.period2_to_give, 0) AS period2_to_give,
+                COALESCE(sl.period2_paid, 0) AS period2_paid,
                 COALESCE(sl.note, '') AS note,
                 sl.updated_at
          FROM employees e
@@ -2030,6 +2068,10 @@ function postgresStore() {
       return res.rows.map((r) => {
         const totalSalary = Number(r.total_salary || 0);
         const amountGiven = Number(r.amount_given || 0);
+        const period1ToGive = Number(r.period1_to_give || 0);
+        const period1Paid = Number(r.period1_paid || 0);
+        const period2ToGive = Number(r.period2_to_give || 0);
+        const period2Paid = Number(r.period2_paid || 0);
         const remaining = Math.max(0, totalSalary - amountGiven);
         return {
           employeeId: r.employee_id,
@@ -2039,6 +2081,10 @@ function postgresStore() {
           amountGiven,
           totalPaid: amountGiven,
           totalToGive: totalSalary,
+          period1ToGive,
+          period1Paid,
+          period2ToGive,
+          period2Paid,
           remaining,
           note: r.note || '',
           pending: remaining,
@@ -2046,22 +2092,49 @@ function postgresStore() {
         };
       });
     },
-    async upsertSalaryLedger(employeeId, totalSalary, amountGiven, note, totalToGive) {
+    async upsertSalaryLedger(
+      employeeId,
+      totalSalary,
+      amountGiven,
+      note,
+      totalToGive,
+      period1ToGive,
+      period1Paid,
+      period2ToGive,
+      period2Paid
+    ) {
       const paid = Number(amountGiven);
       const computedTotal =
         totalToGive != null && totalToGive !== '' ? Number(totalToGive) : Number(totalSalary);
+      const section1ToGive = Number(period1ToGive || 0);
+      const section1Paid = Number(period1Paid || 0);
+      const section2ToGive = Number(period2ToGive || 0);
+      const section2Paid = Number(period2Paid || 0);
       const existing = await pool.query('SELECT id FROM salary_ledgers WHERE employee_id = $1', [employeeId]);
       if (existing.rows[0]) {
         const id = existing.rows[0].id;
         await pool.query(
-          'UPDATE salary_ledgers SET total_salary = $2, amount_given = $3, note = $4, updated_at = NOW() WHERE id = $1',
-          [id, computedTotal, paid, String(note || '').trim()]
+          `UPDATE salary_ledgers
+              SET total_salary = $2,
+                  amount_given = $3,
+                  note = $4,
+                  period1_to_give = $5,
+                  period1_paid = $6,
+                  period2_to_give = $7,
+                  period2_paid = $8,
+                  updated_at = NOW()
+            WHERE id = $1`,
+          [id, computedTotal, paid, String(note || '').trim(), section1ToGive, section1Paid, section2ToGive, section2Paid]
         );
         return {
           id,
           employeeId,
           totalSalary: computedTotal,
           amountGiven: paid,
+          period1ToGive: section1ToGive,
+          period1Paid: section1Paid,
+          period2ToGive: section2ToGive,
+          period2Paid: section2Paid,
           note: String(note || '').trim()
         };
       }
@@ -2070,14 +2143,42 @@ function postgresStore() {
         employeeId,
         totalSalary: computedTotal,
         amountGiven: paid,
+        period1ToGive: section1ToGive,
+        period1Paid: section1Paid,
+        period2ToGive: section2ToGive,
+        period2Paid: section2Paid,
         note: String(note || '').trim(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
       await pool.query(
-        `INSERT INTO salary_ledgers (id, employee_id, total_salary, amount_given, note, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [row.id, row.employeeId, row.totalSalary, row.amountGiven, row.note, row.createdAt, row.updatedAt]
+        `INSERT INTO salary_ledgers (
+            id,
+            employee_id,
+            total_salary,
+            amount_given,
+            note,
+            period1_to_give,
+            period1_paid,
+            period2_to_give,
+            period2_paid,
+            created_at,
+            updated_at
+          )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          row.id,
+          row.employeeId,
+          row.totalSalary,
+          row.amountGiven,
+          row.note,
+          row.period1ToGive,
+          row.period1Paid,
+          row.period2ToGive,
+          row.period2Paid,
+          row.createdAt,
+          row.updatedAt
+        ]
       );
       return row;
     },
@@ -3537,19 +3638,65 @@ app.get('/api/salary-ledgers', auth, requirePermission('salaryledger:view'), asy
 });
 
 app.put('/api/salary-ledgers/:employeeId', auth, requirePermission('salaryledger:update'), async (req, res) => {
-  const { totalSalary, amountGiven, totalPaid, totalToGive, note } = req.body;
+  const {
+    totalSalary,
+    amountGiven,
+    totalPaid,
+    totalToGive,
+    period1ToGive,
+    period1Paid,
+    period2ToGive,
+    period2Paid,
+    note
+  } = req.body;
+  const parseNumeric = (value) => {
+    if (value == null || value === '') return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : NaN;
+  };
+
+  const section1ToGive = parseNumeric(period1ToGive);
+  const section1Paid = parseNumeric(period1Paid);
+  const section2ToGive = parseNumeric(period2ToGive);
+  const section2Paid = parseNumeric(period2Paid);
+  const hasSectionPayload = [section1ToGive, section1Paid, section2ToGive, section2Paid].some((v) => v != null);
+
+  if (hasSectionPayload) {
+    if ([section1ToGive, section1Paid, section2ToGive, section2Paid].some((v) => v == null || Number.isNaN(v) || v < 0)) {
+      return res.status(400).json({ error: 'Section totals and paid values must be valid non-negative numbers' });
+    }
+    if (section1Paid > section1ToGive) {
+      return res.status(400).json({ error: 'Section A paid cannot be greater than Section A total to give' });
+    }
+    if (section2Paid > section2ToGive) {
+      return res.status(400).json({ error: 'Section B paid cannot be greater than Section B total to give' });
+    }
+  }
+
   const paidRaw = totalPaid != null ? totalPaid : amountGiven;
   const toGiveRaw = totalToGive;
   const totalRaw = totalSalary;
+  const sectionToGiveTotal = hasSectionPayload ? Number(section1ToGive || 0) + Number(section2ToGive || 0) : null;
+  const sectionPaidTotal = hasSectionPayload ? Number(section1Paid || 0) + Number(section2Paid || 0) : null;
 
-  if (paidRaw == null || (toGiveRaw == null && totalRaw == null)) {
+  if (paidRaw == null && !hasSectionPayload) {
     return res.status(400).json({ error: 'totalPaid and totalToGive are required' });
   }
-  const given = Number(paidRaw || 0);
-  const toGive = Number(toGiveRaw != null ? toGiveRaw : totalRaw);
+  if ((toGiveRaw == null && totalRaw == null) && !hasSectionPayload) {
+    return res.status(400).json({ error: 'totalPaid and totalToGive are required' });
+  }
+
+  const given = Number(paidRaw != null ? paidRaw : sectionPaidTotal || 0);
+  const toGive = Number(toGiveRaw != null ? toGiveRaw : (totalRaw != null ? totalRaw : sectionToGiveTotal || 0));
   const total = Number(totalRaw != null ? totalRaw : toGive);
   if (Number.isNaN(total) || total < 0 || Number.isNaN(given) || given < 0 || Number.isNaN(toGive) || toGive < 0) {
     return res.status(400).json({ error: 'totalPaid, totalToGive and totalSalary must be valid non-negative numbers' });
+  }
+  if (hasSectionPayload && Math.abs(toGive - sectionToGiveTotal) > 0.01) {
+    return res.status(400).json({ error: 'Total To Give must match Section A + Section B To Give' });
+  }
+  if (hasSectionPayload && Math.abs(given - sectionPaidTotal) > 0.01) {
+    return res.status(400).json({ error: 'Total Paid must match Section A + Section B Paid' });
   }
   if (given > toGive) {
     return res.status(400).json({ error: 'totalPaid cannot be greater than totalToGive' });
@@ -3557,7 +3704,17 @@ app.put('/api/salary-ledgers/:employeeId', auth, requirePermission('salaryledger
   try {
     const employee = await store.getEmployeeById(req.params.employeeId);
     if (!employee) return res.status(404).json({ error: 'Employee not found' });
-    const row = await store.upsertSalaryLedger(req.params.employeeId, toGive, given, note, toGive);
+    const row = await store.upsertSalaryLedger(
+      req.params.employeeId,
+      total,
+      given,
+      note,
+      toGive,
+      hasSectionPayload ? section1ToGive : 0,
+      hasSectionPayload ? section1Paid : 0,
+      hasSectionPayload ? section2ToGive : 0,
+      hasSectionPayload ? section2Paid : 0
+    );
     return res.json(row);
   } catch (err) {
     console.error(err);
