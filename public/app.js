@@ -60,6 +60,9 @@ const truckPelletRevenueMaaVaishnoEl = document.getElementById('truckPelletReven
 const truckBriquetteRevenueEl = document.getElementById('truckBriquetteRevenue');
 const truckBriquetteRevenueNarayanEl = document.getElementById('truckBriquetteRevenueNarayan');
 const truckBriquetteRevenueMaaVaishnoEl = document.getElementById('truckBriquetteRevenueMaaVaishno');
+const truckTotalCountEl = document.getElementById('truckTotalCount');
+const truckTotalQuantityEl = document.getElementById('truckTotalQuantity');
+const truckTotalAmountAllEl = document.getElementById('truckTotalAmountAll');
 
 const attendanceEmployeeEl = document.getElementById('attendanceEmployee');
 const advanceEmployeeEl = document.getElementById('advanceEmployee');
@@ -1093,6 +1096,16 @@ function truckMaterialLabel(material) {
 function renderTruckRows(rows) {
   const canEdit = hasPermission('trucks:update');
   const canDelete = hasPermission('trucks:delete');
+  const normalizeTruckAmount = (row) => {
+    const directAmount = Number(row.totalAmount);
+    if (Number.isFinite(directAmount)) return directAmount;
+    const qty = Number(row.quantity) || 0;
+    const rate = Number(row.pricePerQuintal) || 0;
+    return qty * rate;
+  };
+  const totalTruckCount = rows.length;
+  const totalTruckQuantity = rows.reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
+  const totalTruckAmount = rows.reduce((sum, row) => sum + normalizeTruckAmount(row), 0);
 
   // Calculate material-specific totals (quantity and revenue)
   let pelletTotal = 0;
@@ -1106,7 +1119,7 @@ function renderTruckRows(rows) {
 
   rows.forEach(row => {
     const qty = Number(row.quantity) || 0;
-    const amount = Number(row.totalAmount) || 0;
+    const amount = normalizeTruckAmount(row);
     const material = truckMaterialKey(row.rawMaterial);
     if (material === 'pellet') {
       pelletTotal += qty;
@@ -1120,6 +1133,10 @@ function renderTruckRows(rows) {
       if (row.party === 'maa_vaishno') briquetteRevenueMaaVaishno += amount;
     }
   });
+
+  if (truckTotalCountEl) truckTotalCountEl.textContent = String(totalTruckCount);
+  if (truckTotalQuantityEl) truckTotalQuantityEl.textContent = `${totalTruckQuantity.toFixed(2)} Qntl`;
+  if (truckTotalAmountAllEl) truckTotalAmountAllEl.textContent = money(totalTruckAmount);
 
   // Update material stats display
   if (truckPelletTotalEl) truckPelletTotalEl.textContent = `${pelletTotal.toFixed(2)} Qntl`;
