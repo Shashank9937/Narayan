@@ -130,9 +130,9 @@ let editingLandId = null;
 let activeSalaryMonth = monthISO();
 let billItemsState = [];
 let editingBillId = null;
-const LEDGER_PERIOD_1_END = '2025-07-15';
-const LEDGER_PERIOD_2_START = '2025-07-16';
-const LEDGER_PERIOD_2_END = '2025-12-31';
+const LEDGER_FIXED_START = '2025-07-15';
+const LEDGER_FIXED_END = '2026-01-31';
+const LEDGER_LIVE_START = '2026-02-01';
 
 function showToast(message, type = 'ok') {
   toastEl.textContent = message;
@@ -221,18 +221,20 @@ function estimateSalaryForDateRange(employee, rangeStartIso, rangeEndIso) {
   return round2(total);
 }
 
-function estimateLedgerPeriods(employee) {
-  const period1ToGive = estimateSalaryForDateRange(employee, employee?.joiningDate || '2000-01-01', LEDGER_PERIOD_1_END);
-  const period2ToGive = estimateSalaryForDateRange(employee, LEDGER_PERIOD_2_START, LEDGER_PERIOD_2_END);
-  return { period1ToGive, period2ToGive };
+function estimateLedgerFixedToGive(employee) {
+  return estimateSalaryForDateRange(employee, LEDGER_FIXED_START, LEDGER_FIXED_END);
+}
+
+function estimateLedgerLiveToGive(employee) {
+  return estimateSalaryForDateRange(employee, LEDGER_LIVE_START, todayISO());
 }
 
 function findEmployeeById(employeeId) {
   return employeesCache.find((e) => String(e.id) === String(employeeId));
 }
 
-function hasSectionSalaryValues(row) {
-  return ['period1ToGive', 'period1Paid', 'period2ToGive', 'period2Paid'].some((key) => {
+function hasFixedSectionValues(row) {
+  return ['period1ToGive', 'period1Paid'].some((key) => {
     const value = row?.[key];
     return value != null && Number(value) !== 0;
   });
@@ -242,31 +244,25 @@ function normalizeLedgerRow(row) {
   const employee = findEmployeeById(row?.employeeId);
   const baseTotalToGive = Math.max(0, toNumber(row?.totalToGive ?? row?.totalSalary, 0));
   const baseTotalPaid = Math.max(0, toNumber(row?.totalPaid ?? row?.amountGiven, 0));
+  const period2ToGive = round2(Math.max(0, estimateLedgerLiveToGive(employee)));
+  const period2Paid = round2(Math.max(0, toNumber(row?.advancesFromFeb ?? row?.period2Paid, 0)));
+  const currentMonthSalary = round2(Math.max(0, toNumber(employee?.monthlySalary, 0)));
+  const currentMonthAdvance = round2(Math.max(0, toNumber(row?.currentMonthAdvance, 0)));
   let period1ToGive = Math.max(0, toNumber(row?.period1ToGive, 0));
   let period1Paid = Math.max(0, toNumber(row?.period1Paid, 0));
-  let period2ToGive = Math.max(0, toNumber(row?.period2ToGive, 0));
-  let period2Paid = Math.max(0, toNumber(row?.period2Paid, 0));
 
-  if (!hasSectionSalaryValues(row) && (baseTotalToGive > 0 || baseTotalPaid > 0)) {
-    const estimated = estimateLedgerPeriods(employee);
-    const estimatedTotal = estimated.period1ToGive + estimated.period2ToGive;
-    if (baseTotalToGive > 0 && estimatedTotal > 0) {
-      const period1Share = estimated.period1ToGive / estimatedTotal;
-      period1ToGive = round2(baseTotalToGive * period1Share);
-      period2ToGive = round2(baseTotalToGive - period1ToGive);
+  if (!hasFixedSectionValues(row)) {
+    if (baseTotalToGive > 0 || baseTotalPaid > 0) {
+      period1ToGive = Math.max(0, round2(baseTotalToGive - period2ToGive));
+      period1Paid = Math.max(0, round2(baseTotalPaid - period2Paid));
     } else {
-      period1ToGive = 0;
-      period2ToGive = baseTotalToGive;
+      period1ToGive = Math.max(0, round2(estimateLedgerFixedToGive(employee)));
+      period1Paid = 0;
     }
-    period1Paid = Math.min(baseTotalPaid, period1ToGive);
-    period2Paid = Math.min(Math.max(0, baseTotalPaid - period1Paid), period2ToGive);
   }
 
   period1ToGive = round2(period1ToGive);
   period1Paid = round2(Math.min(period1Paid, period1ToGive));
-  period2ToGive = round2(period2ToGive);
-  period2Paid = round2(Math.min(period2Paid, period2ToGive));
-
   const period1Remaining = round2(Math.max(0, period1ToGive - period1Paid));
   const period2Remaining = round2(Math.max(0, period2ToGive - period2Paid));
   const totalToGive = round2(period1ToGive + period2ToGive);
@@ -281,6 +277,8 @@ function normalizeLedgerRow(row) {
     period2ToGive,
     period2Paid,
     period2Remaining,
+    currentMonthSalary,
+    currentMonthAdvance,
     totalSalary: totalToGive,
     totalToGive,
     totalPaid,
@@ -862,6 +860,8 @@ function renderSalaryLedgers(rows) {
   const period1ToGiveSum = safeRows.reduce((sum, r) => sum + Number(r.period1ToGive || 0), 0);
   const period2PaidSum = safeRows.reduce((sum, r) => sum + Number(r.period2Paid || 0), 0);
   const period2ToGiveSum = safeRows.reduce((sum, r) => sum + Number(r.period2ToGive || 0), 0);
+  const currentMonthSalarySum = safeRows.reduce((sum, r) => sum + Number(r.currentMonthSalary || 0), 0);
+  const currentMonthAdvanceSum = safeRows.reduce((sum, r) => sum + Number(r.currentMonthAdvance || 0), 0);
 
   const setSummary = (id, value) => {
     const el = document.getElementById(id);
@@ -874,6 +874,8 @@ function renderSalaryLedgers(rows) {
   setSummary('salaryLedgerPeriod1ToGiveSum', period1ToGiveSum);
   setSummary('salaryLedgerPeriod2PaidSum', period2PaidSum);
   setSummary('salaryLedgerPeriod2ToGiveSum', period2ToGiveSum);
+  setSummary('salaryLedgerCurrentMonthSalarySum', currentMonthSalarySum);
+  setSummary('salaryLedgerCurrentMonthAdvanceSum', currentMonthAdvanceSum);
 
   const q = (salaryLedgerSearchInput?.value || '').trim().toLowerCase();
   const tableRows = q
@@ -891,6 +893,8 @@ function renderSalaryLedgers(rows) {
         <td class="money">${money(r.period1ToGive)}</td>
         <td class="money">${money(r.period1Paid)}</td>
         <td class="money">${money(r.period1Remaining)}</td>
+        <td class="money">${money(r.currentMonthSalary)}</td>
+        <td class="money">${money(r.currentMonthAdvance)}</td>
         <td class="money">${money(r.period2ToGive)}</td>
         <td class="money">${money(r.period2Paid)}</td>
         <td class="money">${money(r.period2Remaining)}</td>
@@ -930,24 +934,17 @@ function prefillSalaryLedgerForm() {
   const employee = findEmployeeById(employeeId);
   const period1ToGiveEl = salaryLedgerForm.querySelector('input[name="period1ToGive"]');
   const period1PaidEl = salaryLedgerForm.querySelector('input[name="period1Paid"]');
-  const period2ToGiveEl = salaryLedgerForm.querySelector('input[name="period2ToGive"]');
-  const period2PaidEl = salaryLedgerForm.querySelector('input[name="period2Paid"]');
   const noteEl = salaryLedgerForm.querySelector('input[name="note"]');
-  if (!period1ToGiveEl || !period1PaidEl || !period2ToGiveEl || !period2PaidEl || !noteEl) return;
+  if (!period1ToGiveEl || !period1PaidEl || !noteEl) return;
 
   if (row) {
     const normalized = normalizeLedgerRow(row);
     period1ToGiveEl.value = String(normalized.period1ToGive);
     period1PaidEl.value = String(normalized.period1Paid);
-    period2ToGiveEl.value = String(normalized.period2ToGive);
-    period2PaidEl.value = String(normalized.period2Paid);
     noteEl.value = String(row.note || '');
   } else {
-    const estimated = estimateLedgerPeriods(employee);
-    period1ToGiveEl.value = String(estimated.period1ToGive || 0);
+    period1ToGiveEl.value = String(estimateLedgerFixedToGive(employee) || 0);
     period1PaidEl.value = '0';
-    period2ToGiveEl.value = String(estimated.period2ToGive || 0);
-    period2PaidEl.value = '0';
     noteEl.value = '';
   }
 
@@ -955,21 +952,28 @@ function prefillSalaryLedgerForm() {
 }
 
 function updateSalaryLedgerRemainingPreview() {
-  if (!salaryLedgerForm) return;
+  if (!salaryLedgerForm || !salaryLedgerEmployeeSelect) return;
+  const employeeId = salaryLedgerEmployeeSelect.value;
+  const selectedRow = salaryLedgersCache.find((r) => String(r.employeeId) === String(employeeId));
+  const normalized = normalizeLedgerRow(selectedRow || { employeeId });
   const period1ToGiveEl = salaryLedgerForm.querySelector('input[name="period1ToGive"]');
   const period1PaidEl = salaryLedgerForm.querySelector('input[name="period1Paid"]');
-  const period2ToGiveEl = salaryLedgerForm.querySelector('input[name="period2ToGive"]');
-  const period2PaidEl = salaryLedgerForm.querySelector('input[name="period2Paid"]');
   const period1PreviewEl = document.getElementById('salaryLedgerPeriod1RemainingPreview');
   const period2PreviewEl = document.getElementById('salaryLedgerPeriod2RemainingPreview');
+  const period2ToGivePreviewEl = document.getElementById('salaryLedgerPeriod2ToGivePreview');
+  const period2PaidPreviewEl = document.getElementById('salaryLedgerPeriod2PaidPreview');
+  const currentMonthSalaryPreviewEl = document.getElementById('salaryLedgerCurrentMonthSalaryPreview');
+  const currentMonthAdvancePreviewEl = document.getElementById('salaryLedgerCurrentMonthAdvancePreview');
   const computedPaidEl = document.getElementById('salaryLedgerComputedPaid');
   const computedToGiveEl = document.getElementById('salaryLedgerComputedToGive');
   const previewEl = document.getElementById('salaryLedgerRemainingPreview');
-  if (!period1ToGiveEl || !period1PaidEl || !period2ToGiveEl || !period2PaidEl || !previewEl) return;
+  if (!period1ToGiveEl || !period1PaidEl || !previewEl) return;
   const period1ToGive = Math.max(0, toNumber(period1ToGiveEl.value, 0));
   const period1Paid = Math.max(0, toNumber(period1PaidEl.value, 0));
-  const period2ToGive = Math.max(0, toNumber(period2ToGiveEl.value, 0));
-  const period2Paid = Math.max(0, toNumber(period2PaidEl.value, 0));
+  const period2ToGive = Math.max(0, toNumber(normalized.period2ToGive, 0));
+  const period2Paid = Math.max(0, toNumber(normalized.period2Paid, 0));
+  const currentMonthSalary = Math.max(0, toNumber(normalized.currentMonthSalary, 0));
+  const currentMonthAdvance = Math.max(0, toNumber(normalized.currentMonthAdvance, 0));
   const period1Remaining = Math.max(0, round2(period1ToGive - period1Paid));
   const period2Remaining = Math.max(0, round2(period2ToGive - period2Paid));
   const totalToGive = round2(period1ToGive + period2ToGive);
@@ -977,6 +981,10 @@ function updateSalaryLedgerRemainingPreview() {
   const remaining = Math.max(0, round2(totalToGive - totalPaid));
   if (period1PreviewEl) period1PreviewEl.textContent = money(period1Remaining);
   if (period2PreviewEl) period2PreviewEl.textContent = money(period2Remaining);
+  if (period2ToGivePreviewEl) period2ToGivePreviewEl.textContent = money(period2ToGive);
+  if (period2PaidPreviewEl) period2PaidPreviewEl.textContent = money(period2Paid);
+  if (currentMonthSalaryPreviewEl) currentMonthSalaryPreviewEl.textContent = money(currentMonthSalary);
+  if (currentMonthAdvancePreviewEl) currentMonthAdvancePreviewEl.textContent = money(currentMonthAdvance);
   if (computedPaidEl) computedPaidEl.textContent = money(totalPaid);
   if (computedToGiveEl) computedToGiveEl.textContent = money(totalToGive);
   previewEl.textContent = money(remaining);
@@ -992,27 +1000,19 @@ function autoFillSalaryLedgerSections() {
   }
   const period1ToGiveEl = salaryLedgerForm.querySelector('input[name="period1ToGive"]');
   const period1PaidEl = salaryLedgerForm.querySelector('input[name="period1Paid"]');
-  const period2ToGiveEl = salaryLedgerForm.querySelector('input[name="period2ToGive"]');
-  const period2PaidEl = salaryLedgerForm.querySelector('input[name="period2Paid"]');
-  if (!period1ToGiveEl || !period1PaidEl || !period2ToGiveEl || !period2PaidEl) return;
+  if (!period1ToGiveEl || !period1PaidEl) return;
 
-  const estimated = estimateLedgerPeriods(employee);
-  period1ToGiveEl.value = String(estimated.period1ToGive || 0);
-  period2ToGiveEl.value = String(estimated.period2ToGive || 0);
+  period1ToGiveEl.value = String(estimateLedgerFixedToGive(employee) || 0);
 
   const existing = salaryLedgersCache.find((r) => String(r.employeeId) === String(employeeId));
-  const existingPaid = Math.max(0, toNumber(existing?.totalPaid ?? existing?.amountGiven, 0));
-  let period1Paid = Math.min(existingPaid, estimated.period1ToGive || 0);
-  let period2Paid = Math.min(Math.max(0, existingPaid - period1Paid), estimated.period2ToGive || 0);
-  if (hasSectionSalaryValues(existing)) {
+  let period1Paid = 0;
+  if (hasFixedSectionValues(existing)) {
     const normalized = normalizeLedgerRow(existing);
     period1Paid = normalized.period1Paid;
-    period2Paid = normalized.period2Paid;
   }
   period1PaidEl.value = String(round2(period1Paid));
-  period2PaidEl.value = String(round2(period2Paid));
   updateSalaryLedgerRemainingPreview();
-  showToast('Section totals auto-filled using employee monthly salary');
+  showToast('Historical section auto-filled using monthly salary');
 }
 
 function renderAttendanceReportRows(rows) {
@@ -2576,17 +2576,17 @@ advanceForm.addEventListener('submit', async (e) => {
 salaryLedgerForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(salaryLedgerForm);
+  const employeeId = String(fd.get('employeeId') || '');
+  const autoRow = normalizeLedgerRow(
+    salaryLedgersCache.find((r) => String(r.employeeId) === employeeId) || { employeeId }
+  );
   const period1ToGive = Math.max(0, toNumber(fd.get('period1ToGive'), 0));
   const period1Paid = Math.max(0, toNumber(fd.get('period1Paid'), 0));
-  const period2ToGive = Math.max(0, toNumber(fd.get('period2ToGive'), 0));
-  const period2Paid = Math.max(0, toNumber(fd.get('period2Paid'), 0));
+  const period2ToGive = Math.max(0, toNumber(autoRow.period2ToGive, 0));
+  const period2Paid = Math.max(0, toNumber(autoRow.period2Paid, 0));
 
   if (period1Paid > period1ToGive) {
-    showToast('Section A paid cannot be greater than Section A total to give', 'error');
-    return;
-  }
-  if (period2Paid > period2ToGive) {
-    showToast('Section B paid cannot be greater than Section B total to give', 'error');
+    showToast('Historical section paid cannot be greater than section total to give', 'error');
     return;
   }
 
@@ -2597,7 +2597,7 @@ salaryLedgerForm?.addEventListener('submit', async (e) => {
     return;
   }
   try {
-    await api(`/api/salary-ledgers/${fd.get('employeeId')}`, 'PUT', {
+    await api(`/api/salary-ledgers/${employeeId}`, 'PUT', {
       totalSalary: totalToGive,
       totalPaid,
       totalToGive,
@@ -2731,7 +2731,7 @@ salaryLedgerAutoFillBtn?.addEventListener('click', () => {
 
 salaryLedgerResetBtn?.addEventListener('click', () => {
   if (!salaryLedgerForm) return;
-  ['period1ToGive', 'period1Paid', 'period2ToGive', 'period2Paid'].forEach((name) => {
+  ['period1ToGive', 'period1Paid'].forEach((name) => {
     const input = salaryLedgerForm.querySelector(`input[name="${name}"]`);
     if (input) input.value = '0';
   });
@@ -2742,7 +2742,7 @@ salaryLedgerResetBtn?.addEventListener('click', () => {
 });
 
 salaryLedgerForm
-  ?.querySelectorAll('input[name="period1ToGive"], input[name="period1Paid"], input[name="period2ToGive"], input[name="period2Paid"]')
+  ?.querySelectorAll('input[name="period1ToGive"], input[name="period1Paid"]')
   ?.forEach((input) => input.addEventListener('input', updateSalaryLedgerRemainingPreview));
 
 sectionNav.addEventListener('click', (e) => {

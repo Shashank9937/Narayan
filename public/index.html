@@ -194,10 +194,10 @@
 
       <section class="panel" id="salaryLedgerPanel">
         <div class="row wrap">
-          <h2>Salary Ledger (Section Wise + All Time)</h2>
+          <h2>Salary Ledger (Historical + Current)</h2>
           <input id="salaryLedgerSearchInput" type="text" placeholder="Search employee/role in ledger" />
         </div>
-        <p class="hint">Section A: Salary till 15 Jul 2025 | Section B: 16 Jul 2025 to 31 Dec 2025</p>
+        <p class="hint">Editable Section: 15 Jul 2025 to 31 Jan 2026 | Auto Section: from 1 Feb 2026</p>
         <form id="salaryLedgerForm" class="salary-ledger-form">
           <select name="employeeId" id="salaryLedgerEmployee" required></select>
           <div class="row wrap salary-ledger-tools">
@@ -206,21 +206,21 @@
           </div>
           <div class="salary-ledger-period-grid">
             <section class="summary-box salary-ledger-period-card">
-              <h3>Section A: Till 15 Jul 2025</h3>
+              <h3>Section: 15 Jul 2025 to 31 Jan 2026 (Editable)</h3>
               <input name="period1ToGive" type="number" min="0" step="0.01"
-                placeholder="Section A Total To Give" required />
-              <input name="period1Paid" type="number" min="0" step="0.01" placeholder="Section A Total Paid"
+                placeholder="Total To Give (15 Jul 2025 to 31 Jan 2026)" required />
+              <input name="period1Paid" type="number" min="0" step="0.01" placeholder="Total Paid (15 Jul 2025 to 31 Jan 2026)"
                 required />
-              <div class="hint">Section A Remaining: <strong id="salaryLedgerPeriod1RemainingPreview">₹0</strong>
+              <div class="hint">Remaining (15 Jul 2025 to 31 Jan 2026): <strong id="salaryLedgerPeriod1RemainingPreview">₹0</strong>
               </div>
             </section>
             <section class="summary-box salary-ledger-period-card">
-              <h3>Section B: 16 Jul 2025 to 31 Dec 2025</h3>
-              <input name="period2ToGive" type="number" min="0" step="0.01"
-                placeholder="Section B Total To Give" required />
-              <input name="period2Paid" type="number" min="0" step="0.01" placeholder="Section B Total Paid"
-                required />
-              <div class="hint">Section B Remaining: <strong id="salaryLedgerPeriod2RemainingPreview">₹0</strong>
+              <h3>Auto Section: From 1 Feb 2026</h3>
+              <div class="hint">Current Month Salary: <strong id="salaryLedgerCurrentMonthSalaryPreview">₹0</strong></div>
+              <div class="hint">Current Month Advance: <strong id="salaryLedgerCurrentMonthAdvancePreview">₹0</strong></div>
+              <div class="hint">Total To Give (from 1 Feb 2026): <strong id="salaryLedgerPeriod2ToGivePreview">₹0</strong></div>
+              <div class="hint">Total Paid by Advances (from 1 Feb 2026): <strong id="salaryLedgerPeriod2PaidPreview">₹0</strong></div>
+              <div class="hint">Remaining (from 1 Feb 2026): <strong id="salaryLedgerPeriod2RemainingPreview">₹0</strong>
               </div>
             </section>
           </div>
@@ -255,20 +255,28 @@
             <div id="salaryLedgerTotalRemainingSum" class="value">₹0</div>
           </div>
           <div class="summary-stat">
-            <div class="label">Section A Paid Sum</div>
+            <div class="label">15 Jul 2025 to 31 Jan 2026 Paid Sum</div>
             <div id="salaryLedgerPeriod1PaidSum" class="value">₹0</div>
           </div>
           <div class="summary-stat">
-            <div class="label">Section A To Give Sum</div>
+            <div class="label">15 Jul 2025 to 31 Jan 2026 To Give Sum</div>
             <div id="salaryLedgerPeriod1ToGiveSum" class="value">₹0</div>
           </div>
           <div class="summary-stat">
-            <div class="label">Section B Paid Sum</div>
+            <div class="label">From 1 Feb 2026 Paid (Advances) Sum</div>
             <div id="salaryLedgerPeriod2PaidSum" class="value">₹0</div>
           </div>
           <div class="summary-stat">
-            <div class="label">Section B To Give Sum</div>
+            <div class="label">From 1 Feb 2026 To Give Sum</div>
             <div id="salaryLedgerPeriod2ToGiveSum" class="value">₹0</div>
+          </div>
+          <div class="summary-stat">
+            <div class="label">Current Month Salary Sum</div>
+            <div id="salaryLedgerCurrentMonthSalarySum" class="value">₹0</div>
+          </div>
+          <div class="summary-stat">
+            <div class="label">Current Month Advance Sum</div>
+            <div id="salaryLedgerCurrentMonthAdvanceSum" class="value">₹0</div>
           </div>
         </div>
         <div class="table-wrap">
@@ -278,12 +286,14 @@
                   <th>Employee</th>
                   <th>Role</th>
                   <th>Date</th>
-                  <th>Section A To Give</th>
-                  <th>Section A Paid</th>
-                  <th>Section A Remaining</th>
-                  <th>Section B To Give</th>
-                  <th>Section B Paid</th>
-                  <th>Section B Remaining</th>
+                  <th>15 Jul 2025 to 31 Jan 2026 To Give</th>
+                  <th>15 Jul 2025 to 31 Jan 2026 Paid</th>
+                  <th>15 Jul 2025 to 31 Jan 2026 Remaining</th>
+                  <th>Current Month Salary</th>
+                  <th>Current Month Advance</th>
+                  <th>From 1 Feb 2026 To Give</th>
+                  <th>From 1 Feb 2026 Paid</th>
+                  <th>From 1 Feb 2026 Remaining</th>
                   <th>Total Salary</th>
                   <th>Total Paid</th>
                   <th>Total To Give</th>

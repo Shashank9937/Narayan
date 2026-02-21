@@ -789,27 +789,40 @@ function jsonStore() {
     },
     async listSalaryLedgers() {
       const db = readJsonDb();
+      const liveStart = '2026-02-01';
+      const thisMonth = currentMonth();
       return db.employees.map((e) => {
         const ledger = db.salaryLedgers.find((l) => l.employeeId === e.id);
         const totalSalary = Number(ledger?.totalSalary || 0);
         const amountGiven = Number(ledger?.amountGiven || 0);
         const period1ToGive = Number(ledger?.period1ToGive || 0);
-        const period1Paid = Number(ledger?.period1Paid || 0);
+        const advancesFromFeb = db.salaryAdvances
+          .filter((a) => a.employeeId === e.id && String(a.date || '') >= liveStart)
+          .reduce((sum, a) => sum + Number(a.amount || 0), 0);
+        const currentMonthAdvance = db.salaryAdvances
+          .filter((a) => a.employeeId === e.id && monthOf(a.date) === thisMonth)
+          .reduce((sum, a) => sum + Number(a.amount || 0), 0);
+        const period2Paid = Number(advancesFromFeb || 0);
+        const storedPeriod1Paid = Number(ledger?.period1Paid || 0);
+        const period1Paid = storedPeriod1Paid > 0 ? storedPeriod1Paid : Math.max(0, amountGiven - period2Paid);
         const period2ToGive = Number(ledger?.period2ToGive || 0);
-        const period2Paid = Number(ledger?.period2Paid || 0);
-        const remaining = Math.max(0, totalSalary - amountGiven);
+        const totalPaid = period1Paid + period2Paid;
+        const remaining = Math.max(0, totalSalary - totalPaid);
         return {
           employeeId: e.id,
           name: e.name,
           role: e.role,
+          monthlySalary: Number(e.monthlySalary || 0),
           totalSalary,
-          amountGiven,
-          totalPaid: amountGiven,
+          amountGiven: totalPaid,
+          totalPaid,
           totalToGive: totalSalary,
           period1ToGive,
           period1Paid,
           period2ToGive,
           period2Paid,
+          advancesFromFeb: period2Paid,
+          currentMonthAdvance: Number(currentMonthAdvance || 0),
           remaining,
           note: ledger?.note || '',
           pending: remaining,
@@ -2053,12 +2066,24 @@ function postgresStore() {
         `SELECT e.id AS employee_id,
                 e.name,
                 e.role,
+                COALESCE(e.monthly_salary, 0) AS monthly_salary,
                 COALESCE(sl.total_salary, 0) AS total_salary,
                 COALESCE(sl.amount_given, 0) AS amount_given,
                 COALESCE(sl.period1_to_give, 0) AS period1_to_give,
                 COALESCE(sl.period1_paid, 0) AS period1_paid,
                 COALESCE(sl.period2_to_give, 0) AS period2_to_give,
                 COALESCE(sl.period2_paid, 0) AS period2_paid,
+                COALESCE(
+                  (SELECT SUM(sa.amount) FROM salary_advances sa WHERE sa.employee_id = e.id AND sa.date >= DATE '2026-02-01'),
+                  0
+                ) AS advances_from_feb,
+                COALESCE(
+                  (SELECT SUM(sa.amount)
+                     FROM salary_advances sa
+                    WHERE sa.employee_id = e.id
+                      AND TO_CHAR(sa.date, 'YYYY-MM') = TO_CHAR(CURRENT_DATE, 'YYYY-MM')),
+                  0
+                ) AS current_month_advance,
                 COALESCE(sl.note, '') AS note,
                 sl.updated_at
          FROM employees e
@@ -2069,22 +2094,27 @@ function postgresStore() {
         const totalSalary = Number(r.total_salary || 0);
         const amountGiven = Number(r.amount_given || 0);
         const period1ToGive = Number(r.period1_to_give || 0);
-        const period1Paid = Number(r.period1_paid || 0);
+        const period2Paid = Number(r.advances_from_feb || 0);
+        const storedPeriod1Paid = Number(r.period1_paid || 0);
+        const period1Paid = storedPeriod1Paid > 0 ? storedPeriod1Paid : Math.max(0, amountGiven - period2Paid);
         const period2ToGive = Number(r.period2_to_give || 0);
-        const period2Paid = Number(r.period2_paid || 0);
-        const remaining = Math.max(0, totalSalary - amountGiven);
+        const totalPaid = period1Paid + period2Paid;
+        const remaining = Math.max(0, totalSalary - totalPaid);
         return {
           employeeId: r.employee_id,
           name: r.name,
           role: r.role,
+          monthlySalary: Number(r.monthly_salary || 0),
           totalSalary,
-          amountGiven,
-          totalPaid: amountGiven,
+          amountGiven: totalPaid,
+          totalPaid,
           totalToGive: totalSalary,
           period1ToGive,
           period1Paid,
           period2ToGive,
           period2Paid,
+          advancesFromFeb: period2Paid,
+          currentMonthAdvance: Number(r.current_month_advance || 0),
           remaining,
           note: r.note || '',
           pending: remaining,
