@@ -117,6 +117,7 @@ let salaryLedgersCache = [];
 let autoRefreshTimer = null;
 let expenseFilter = { dateFrom: '', dateTo: '' };
 let editingTruckId = null;
+let editingExpenseId = null;
 let editingLandId = null;
 let activeSalaryMonth = monthISO();
 let billItemsState = [];
@@ -899,8 +900,11 @@ function renderTruckRows(rows) {
     document.querySelectorAll('.truck-edit').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-id');
-        const current = trucksCache.find((t) => t.id === id);
-        if (!current) return;
+        const current = trucksCache.find((t) => String(t.id) === String(id));
+        if (!current) {
+          showToast('Truck entry not found for editing', 'error');
+          return;
+        }
         editingTruckId = id;
         truckForm.querySelector('input[name="date"]').value = current.date || '';
         truckForm.querySelector('select[name="party"]').value = current.party || 'narayan';
@@ -992,23 +996,21 @@ function renderExpenseRows(rows) {
     document.querySelectorAll('.exp-edit').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-id');
-        const current = expensesCache.find((e) => e.id === id);
-        if (!current) return;
-        const description = prompt('Description', current.description || '') || '';
-        const amount = prompt('Amount', String(current.amount || 0));
-        if (!amount) return;
-        try {
-          await api(`/api/expenses/${id}`, 'PUT', {
-            date: current.date,
-            party: current.party || 'narayan',
-            description,
-            amount
-          });
-          await refresh();
-          showToast('Expense updated');
-        } catch (err) {
-          showToast(err.message, 'error');
+        const current = expensesCache.find((e) => String(e.id) === String(id));
+        if (!current) {
+          showToast('Expense not found for editing', 'error');
+          return;
         }
+        editingExpenseId = id;
+        expenseForm.querySelector('input[name="date"]').value = current.date || '';
+        expenseForm.querySelector('select[name="party"]').value = current.party || 'narayan';
+        expenseForm.querySelector('input[name="description"]').value = current.description || '';
+        expenseForm.querySelector('input[name="amount"]').value =
+          current.amount != null ? String(current.amount) : '';
+        const submitBtn = expenseForm.querySelector('button[type="submit"]');
+        if (submitBtn) submitBtn.textContent = 'Update Expense';
+        expenseForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        showToast('Expense loaded. Update fields and click "Update Expense".');
       });
     });
   }
@@ -1719,16 +1721,21 @@ expenseForm.addEventListener('submit', async (e) => {
   const fd = new FormData(expenseForm);
 
   try {
-    await api('/api/expenses', 'POST', {
+    const endpoint = editingExpenseId ? `/api/expenses/${editingExpenseId}` : '/api/expenses';
+    const method = editingExpenseId ? 'PUT' : 'POST';
+    await api(endpoint, method, {
       date: fd.get('date'),
       party: fd.get('party'),
       description: fd.get('description') || undefined,
       amount: fd.get('amount')
     });
     expenseForm.reset();
+    editingExpenseId = null;
+    const submitBtn = expenseForm.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = 'Add Expense';
     setDefaultDates();
     await refresh();
-    showToast('Expense added');
+    showToast(method === 'PUT' ? 'Expense updated' : 'Expense added');
   } catch (err) {
     showToast(err.message, 'error');
   }
