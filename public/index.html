@@ -246,11 +246,11 @@
             </select>
             <input name="truckNumber" placeholder="Truck Number" required />
             <input name="driverName" placeholder="Driver Name" />
-            <input name="rawMaterial" list="rawMaterialOptions" placeholder="Raw Material (e.g. Pellets)" required />
-            <datalist id="rawMaterialOptions">
-              <option value="Pellets"></option>
-              <option value="Briquettes"></option>
-            </datalist>
+            <select name="rawMaterial" required>
+              <option value="">Select Material</option>
+              <option value="Pellet">Pellet</option>
+              <option value="Briquettes">Briquettes</option>
+            </select>
             <input name="client" placeholder="Supplied To (Client Name)" />
             <input name="quantity" type="number" min="0.01" step="0.01" placeholder="Quantity (quintals)" required />
             <input name="pricePerQuintal" type="number" min="0" step="0.01" placeholder="Price per Quintal"

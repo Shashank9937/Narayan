@@ -963,6 +963,12 @@ th.sortable.desc::after {
   font-weight: 700;
 }
 
+.truck-material-select {
+  min-width: 118px;
+  padding: 0.32rem 0.42rem;
+  font-size: 0.8rem;
+}
+
 .tx-badge {
   display: inline-flex;
   align-items: center;

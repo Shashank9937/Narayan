@@ -821,6 +821,22 @@ function partyLabel(party) {
   return (party && PARTY_LABELS[party]) || '-';
 }
 
+function truckMaterialKey(material) {
+  const normalized = String(material || '')
+    .toLowerCase()
+    .trim();
+  if (['pellet', 'pellets'].includes(normalized)) return 'pellet';
+  if (['briquette', 'briquettes'].includes(normalized)) return 'briquettes';
+  return normalized;
+}
+
+function truckMaterialLabel(material) {
+  const key = truckMaterialKey(material);
+  if (key === 'pellet') return 'Pellet';
+  if (key === 'briquettes') return 'Briquettes';
+  return String(material || '').trim() || '-';
+}
+
 function renderTruckRows(rows) {
   const canEdit = hasPermission('trucks:update');
   const canDelete = hasPermission('trucks:delete');
@@ -834,8 +850,8 @@ function renderTruckRows(rows) {
   rows.forEach(row => {
     const qty = Number(row.quantity) || 0;
     const amount = Number(row.totalAmount) || 0;
-    const material = (row.rawMaterial || '').toLowerCase();
-    if (material === 'pellets') {
+    const material = truckMaterialKey(row.rawMaterial);
+    if (material === 'pellet') {
       pelletTotal += qty;
       pelletRevenue += amount;
     } else if (material === 'briquettes') {
@@ -866,14 +882,26 @@ function renderTruckRows(rows) {
 
   const renderTruckTable = (tbody, partyRows) => {
     tbody.innerHTML = partyRows
-      .map(
-        (t, idx) =>
-          `<tr>
+      .map((t, idx) => {
+        const materialKey = truckMaterialKey(t.rawMaterial);
+        const materialLabel = truckMaterialLabel(t.rawMaterial);
+        const customOption =
+          materialKey && !['pellet', 'briquettes'].includes(materialKey)
+            ? `<option value="${escapeHtml(materialLabel)}" selected>${escapeHtml(materialLabel)}</option>`
+            : '';
+        const materialCell = canEdit
+          ? `<select class="truck-material-select" data-id="${t.id}">
+              <option value="Pellet" ${materialKey === 'pellet' ? 'selected' : ''}>Pellet</option>
+              <option value="Briquettes" ${materialKey === 'briquettes' ? 'selected' : ''}>Briquettes</option>
+              ${customOption}
+            </select>`
+          : escapeHtml(materialLabel);
+        return `<tr>
           <td>${idx + 1}</td>
           <td>${t.date}</td>
           <td>${t.truckNumber}</td>
           <td>${t.driverName || '-'}</td>
-          <td>${t.rawMaterial}</td>
+          <td>${materialCell}</td>
           <td>${t.quantity}</td>
           <td>${t.pricePerQuintal != null ? money(t.pricePerQuintal) : '-'}</td>
           <td>${t.totalAmount != null ? money(t.totalAmount) : '-'}</td>
@@ -886,8 +914,8 @@ function renderTruckRows(rows) {
               ${!canEdit && !canDelete ? '-' : ''}
             </div>
           </td>
-        </tr>`
-      )
+        </tr>`;
+      })
       .join('');
   };
 
@@ -897,6 +925,44 @@ function renderTruckRows(rows) {
   renderTruckTable(truckMaaVaishnoTbody, maaVaishnoRows);
 
   if (canEdit) {
+    document.querySelectorAll('.truck-material-select').forEach((select) => {
+      select.addEventListener('change', async () => {
+        const id = select.getAttribute('data-id');
+        const current = trucksCache.find((t) => String(t.id) === String(id));
+        if (!current) {
+          showToast('Truck entry not found for material update', 'error');
+          await refresh();
+          return;
+        }
+        const nextMaterial = String(select.value || '').trim();
+        if (!nextMaterial) return;
+        const currentMaterial = truckMaterialLabel(current.rawMaterial);
+        if (nextMaterial === currentMaterial) return;
+        select.disabled = true;
+        try {
+          await api(`/api/trucks/${id}`, 'PUT', {
+            date: current.date,
+            truckNumber: current.truckNumber,
+            driverName: current.driverName || '',
+            rawMaterial: nextMaterial,
+            quantity: current.quantity,
+            pricePerQuintal: current.pricePerQuintal != null ? current.pricePerQuintal : undefined,
+            party: current.party || 'narayan',
+            origin: current.origin || '',
+            destination: current.destination || '',
+            notes: current.notes || ''
+          });
+          await refresh();
+          showToast('Truck material updated');
+        } catch (err) {
+          select.value = currentMaterial === '-' ? 'Pellet' : currentMaterial;
+          showToast(err.message, 'error');
+        } finally {
+          select.disabled = false;
+        }
+      });
+    });
+
     document.querySelectorAll('.truck-edit').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-id');
@@ -910,7 +976,7 @@ function renderTruckRows(rows) {
         truckForm.querySelector('select[name="party"]').value = current.party || 'narayan';
         truckForm.querySelector('input[name="truckNumber"]').value = current.truckNumber || '';
         truckForm.querySelector('input[name="driverName"]').value = current.driverName || '';
-        truckForm.querySelector('input[name="rawMaterial"]').value = current.rawMaterial || '';
+        truckForm.querySelector('[name="rawMaterial"]').value = truckMaterialLabel(current.rawMaterial);
         const clientInput = truckForm.querySelector('input[name="client"]');
         if (clientInput) clientInput.value = current.client || '';
         truckForm.querySelector('input[name="quantity"]').value = current.quantity != null ? String(current.quantity) : '';
