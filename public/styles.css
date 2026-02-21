@@ -640,6 +640,21 @@ th.sortable.desc::after {
   margin-bottom: 1rem;
 }
 
+.salary-ledger-form .field-group {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.salary-ledger-form .field-group label {
+  font-size: 0.76rem;
+  color: var(--text-light);
+  font-weight: 700;
+}
+
+.salary-ledger-form .full-span {
+  grid-column: 1 / -1;
+}
+
 .salary-ledger-tools,
 .salary-ledger-period-grid,
 .salary-ledger-live-summary {

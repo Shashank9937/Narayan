@@ -194,43 +194,47 @@
 
       <section class="panel" id="salaryLedgerPanel">
         <div class="row wrap">
-          <h2>Salary Ledger (Historical + Current)</h2>
+          <h2>Salary Ledger Workspace</h2>
           <input id="salaryLedgerSearchInput" type="text" placeholder="Search employee/role in ledger" />
         </div>
-        <p class="hint">Editable Section: 15 Jul 2025 to 31 Jan 2026 | Auto Section: from 1 Feb 2026</p>
+        <p class="hint">Choose employee, set monthly salary and duration, total salary is auto-calculated. Enter paid amount and remaining is auto-tracked.</p>
         <form id="salaryLedgerForm" class="salary-ledger-form">
-          <select name="employeeId" id="salaryLedgerEmployee" required></select>
-          <div class="row wrap salary-ledger-tools">
-            <button id="salaryLedgerAutoFillBtn" type="button" class="small">Auto Fill by Monthly Salary</button>
-            <button id="salaryLedgerResetBtn" type="button" class="small warn">Clear Form</button>
+          <div class="field-group">
+            <label for="salaryLedgerEmployee">Employee</label>
+            <select name="employeeId" id="salaryLedgerEmployee" required></select>
           </div>
-          <div class="salary-ledger-period-grid">
-            <section class="summary-box salary-ledger-period-card">
-              <h3>Section: 15 Jul 2025 to 31 Jan 2026 (Editable)</h3>
-              <input name="period1ToGive" type="number" min="0" step="0.01"
-                placeholder="Total To Give (15 Jul 2025 to 31 Jan 2026)" required />
-              <input name="period1Paid" type="number" min="0" step="0.01" placeholder="Total Paid (15 Jul 2025 to 31 Jan 2026)"
-                required />
-              <div class="hint">Remaining (15 Jul 2025 to 31 Jan 2026): <strong id="salaryLedgerPeriod1RemainingPreview">₹0</strong>
-              </div>
-            </section>
-            <section class="summary-box salary-ledger-period-card">
-              <h3>Auto Section: From 1 Feb 2026</h3>
-              <div class="hint">Current Month Salary: <strong id="salaryLedgerCurrentMonthSalaryPreview">₹0</strong></div>
-              <div class="hint">Current Month Advance: <strong id="salaryLedgerCurrentMonthAdvancePreview">₹0</strong></div>
-              <div class="hint">Total To Give (from 1 Feb 2026): <strong id="salaryLedgerPeriod2ToGivePreview">₹0</strong></div>
-              <div class="hint">Total Paid by Advances (from 1 Feb 2026): <strong id="salaryLedgerPeriod2PaidPreview">₹0</strong></div>
-              <div class="hint">Remaining (from 1 Feb 2026): <strong id="salaryLedgerPeriod2RemainingPreview">₹0</strong>
-              </div>
-            </section>
+          <div class="field-group">
+            <label for="salaryLedgerMonthlySalaryApplied">Monthly Salary Used</label>
+            <input id="salaryLedgerMonthlySalaryApplied" name="monthlySalaryApplied" type="number" min="0" step="0.01" placeholder="Monthly Salary" required />
+          </div>
+          <div class="field-group">
+            <label for="salaryLedgerDurationStart">Duration Start</label>
+            <input id="salaryLedgerDurationStart" name="durationStart" type="date" required />
+          </div>
+          <div class="field-group">
+            <label for="salaryLedgerDurationEnd">Duration End</label>
+            <input id="salaryLedgerDurationEnd" name="durationEnd" type="date" required />
+          </div>
+          <div class="field-group">
+            <label for="salaryLedgerDurationDays">Duration (Days)</label>
+            <input id="salaryLedgerDurationDays" name="durationDays" type="number" min="1" step="1" readonly />
+          </div>
+          <div class="field-group">
+            <label for="salaryLedgerTotalPaidInput">Total Paid</label>
+            <input id="salaryLedgerTotalPaidInput" name="totalPaid" type="number" min="0" step="0.01" placeholder="Amount Given" required />
+          </div>
+          <div class="row wrap salary-ledger-tools">
+            <button id="salaryLedgerAutoFillBtn" type="button" class="small">Use Employee Monthly Salary</button>
+            <button id="salaryLedgerCurrentMonthBtn" type="button" class="small">Use Current Month Duration</button>
+            <button id="salaryLedgerResetBtn" type="button" class="small warn">Clear Form</button>
           </div>
           <div class="summary-stat-grid salary-ledger-live-summary">
             <div class="summary-stat">
-              <div class="label">Computed Total To Give</div>
+              <div class="label">Calculated Total Salary</div>
               <div id="salaryLedgerComputedToGive" class="value">₹0</div>
             </div>
             <div class="summary-stat">
-              <div class="label">Computed Total Paid</div>
+              <div class="label">Total Paid</div>
               <div id="salaryLedgerComputedPaid" class="value">₹0</div>
             </div>
             <div class="summary-stat">
@@ -238,45 +242,21 @@
               <div id="salaryLedgerRemainingPreview" class="value">₹0</div>
             </div>
           </div>
-          <input name="note" placeholder="Note (optional)" />
+          <input name="note" placeholder="Note (optional)" class="full-span" />
           <button type="submit">Save Salary Ledger</button>
         </form>
         <div class="summary-stat-grid">
           <div class="summary-stat">
-            <div class="label">Sum Total Paid (All Employees)</div>
+            <div class="label">Total Paid (All Employees)</div>
             <div id="salaryLedgerTotalPaidSum" class="value">₹0</div>
           </div>
           <div class="summary-stat">
-            <div class="label">Sum Total To Give (All Employees)</div>
+            <div class="label">Total Salary (All Employees)</div>
             <div id="salaryLedgerTotalToGiveSum" class="value">₹0</div>
           </div>
           <div class="summary-stat">
-            <div class="label">Sum Remaining (All Employees)</div>
+            <div class="label">Total Remaining (All Employees)</div>
             <div id="salaryLedgerTotalRemainingSum" class="value">₹0</div>
-          </div>
-          <div class="summary-stat">
-            <div class="label">15 Jul 2025 to 31 Jan 2026 Paid Sum</div>
-            <div id="salaryLedgerPeriod1PaidSum" class="value">₹0</div>
-          </div>
-          <div class="summary-stat">
-            <div class="label">15 Jul 2025 to 31 Jan 2026 To Give Sum</div>
-            <div id="salaryLedgerPeriod1ToGiveSum" class="value">₹0</div>
-          </div>
-          <div class="summary-stat">
-            <div class="label">From 1 Feb 2026 Paid (Advances) Sum</div>
-            <div id="salaryLedgerPeriod2PaidSum" class="value">₹0</div>
-          </div>
-          <div class="summary-stat">
-            <div class="label">From 1 Feb 2026 To Give Sum</div>
-            <div id="salaryLedgerPeriod2ToGiveSum" class="value">₹0</div>
-          </div>
-          <div class="summary-stat">
-            <div class="label">Current Month Salary Sum</div>
-            <div id="salaryLedgerCurrentMonthSalarySum" class="value">₹0</div>
-          </div>
-          <div class="summary-stat">
-            <div class="label">Current Month Advance Sum</div>
-            <div id="salaryLedgerCurrentMonthAdvanceSum" class="value">₹0</div>
           </div>
         </div>
         <div class="table-wrap">
@@ -285,21 +265,15 @@
                 <tr>
                   <th>Employee</th>
                   <th>Role</th>
-                  <th>Date</th>
-                  <th>15 Jul 2025 to 31 Jan 2026 To Give</th>
-                  <th>15 Jul 2025 to 31 Jan 2026 Paid</th>
-                  <th>15 Jul 2025 to 31 Jan 2026 Remaining</th>
-                  <th>Current Month Salary</th>
-                  <th>Current Month Advance</th>
-                  <th>From 1 Feb 2026 To Give</th>
-                  <th>From 1 Feb 2026 Paid</th>
-                  <th>From 1 Feb 2026 Remaining</th>
+                  <th>Updated</th>
+                  <th>Monthly Salary Used</th>
+                  <th>Duration</th>
+                  <th>Days</th>
                   <th>Total Salary</th>
                   <th>Total Paid</th>
-                  <th>Total To Give</th>
                   <th>Remaining</th>
-                <th>Note</th>
-                <th>Actions</th>
+                  <th>Note</th>
+                  <th>Actions</th>
               </tr>
             </thead>
             <tbody></tbody>
