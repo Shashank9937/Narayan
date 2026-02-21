@@ -20,6 +20,7 @@ const supplierDetailName = document.getElementById('supplierDetailName');
 const backToSuppliersBtn = document.getElementById('backToSuppliersBtn');
 const supTotalMaterialEl = document.getElementById('supTotalMaterial');
 const supTotalPaidEl = document.getElementById('supTotalPaid');
+const supTotalToGiveEl = document.getElementById('supTotalToGive');
 const supPendingBalanceEl = document.getElementById('supPendingBalance');
 const supplierForm = document.getElementById('supplierForm');
 const txSupplierIdInput = document.getElementById('txSupplierId');
@@ -27,6 +28,7 @@ const txTypeSelect = document.getElementById('txType');
 const txTruckFields = document.getElementById('txTruckFields');
 const supplierTransactionForm = document.getElementById('supplierTransactionForm');
 const txAmountInput = supplierTransactionForm?.querySelector('input[name="amount"]');
+const txTrolleyInput = supplierTransactionForm?.querySelector('input[name="trolleyCount"]');
 const txQuantityInput = supplierTransactionForm?.querySelector('input[name="quantity"]');
 const txRateInput = supplierTransactionForm?.querySelector('input[name="rate"]');
 const txPaidNowInput = document.getElementById('txPaidNow');
@@ -2337,10 +2339,25 @@ function setSupplierTransactionTypeUI() {
     txPaidNowInput.disabled = !isTruck;
     if (!isTruck) txPaidNowInput.value = '0';
   }
+  if (txTrolleyInput) {
+    txTrolleyInput.disabled = !isTruck;
+    if (!isTruck) txTrolleyInput.value = '';
+  }
+}
+
+function syncSupplierQuantityFromTrolleys() {
+  if (!txTypeSelect || txTypeSelect.value !== 'truck' || !txQuantityInput) return;
+  const qty = Number(txQuantityInput.value || 0);
+  if (Number.isFinite(qty) && qty > 0) return;
+  const trolleys = Number(txTrolleyInput?.value || 0);
+  if (Number.isFinite(trolleys) && trolleys > 0) {
+    txQuantityInput.value = String(trolleys);
+  }
 }
 
 function autoComputeSupplierAmount() {
   if (!txAmountInput || !txTypeSelect || txTypeSelect.value !== 'truck') return;
+  syncSupplierQuantityFromTrolleys();
   const qty = Number(txQuantityInput?.value || 0);
   const rate = Number(txRateInput?.value || 0);
   if (Number.isFinite(qty) && qty > 0 && Number.isFinite(rate) && rate >= 0) {
@@ -2354,6 +2371,7 @@ function renderSuppliers(rows) {
   supplierGrid.innerHTML = rows
     .map((s) => {
       const initials = getInitials(s.name);
+      const totalToGive = Number(s.totalToGive != null ? s.totalToGive : Number(s.openingBalance || 0) + Number(s.totalMaterialAmount || 0));
       return `
         <div class="employee-card supplier-card" onclick="viewSupplierDetail('${s.id}')">
           <div class="employee-header">
@@ -2379,6 +2397,10 @@ function renderSuppliers(rows) {
             <div class="stat-item">
               <span class="stat-label">Total Paid</span>
               <span class="stat-value money">${money(s.totalPaid || 0)}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Total To Give</span>
+              <span class="stat-value money">${money(totalToGive)}</span>
             </div>
             <div class="stat-item">
               <span class="stat-label">Pending Balance</span>
@@ -2416,7 +2438,8 @@ function supplierTxDetails(tx) {
     const qtyText = tx.quantity != null ? tx.quantity : '-';
     const rateText = tx.rate != null ? money(tx.rate) : '-';
     const paidNowText = tx.paidNow != null ? money(tx.paidNow || 0) : money(0);
-    return `Truck: ${tx.truckNumber || '-'} | Challan: ${tx.challanNo || '-'} | Mat: ${tx.material || '-'} | Qty: ${qtyText} | Rate: ${rateText} | Paid Now: ${paidNowText}`;
+    const trolleyText = tx.trolleyCount != null ? tx.trolleyCount : '-';
+    return `Truck: ${tx.truckNumber || '-'} | Challan: ${tx.challanNo || '-'} | Mat: ${tx.material || '-'} | Trolleys: ${trolleyText} | Qty: ${qtyText} | Rate: ${rateText} | Paid Now: ${paidNowText}`;
   }
   const mode = tx.paymentMode || '-';
   const ref = tx.paymentRef || '-';
@@ -2436,6 +2459,8 @@ function renderSupplierTransactions(txs, supplier) {
   if (supplier) {
     if (supTotalMaterialEl) supTotalMaterialEl.textContent = money(supplier.totalMaterialAmount || 0);
     if (supTotalPaidEl) supTotalPaidEl.textContent = money(supplier.totalPaid || 0);
+    const totalToGive = Number(supplier.totalToGive != null ? supplier.totalToGive : Number(supplier.openingBalance || 0) + Number(supplier.totalMaterialAmount || 0));
+    if (supTotalToGiveEl) supTotalToGiveEl.textContent = money(totalToGive);
     if (supPendingBalanceEl) supPendingBalanceEl.textContent = money(supplier.balance || 0);
   }
   if (!supplierTxTbody) return;
@@ -2445,12 +2470,19 @@ function renderSupplierTransactions(txs, supplier) {
       const isTruck = tx.type === 'truck';
       const badgeClass = isTruck ? 'truck' : 'payment';
       const amountClass = isTruck ? 'danger' : 'success';
+      const entryPaid = Number(tx.entryPaid != null ? tx.entryPaid : (isTruck ? tx.paidNow || 0 : tx.amount || 0));
+      const entryRemaining = Number(
+        tx.entryRemaining != null ? tx.entryRemaining : isTruck ? Math.max(0, Number(tx.amount || 0) - Number(tx.paidNow || 0)) : 0
+      );
+      const entryRemainingClass = entryRemaining > 0 ? 'tx-amount-danger' : 'tx-amount-success';
       return `
         <tr>
           <td>${escapeHtml(tx.date || '-')}</td>
           <td><span class="tx-badge ${badgeClass}">${escapeHtml(tx.type || '-')}</span></td>
           <td>${escapeHtml(supplierTxDetails(tx))}</td>
           <td class="money tx-amount-${amountClass}">${money(tx.amount || 0)}</td>
+          <td class="money tx-amount-success">${money(entryPaid)}</td>
+          <td class="money ${entryRemainingClass}">${money(entryRemaining)}</td>
           <td class="money">${money(tx.balanceAfter || 0)}</td>
           <td>
             <button class="small" onclick="openSupplierReceipt('${tx.id}')">Print PDF</button>
@@ -2505,12 +2537,15 @@ backToSuppliersBtn?.addEventListener('click', () => {
 txTypeSelect?.addEventListener('change', () => {
   setSupplierTransactionTypeUI();
 });
+txTrolleyInput?.addEventListener('input', autoComputeSupplierAmount);
 txQuantityInput?.addEventListener('input', autoComputeSupplierAmount);
 txRateInput?.addEventListener('input', autoComputeSupplierAmount);
 
 supplierForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(supplierForm);
+  const openingBalanceRaw = Number(fd.get('openingBalance'));
+  const openingBalance = Number.isFinite(openingBalanceRaw) ? openingBalanceRaw : 0;
   try {
     await api('/api/suppliers', 'POST', {
       name: fd.get('name'),
@@ -2521,7 +2556,7 @@ supplierForm?.addEventListener('submit', async (e) => {
       address: fd.get('address'),
       materialType: fd.get('materialType'),
       paymentTerms: fd.get('paymentTerms'),
-      openingBalance: fd.get('openingBalance') || 0
+      openingBalance
     });
     supplierForm.reset();
     const openingInput = supplierForm.querySelector('input[name="openingBalance"]');
@@ -2540,17 +2575,31 @@ supplierTransactionForm?.addEventListener('submit', async (e) => {
     return;
   }
   const fd = new FormData(supplierTransactionForm);
+  const toOptionalNumber = (value) => {
+    if (value == null) return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const num = Number(text);
+    return Number.isFinite(num) ? num : null;
+  };
+  const amountNumber = toOptionalNumber(fd.get('amount'));
+  const amount = amountNumber == null ? fd.get('amount') : amountNumber;
+  const paidNow = toOptionalNumber(fd.get('paidNow')) ?? 0;
+  const quantity = toOptionalNumber(fd.get('quantity'));
+  const rate = toOptionalNumber(fd.get('rate'));
+  const trolleyCount = toOptionalNumber(fd.get('trolleyCount'));
   try {
     const result = await api(`/api/suppliers/${activeSupplierId}/transactions`, 'POST', {
       date: fd.get('date'),
       type: fd.get('type'),
-      amount: fd.get('amount'),
-      paidNow: fd.get('paidNow') || 0,
+      amount,
+      paidNow,
       truckNumber: fd.get('truckNumber'),
       challanNo: fd.get('challanNo'),
       material: fd.get('material'),
-      quantity: fd.get('quantity'),
-      rate: fd.get('rate'),
+      quantity,
+      rate,
+      trolleyCount,
       paymentMode: fd.get('paymentMode'),
       paymentRef: fd.get('paymentRef'),
       note: fd.get('note'),

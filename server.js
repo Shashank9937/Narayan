@@ -218,9 +218,17 @@ function normalizeSupplier(data) {
 function normalizeSupplierTransaction(data, supplierId) {
   const type = String(data.type || '').trim().toLowerCase();
   const amount = toSafeNumber(data.amount, 0);
+  const trolleyCountRaw = data.trolleyCount == null || data.trolleyCount === '' ? null : toSafeNumber(data.trolleyCount, NaN);
   const quantity = data.quantity == null || data.quantity === '' ? null : toSafeNumber(data.quantity, NaN);
   const rate = data.rate == null || data.rate === '' ? null : toSafeNumber(data.rate, NaN);
   const paidNow = data.paidNow == null || data.paidNow === '' ? 0 : toSafeNumber(data.paidNow, NaN);
+  const trolleyCount = Number.isFinite(trolleyCountRaw) ? trolleyCountRaw : null;
+  const normalizedQuantity =
+    Number.isFinite(quantity) && quantity > 0
+      ? quantity
+      : Number.isFinite(trolleyCount) && Number.isInteger(trolleyCount) && trolleyCount > 0
+        ? trolleyCount
+        : null;
   return {
     supplierId,
     date: String(data.date || '').trim(),
@@ -229,7 +237,8 @@ function normalizeSupplierTransaction(data, supplierId) {
     truckNumber: String(data.truckNumber || '').trim(),
     challanNo: String(data.challanNo || '').trim(),
     material: String(data.material || '').trim(),
-    quantity: Number.isFinite(quantity) ? quantity : null,
+    trolleyCount,
+    quantity: Number.isFinite(normalizedQuantity) ? normalizedQuantity : null,
     rate: Number.isFinite(rate) ? rate : null,
     paidNow: Number.isFinite(paidNow) ? paidNow : NaN,
     paymentMode: String(data.paymentMode || '').trim(),
@@ -258,10 +267,15 @@ function enrichSupplierTransactionsWithRunningBalance(supplier, rows) {
   const chronological = sortSupplierTransactionsChronological(rows);
   const withBalanceAsc = chronological.map((row) => {
     const amount = toSafeNumber(row.amount, 0);
+    const paidNow = toSafeNumber(row.paidNow, 0);
+    const entryPaid = row.type === 'payment' ? amount : paidNow;
+    const entryRemaining = row.type === 'truck' ? Math.max(0, amount - paidNow) : 0;
     if (row.type === 'truck') runningBalance += amount;
     if (row.type === 'payment') runningBalance -= amount;
     return {
       ...row,
+      entryPaid,
+      entryRemaining,
       balanceAfter: runningBalance
     };
   });
@@ -1257,7 +1271,8 @@ function jsonStore() {
           const totalPaid = txs
             .filter((t) => t.type === 'payment')
             .reduce((sum, t) => sum + toSafeNumber(t.amount, 0), 0);
-          const balance = openingBalance + totalMaterialAmount - totalPaid;
+          const totalToGive = openingBalance + totalMaterialAmount;
+          const balance = totalToGive - totalPaid;
           return {
             ...supplier,
             phone: String(supplier.phone || supplier.contact || '').trim(),
@@ -1273,6 +1288,7 @@ function jsonStore() {
             totalMaterialAmount,
             totalMaterialQuantity,
             totalPaid,
+            totalToGive,
             balance
           };
         })
@@ -1332,6 +1348,7 @@ function jsonStore() {
         .map((t) => ({
           ...t,
           amount: toSafeNumber(t.amount, 0),
+          trolleyCount: t.trolleyCount == null || t.trolleyCount === '' ? null : Math.max(0, Math.trunc(toSafeNumber(t.trolleyCount, 0))),
           quantity: t.quantity == null || t.quantity === '' ? null : toSafeNumber(t.quantity, 0),
           rate: t.rate == null || t.rate === '' ? null : toSafeNumber(t.rate, 0),
           paidNow: t.paidNow == null || t.paidNow === '' ? 0 : toSafeNumber(t.paidNow, 0),
@@ -1356,6 +1373,7 @@ function jsonStore() {
       return {
         ...tx,
         amount: toSafeNumber(tx.amount, 0),
+        trolleyCount: tx.trolleyCount == null || tx.trolleyCount === '' ? null : Math.max(0, Math.trunc(toSafeNumber(tx.trolleyCount, 0))),
         quantity: tx.quantity == null || tx.quantity === '' ? null : toSafeNumber(tx.quantity, 0),
         rate: tx.rate == null || tx.rate === '' ? null : toSafeNumber(tx.rate, 0),
         paidNow: tx.paidNow == null || tx.paidNow === '' ? 0 : toSafeNumber(tx.paidNow, 0),
@@ -1379,6 +1397,7 @@ function jsonStore() {
         truckNumber: tx.truckNumber || '',
         challanNo: tx.challanNo || '',
         material: tx.material || '',
+        trolleyCount: tx.trolleyCount == null || tx.trolleyCount <= 0 ? null : tx.trolleyCount,
         quantity: tx.quantity,
         rate: tx.rate,
         paidNow: tx.paidNow > 0 ? tx.paidNow : 0,
@@ -1405,6 +1424,7 @@ function jsonStore() {
       tx.truckNumber = normalized.truckNumber || '';
       tx.challanNo = normalized.challanNo || '';
       tx.material = normalized.material || '';
+      tx.trolleyCount = normalized.trolleyCount == null || normalized.trolleyCount <= 0 ? null : normalized.trolleyCount;
       tx.quantity = normalized.quantity;
       tx.rate = normalized.rate;
       tx.paidNow = normalized.paidNow > 0 ? normalized.paidNow : 0;
@@ -1738,6 +1758,7 @@ function postgresStore() {
         CREATE TABLE IF NOT EXISTS suppliers (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
+          contact TEXT,
           phone TEXT,
           alternate_phone TEXT,
           email TEXT,
@@ -1750,6 +1771,7 @@ function postgresStore() {
           updated_at TIMESTAMPTZ
         );
         ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS phone TEXT;
+        ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS contact TEXT;
         ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS alternate_phone TEXT;
         ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS email TEXT;
         ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS gst_no TEXT;
@@ -1768,6 +1790,7 @@ function postgresStore() {
           truck_number TEXT,
           challan_no TEXT,
           material TEXT,
+          trolley_count INTEGER,
           quantity NUMERIC(14,3),
           rate NUMERIC(14,2),
           paid_now NUMERIC(14,2),
@@ -1780,12 +1803,20 @@ function postgresStore() {
           updated_at TIMESTAMPTZ
         );
         ALTER TABLE supplier_transactions ADD COLUMN IF NOT EXISTS challan_no TEXT;
+        ALTER TABLE supplier_transactions ADD COLUMN IF NOT EXISTS trolley_count INTEGER;
         ALTER TABLE supplier_transactions ADD COLUMN IF NOT EXISTS paid_now NUMERIC(14,2);
         ALTER TABLE supplier_transactions ADD COLUMN IF NOT EXISTS payment_mode TEXT;
         ALTER TABLE supplier_transactions ADD COLUMN IF NOT EXISTS payment_ref TEXT;
         ALTER TABLE supplier_transactions ADD COLUMN IF NOT EXISTS linked_transaction_id TEXT;
         ALTER TABLE supplier_transactions ADD COLUMN IF NOT EXISTS is_auto_payment BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE supplier_transactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+        UPDATE suppliers
+        SET contact = COALESCE(NULLIF(contact, ''), NULLIF(phone, ''), 'supplier-' || id)
+        WHERE contact IS NULL OR contact = '';
+        UPDATE suppliers
+        SET phone = COALESCE(NULLIF(phone, ''), contact)
+        WHERE (phone IS NULL OR phone = '') AND contact IS NOT NULL AND contact <> '' AND contact NOT LIKE 'supplier-%';
 
         CREATE TABLE IF NOT EXISTS billing_companies (
           id TEXT PRIMARY KEY,
@@ -2697,6 +2728,7 @@ function postgresStore() {
         `SELECT
            s.id,
            s.name,
+           s.contact,
            s.phone,
            s.alternate_phone,
            s.email,
@@ -2714,7 +2746,7 @@ function postgresStore() {
          FROM suppliers s
          LEFT JOIN supplier_transactions t ON t.supplier_id = s.id
          GROUP BY
-           s.id, s.name, s.phone, s.alternate_phone, s.email, s.gst_no, s.address,
+           s.id, s.name, s.contact, s.phone, s.alternate_phone, s.email, s.gst_no, s.address,
            s.material_type, s.payment_terms, s.opening_balance, s.created_at, s.updated_at
          ORDER BY s.name ASC`
       );
@@ -2722,11 +2754,14 @@ function postgresStore() {
         const openingBalance = toSafeNumber(r.opening_balance, 0);
         const totalMaterialAmount = toSafeNumber(r.total_material_amount, 0);
         const totalPaid = toSafeNumber(r.total_paid, 0);
+        const contactFallback = String(r.contact || '');
+        const phone = r.phone || (contactFallback.startsWith('supplier-') ? '' : contactFallback);
+        const totalToGive = openingBalance + totalMaterialAmount;
         return {
           id: r.id,
           name: r.name,
-          phone: r.phone || '',
-          contact: r.phone || '',
+          phone,
+          contact: phone,
           alternatePhone: r.alternate_phone || '',
           email: r.email || '',
           gstNo: normalizeGstNo(r.gst_no || ''),
@@ -2738,7 +2773,8 @@ function postgresStore() {
           totalMaterialAmount,
           totalMaterialQuantity: toSafeNumber(r.total_material_quantity, 0),
           totalPaid,
-          balance: openingBalance + totalMaterialAmount - totalPaid,
+          totalToGive,
+          balance: totalToGive - totalPaid,
           createdAt: r.created_at ? new Date(r.created_at).toISOString() : '',
           updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : ''
         };
@@ -2749,6 +2785,7 @@ function postgresStore() {
         `SELECT
            s.id,
            s.name,
+           s.contact,
            s.phone,
            s.alternate_phone,
            s.email,
@@ -2767,7 +2804,7 @@ function postgresStore() {
          LEFT JOIN supplier_transactions t ON t.supplier_id = s.id
          WHERE s.id = $1
          GROUP BY
-           s.id, s.name, s.phone, s.alternate_phone, s.email, s.gst_no, s.address,
+           s.id, s.name, s.contact, s.phone, s.alternate_phone, s.email, s.gst_no, s.address,
            s.material_type, s.payment_terms, s.opening_balance, s.created_at, s.updated_at`,
         [id]
       );
@@ -2776,11 +2813,14 @@ function postgresStore() {
       const openingBalance = toSafeNumber(r.opening_balance, 0);
       const totalMaterialAmount = toSafeNumber(r.total_material_amount, 0);
       const totalPaid = toSafeNumber(r.total_paid, 0);
+      const contactFallback = String(r.contact || '');
+      const phone = r.phone || (contactFallback.startsWith('supplier-') ? '' : contactFallback);
+      const totalToGive = openingBalance + totalMaterialAmount;
       return {
         id: r.id,
         name: r.name,
-        phone: r.phone || '',
-        contact: r.phone || '',
+        phone,
+        contact: phone,
         alternatePhone: r.alternate_phone || '',
         email: r.email || '',
         gstNo: normalizeGstNo(r.gst_no || ''),
@@ -2792,7 +2832,8 @@ function postgresStore() {
         totalMaterialAmount,
         totalMaterialQuantity: toSafeNumber(r.total_material_quantity, 0),
         totalPaid,
-        balance: openingBalance + totalMaterialAmount - totalPaid,
+        totalToGive,
+        balance: totalToGive - totalPaid,
         createdAt: r.created_at ? new Date(r.created_at).toISOString() : '',
         updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : ''
       };
@@ -2803,17 +2844,20 @@ function postgresStore() {
       const row = {
         id: uid('sup'),
         ...supplier,
+        contact: '',
         createdAt: now,
         updatedAt: now
       };
+      row.contact = supplier.phone || `supplier-${row.id}`;
       await pool.query(
         `INSERT INTO suppliers
-          (id, name, phone, alternate_phone, email, gst_no, address, material_type, payment_terms, opening_balance, created_at, updated_at)
+          (id, name, contact, phone, alternate_phone, email, gst_no, address, material_type, payment_terms, opening_balance, created_at, updated_at)
          VALUES
-          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [
           row.id,
           row.name,
+          row.contact,
           row.phone || null,
           row.alternatePhone || null,
           row.email || null,
@@ -2833,20 +2877,22 @@ function postgresStore() {
       const res = await pool.query(
         `UPDATE suppliers
          SET name = $2,
-             phone = $3,
-             alternate_phone = $4,
-             email = $5,
-             gst_no = $6,
-             address = $7,
-             material_type = $8,
-             payment_terms = $9,
-             opening_balance = $10,
-             updated_at = $11
+             contact = $3,
+             phone = $4,
+             alternate_phone = $5,
+             email = $6,
+             gst_no = $7,
+             address = $8,
+             material_type = $9,
+             payment_terms = $10,
+             opening_balance = $11,
+             updated_at = $12
          WHERE id = $1
          RETURNING id`,
         [
           id,
           supplier.name,
+          supplier.phone || `supplier-${id}`,
           supplier.phone || null,
           supplier.alternatePhone || null,
           supplier.email || null,
@@ -2882,6 +2928,7 @@ function postgresStore() {
         truckNumber: r.truck_number || '',
         challanNo: r.challan_no || '',
         material: r.material || '',
+        trolleyCount: r.trolley_count == null ? null : Math.max(0, Math.trunc(toSafeNumber(r.trolley_count, 0))),
         quantity: r.quantity == null ? null : toSafeNumber(r.quantity, 0),
         rate: r.rate == null ? null : toSafeNumber(r.rate, 0),
         paidNow: r.paid_now == null ? 0 : toSafeNumber(r.paid_now, 0),
@@ -2907,6 +2954,7 @@ function postgresStore() {
         truckNumber: r.truck_number || '',
         challanNo: r.challan_no || '',
         material: r.material || '',
+        trolleyCount: r.trolley_count == null ? null : Math.max(0, Math.trunc(toSafeNumber(r.trolley_count, 0))),
         quantity: r.quantity == null ? null : toSafeNumber(r.quantity, 0),
         rate: r.rate == null ? null : toSafeNumber(r.rate, 0),
         paidNow: r.paid_now == null ? 0 : toSafeNumber(r.paid_now, 0),
@@ -2931,6 +2979,7 @@ function postgresStore() {
         truckNumber: tx.truckNumber || '',
         challanNo: tx.challanNo || '',
         material: tx.material || '',
+        trolleyCount: tx.trolleyCount == null || tx.trolleyCount <= 0 ? null : tx.trolleyCount,
         quantity: tx.quantity,
         rate: tx.rate,
         paidNow: tx.paidNow > 0 ? tx.paidNow : 0,
@@ -2944,9 +2993,9 @@ function postgresStore() {
       };
       await pool.query(
         `INSERT INTO supplier_transactions
-          (id, supplier_id, date, type, amount, truck_number, challan_no, material, quantity, rate, paid_now, payment_mode, payment_ref, note, linked_transaction_id, is_auto_payment, created_at, updated_at)
+          (id, supplier_id, date, type, amount, truck_number, challan_no, material, trolley_count, quantity, rate, paid_now, payment_mode, payment_ref, note, linked_transaction_id, is_auto_payment, created_at, updated_at)
          VALUES
-          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
         [
           row.id,
           row.supplierId,
@@ -2956,6 +3005,7 @@ function postgresStore() {
           row.truckNumber || null,
           row.challanNo || null,
           row.material || null,
+          row.trolleyCount == null ? null : row.trolleyCount,
           row.quantity == null ? null : row.quantity,
           row.rate == null ? null : row.rate,
           row.paidNow || null,
@@ -2983,15 +3033,16 @@ function postgresStore() {
              truck_number = $5,
              challan_no = $6,
              material = $7,
-             quantity = $8,
-             rate = $9,
-             paid_now = $10,
-             payment_mode = $11,
-             payment_ref = $12,
-             note = $13,
-             linked_transaction_id = $14,
-             is_auto_payment = $15,
-             updated_at = $16
+             trolley_count = $8,
+             quantity = $9,
+             rate = $10,
+             paid_now = $11,
+             payment_mode = $12,
+             payment_ref = $13,
+             note = $14,
+             linked_transaction_id = $15,
+             is_auto_payment = $16,
+             updated_at = $17
          WHERE id = $1
          RETURNING *`,
         [
@@ -3002,6 +3053,7 @@ function postgresStore() {
           tx.truckNumber || null,
           tx.challanNo || null,
           tx.material || null,
+          tx.trolleyCount == null || tx.trolleyCount <= 0 ? null : tx.trolleyCount,
           tx.quantity == null ? null : tx.quantity,
           tx.rate == null ? null : tx.rate,
           tx.paidNow > 0 ? tx.paidNow : null,
@@ -4544,6 +4596,9 @@ app.post('/api/suppliers/:id/transactions', auth, requirePermission('suppliers:c
   }
   if (tx.type === 'truck') {
     if (!tx.material) return res.status(400).json({ error: 'material is required for truck entry' });
+    if (tx.trolleyCount != null && (!Number.isInteger(tx.trolleyCount) || tx.trolleyCount <= 0)) {
+      return res.status(400).json({ error: 'trolleyCount must be a positive whole number for truck entry' });
+    }
     if (!Number.isFinite(tx.quantity) || tx.quantity <= 0) {
       return res.status(400).json({ error: 'quantity must be a positive number for truck entry' });
     }
@@ -4562,6 +4617,7 @@ app.post('/api/suppliers/:id/transactions', auth, requirePermission('suppliers:c
     const primaryTx = await store.createSupplierTransaction({
       ...tx,
       amount,
+      trolleyCount: tx.type === 'truck' ? tx.trolleyCount : null,
       paidNow: tx.type === 'truck' ? tx.paidNow : 0,
       isAutoPayment: false
     });
@@ -4652,6 +4708,9 @@ app.put('/api/supplier-transactions/:id', auth, requirePermission('suppliers:upd
   }
   if (tx.type === 'truck') {
     if (!tx.material) return res.status(400).json({ error: 'material is required for truck entry' });
+    if (tx.trolleyCount != null && (!Number.isInteger(tx.trolleyCount) || tx.trolleyCount <= 0)) {
+      return res.status(400).json({ error: 'trolleyCount must be a positive whole number for truck entry' });
+    }
     if (!Number.isFinite(tx.quantity) || tx.quantity <= 0) {
       return res.status(400).json({ error: 'quantity must be a positive number for truck entry' });
     }
@@ -4670,6 +4729,7 @@ app.put('/api/supplier-transactions/:id', auth, requirePermission('suppliers:upd
     const updated = await store.updateSupplierTransaction(req.params.id, {
       ...tx,
       amount,
+      trolleyCount: tx.type === 'truck' ? tx.trolleyCount : null,
       paidNow: tx.type === 'truck' ? tx.paidNow : 0,
       supplierId: existing.supplierId
     });
@@ -4713,8 +4773,14 @@ app.get('/api/supplier-transactions/:id/receipt.pdf', auth, requirePermission('s
     const totalToGive = openingBalance + totalMaterialAmount;
     const remaining = totalToGive - totalPaid;
     const thisEntryAmount = toSafeNumber(tx.amount, 0);
-    const thisEntryPaid = tx.type === 'payment' ? thisEntryAmount : toSafeNumber(tx.paidNow, 0);
-    const thisEntryRemaining = tx.type === 'truck' ? Math.max(0, thisEntryAmount - thisEntryPaid) : 0;
+    const thisEntryPaid = toSafeNumber(
+      enrichedTx.entryPaid,
+      tx.type === 'payment' ? thisEntryAmount : toSafeNumber(tx.paidNow, 0)
+    );
+    const thisEntryRemaining = toSafeNumber(
+      enrichedTx.entryRemaining,
+      tx.type === 'truck' ? Math.max(0, thisEntryAmount - thisEntryPaid) : 0
+    );
 
     const doc = new PDFDocument({ margin: 40, size: 'A4' });
     const safeSupplierName = String(supplier.name || 'supplier').replace(/[^a-z0-9_-]/gi, '-');
@@ -4750,7 +4816,7 @@ app.get('/api/supplier-transactions/:id/receipt.pdf', auth, requirePermission('s
     doc.text(`Supplier: ${supplier.name || '-'}`, left + width - 260, y + 62, { width: 248, align: 'right' });
     y += 98;
 
-    const topBoxHeight = 138;
+    const topBoxHeight = 170;
     doc.save().roundedRect(left, y, width, topBoxHeight, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
     doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(10).text('Supplier Details', left + 10, y + 10);
     doc.fillColor(colors.text).font('Helvetica').fontSize(10);
@@ -4769,10 +4835,11 @@ app.get('/api/supplier-transactions/:id/receipt.pdf', auth, requirePermission('s
       doc.text(`Truck No: ${tx.truckNumber || '-'}`, left + width / 2 + 8, y + 92);
       doc.text(`Challan No: ${tx.challanNo || '-'}`, left + width / 2 + 8, y + 108);
       doc.text(`Material: ${tx.material || '-'}`, left + width / 2 + 8, y + 124);
+      doc.text(`Trolleys: ${tx.trolleyCount == null ? '-' : tx.trolleyCount}`, left + width / 2 + 8, y + 140);
       doc.text(
         `Quantity: ${tx.quantity == null ? '-' : tx.quantity} | Rate: ${tx.rate == null ? '-' : moneyInr(tx.rate)}`,
         left + width / 2 + 8,
-        y + 140,
+        y + 156,
         { width: width / 2 - 16 }
       );
     } else {

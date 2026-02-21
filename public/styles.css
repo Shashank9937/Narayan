@@ -891,6 +891,10 @@ th.sortable.desc::after {
   gap: 0.6rem;
 }
 
+#supplierTransactionForm .row.three {
+  grid-template-columns: repeat(3, minmax(100px, 1fr));
+}
+
 .bill-grid {
   display: grid;
   gap: 0.7rem;
@@ -1139,7 +1143,8 @@ body.dark-mode button.emp-edit {
   }
 
   .supplier-form-grid.two,
-  #supplierTransactionForm .row {
+  #supplierTransactionForm .row,
+  #supplierTransactionForm .row.three {
     grid-template-columns: 1fr;
   }
 
