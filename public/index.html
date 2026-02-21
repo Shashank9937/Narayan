@@ -437,14 +437,17 @@
             </select>
             <input name="description" placeholder="Description" />
             <input name="amount" type="number" min="0.01" step="0.01" placeholder="Amount (₹)" required />
-            <button type="submit">Add Expense</button>
+            <div class="row wrap">
+              <button type="submit">Add Expense</button>
+              <button id="expenseCancelEditBtn" type="button" class="small warn hidden">Cancel Edit</button>
+            </div>
           </form>
         </section>
       </div>
 
       <section class="panel" id="expenseReportPanel">
         <div class="row wrap">
-          <h2>Expense Report (Party + Date Range)</h2>
+          <h2>Daily Expense Report (Party + Date Range)</h2>
           <div class="row">
             <input id="expenseDateFrom" type="date" />
             <input id="expenseDateTo" type="date" />
@@ -467,6 +470,53 @@
             <div id="expenseTotal" class="value">₹0</div>
           </div>
         </div>
+        <section class="summary-box mt-sm" id="expenseSalaryGivenPanel">
+          <h3>Salary Given (Auto from Salary Ledger + Advances)</h3>
+          <div class="summary-stat-grid">
+            <div class="summary-stat">
+              <div class="label">Historical Salary Given</div>
+              <div id="expenseSalaryLedgerPaidTotal" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Salary Given via Advances</div>
+              <div id="expenseSalaryAdvancePaidTotal" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Total Salary Given</div>
+              <div id="expenseSalaryGivenTotal" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Current Month Salary</div>
+              <div id="expenseSalaryCurrentMonthSalaryTotal" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Current Month Advance</div>
+              <div id="expenseSalaryCurrentMonthAdvanceTotal" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Current Month Pending</div>
+              <div id="expenseSalaryCurrentMonthPendingTotal" class="value">₹0</div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table id="expenseSalaryGivenTable">
+              <thead>
+                <tr>
+                  <th>No.</th>
+                  <th>Employee</th>
+                  <th>Role</th>
+                  <th>Historical Given</th>
+                  <th>Given by Advances</th>
+                  <th>Total Given</th>
+                  <th>Current Month Salary</th>
+                  <th>Current Month Advance</th>
+                  <th>Current Month Pending</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
         <div class="party-table-grid">
           <div>
             <h3>Narayan Expenses</h3>

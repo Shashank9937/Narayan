@@ -6,6 +6,7 @@ const truckNarayanTbody = document.querySelector('#truckTableNarayan tbody');
 const truckMaaVaishnoTbody = document.querySelector('#truckTableMaaVaishno tbody');
 const expenseNarayanTbody = document.querySelector('#expenseTableNarayan tbody');
 const expenseMaaVaishnoTbody = document.querySelector('#expenseTableMaaVaishno tbody');
+const expenseSalaryGivenTbody = document.querySelector('#expenseSalaryGivenTable tbody');
 const investmentTbody = document.querySelector('#investmentTable tbody');
 const chiniTbody = document.querySelector('#chiniTable tbody');
 const landTbody = document.querySelector('#landTable tbody');
@@ -76,6 +77,7 @@ const advanceForm = document.getElementById('advanceForm');
 const salaryLedgerForm = document.getElementById('salaryLedgerForm');
 const truckForm = document.getElementById('truckForm');
 const expenseForm = document.getElementById('expenseForm');
+const expenseCancelEditBtn = document.getElementById('expenseCancelEditBtn');
 const investmentForm = document.getElementById('investmentForm');
 const chiniForm = document.getElementById('chiniForm');
 const landForm = document.getElementById('landForm');
@@ -130,6 +132,8 @@ let editingLandId = null;
 let activeSalaryMonth = monthISO();
 let billItemsState = [];
 let editingBillId = null;
+let refreshInFlight = null;
+let lastRefreshErrorToastAt = 0;
 const LEDGER_FIXED_START = '2025-07-15';
 const LEDGER_FIXED_END = '2026-01-31';
 const LEDGER_LIVE_START = '2026-02-01';
@@ -460,7 +464,7 @@ function applyRoleUI() {
   setFormEnabled('advancePanel', hasPermission('advances:create'));
   setFormEnabled('salaryLedgerPanel', hasPermission('salaryledger:update'));
   setFormEnabled('truckPanel', hasPermission('trucks:create'));
-  setFormEnabled('expensePanel', hasPermission('expenses:create'));
+  setFormEnabled('expensePanel', hasPermission('expenses:create') || hasPermission('expenses:update'));
   setFormEnabled('investmentPanel', hasPermission('investments:create'));
   setFormEnabled('chiniPanel', hasPermission('chini:create'));
   setFormEnabled('landPanel', hasPermission('land:create'));
@@ -481,6 +485,7 @@ function applyRoleUI() {
   setPanelVisible('employeeListPanel', hasPermission('employees:view'));
   setPanelVisible('attendanceReportPanel', hasPermission('attendance:report'));
   setPanelVisible('expenseReportPanel', hasPermission('expenses:view'));
+  setPanelVisible('expenseSalaryGivenPanel', hasPermission('salaryledger:view') || hasPermission('salary:view'));
   setPanelVisible('investmentSummaryPanel', hasPermission('investments:view'));
   setPanelVisible('chiniReportPanel', hasPermission('chini:view'));
   setPanelVisible('landReportPanel', hasPermission('land:view'));
@@ -1312,6 +1317,7 @@ function renderExpenseRows(rows) {
           current.amount != null ? String(current.amount) : '';
         const submitBtn = expenseForm.querySelector('button[type="submit"]');
         if (submitBtn) submitBtn.textContent = 'Update Expense';
+        if (expenseCancelEditBtn) expenseCancelEditBtn.classList.remove('hidden');
         expenseForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
         showToast('Expense loaded. Update fields and click "Update Expense".');
       });
@@ -1333,6 +1339,77 @@ function renderExpenseRows(rows) {
       });
     });
   }
+}
+
+function renderExpenseSalaryGiven() {
+  const panel = document.getElementById('expenseSalaryGivenPanel');
+  if (!panel || !expenseSalaryGivenTbody) return;
+  const canViewSalaryGiven = hasPermission('salaryledger:view') || hasPermission('salary:view');
+  panel.classList.toggle('hidden', !canViewSalaryGiven);
+  if (!canViewSalaryGiven) return;
+
+  const rows = (salaryLedgersCache || [])
+    .map((r) => normalizeLedgerRow(r))
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+
+  const totals = rows.reduce(
+    (acc, r) => {
+      const historicalGiven = Number(r.period1Paid || 0);
+      const advancesGiven = Number(r.period2Paid || 0);
+      const totalGiven = historicalGiven + advancesGiven;
+      const currentMonthSalary = Number(r.currentMonthSalary || 0);
+      const currentMonthAdvance = Number(r.currentMonthAdvance || 0);
+      const currentMonthPending = Math.max(0, currentMonthSalary - currentMonthAdvance);
+      acc.historicalGiven += historicalGiven;
+      acc.advancesGiven += advancesGiven;
+      acc.totalGiven += totalGiven;
+      acc.currentMonthSalary += currentMonthSalary;
+      acc.currentMonthAdvance += currentMonthAdvance;
+      acc.currentMonthPending += currentMonthPending;
+      return acc;
+    },
+    {
+      historicalGiven: 0,
+      advancesGiven: 0,
+      totalGiven: 0,
+      currentMonthSalary: 0,
+      currentMonthAdvance: 0,
+      currentMonthPending: 0
+    }
+  );
+
+  const set = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = money(value);
+  };
+  set('expenseSalaryLedgerPaidTotal', totals.historicalGiven);
+  set('expenseSalaryAdvancePaidTotal', totals.advancesGiven);
+  set('expenseSalaryGivenTotal', totals.totalGiven);
+  set('expenseSalaryCurrentMonthSalaryTotal', totals.currentMonthSalary);
+  set('expenseSalaryCurrentMonthAdvanceTotal', totals.currentMonthAdvance);
+  set('expenseSalaryCurrentMonthPendingTotal', totals.currentMonthPending);
+
+  expenseSalaryGivenTbody.innerHTML = rows
+    .map((r, idx) => {
+      const historicalGiven = Number(r.period1Paid || 0);
+      const advancesGiven = Number(r.period2Paid || 0);
+      const totalGiven = historicalGiven + advancesGiven;
+      const currentMonthSalary = Number(r.currentMonthSalary || 0);
+      const currentMonthAdvance = Number(r.currentMonthAdvance || 0);
+      const currentMonthPending = Math.max(0, currentMonthSalary - currentMonthAdvance);
+      return `<tr>
+          <td>${idx + 1}</td>
+          <td>${escapeHtml(r.name || '-')}</td>
+          <td>${escapeHtml(r.role || '-')}</td>
+          <td class="money">${money(historicalGiven)}</td>
+          <td class="money">${money(advancesGiven)}</td>
+          <td class="money">${money(totalGiven)}</td>
+          <td class="money">${money(currentMonthSalary)}</td>
+          <td class="money">${money(currentMonthAdvance)}</td>
+          <td class="money">${money(currentMonthPending)}</td>
+        </tr>`;
+    })
+    .join('');
 }
 
 function renderInvestmentRows(rows) {
@@ -1854,97 +1931,126 @@ function activateSection(sectionId) {
 }
 
 async function refresh() {
-  const month = getActiveSalaryMonth();
+  if (refreshInFlight) return refreshInFlight;
+  const task = (async () => {
+    const month = getActiveSalaryMonth();
+    const refreshErrors = [];
+    const safeLoad = async (label, promise, fallback) => {
+      try {
+        return await promise;
+      } catch (err) {
+        console.error(`[refresh:${label}]`, err);
+        refreshErrors.push(`${label}: ${err.message}`);
+        return fallback;
+      }
+    };
 
-  const requests = [
-    hasPermission('dashboard:view') ? api(`/api/dashboard?month=${month}&today=${todayISO()}`) : Promise.resolve(null),
-    hasPermission('employees:view') ? api('/api/employees') : Promise.resolve([]),
-    hasPermission('salary:view') ? api(`/api/salary-summary?month=${month}`) : Promise.resolve({ rows: [] }),
-    hasPermission('salaryledger:view') ? api('/api/salary-ledgers') : Promise.resolve([]),
-    hasPermission('trucks:view') ? api('/api/trucks') : Promise.resolve([]),
-    hasPermission('expenses:view') ? api('/api/expenses') : Promise.resolve([]),
-    hasPermission('investments:view') ? api('/api/investments') : Promise.resolve([]),
-    hasPermission('chini:view') ? api('/api/chini-expenses') : Promise.resolve([]),
-    hasPermission('land:view') ? api('/api/lands') : Promise.resolve([]),
-    hasPermission('vehicles:view') ? api('/api/vehicles') : Promise.resolve([]),
-    hasPermission('billing:view') ? api('/api/billing/companies') : Promise.resolve([]),
-    hasPermission('billing:view') ? api('/api/bills') : Promise.resolve([]),
-    hasPermission('suppliers:view') ? api('/api/suppliers') : Promise.resolve([]),
-    hasPermission('attendance:report')
-      ? api(`/api/attendance-report?month=${attendanceMonthInput.value || month}`)
-      : Promise.resolve({ rows: [] })
-  ];
+    const requests = [
+      hasPermission('dashboard:view')
+        ? safeLoad('dashboard', api(`/api/dashboard?month=${month}&today=${todayISO()}`), null)
+        : Promise.resolve(null),
+      hasPermission('employees:view') ? safeLoad('employees', api('/api/employees'), []) : Promise.resolve([]),
+      hasPermission('salary:view')
+        ? safeLoad('salary', api(`/api/salary-summary?month=${month}`), { rows: [] })
+        : Promise.resolve({ rows: [] }),
+      hasPermission('salaryledger:view') ? safeLoad('salary-ledgers', api('/api/salary-ledgers'), []) : Promise.resolve([]),
+      hasPermission('trucks:view') ? safeLoad('trucks', api('/api/trucks'), []) : Promise.resolve([]),
+      hasPermission('expenses:view') ? safeLoad('expenses', api('/api/expenses'), []) : Promise.resolve([]),
+      hasPermission('investments:view') ? safeLoad('investments', api('/api/investments'), []) : Promise.resolve([]),
+      hasPermission('chini:view') ? safeLoad('chini', api('/api/chini-expenses'), []) : Promise.resolve([]),
+      hasPermission('land:view') ? safeLoad('land', api('/api/lands'), []) : Promise.resolve([]),
+      hasPermission('vehicles:view') ? safeLoad('vehicles', api('/api/vehicles'), []) : Promise.resolve([]),
+      hasPermission('billing:view')
+        ? safeLoad('billing-companies', api('/api/billing/companies'), [])
+        : Promise.resolve([]),
+      hasPermission('billing:view') ? safeLoad('bills', api('/api/bills'), []) : Promise.resolve([]),
+      hasPermission('suppliers:view') ? safeLoad('suppliers', api('/api/suppliers'), []) : Promise.resolve([]),
+      hasPermission('attendance:report')
+        ? safeLoad('attendance-report', api(`/api/attendance-report?month=${attendanceMonthInput.value || month}`), { rows: [] })
+        : Promise.resolve({ rows: [] })
+    ];
 
-  const [
-    dashboard,
-    employees,
-    salary,
-    salaryLedgers,
-    trucks,
-    expenses,
-    investments,
-    chiniExpenses,
-    landRecords,
-    vehicles,
-    billingCompanies,
-    bills,
-    suppliers,
-    attendanceReport
-  ] =
-    await Promise.all(requests);
+    const [
+      dashboard,
+      employees,
+      salary,
+      salaryLedgers,
+      trucks,
+      expenses,
+      investments,
+      chiniExpenses,
+      landRecords,
+      vehicles,
+      billingCompanies,
+      bills,
+      suppliers,
+      attendanceReport
+    ] = await Promise.all(requests);
 
-  if (dashboard) {
-    renderCards(dashboard);
-    lastRefreshedEl.textContent = `Last refreshed: ${formatLastRefreshed()}`;
-    lastRefreshedWrap.classList.toggle('hidden', !hasPermission('dashboard:view'));
-  } else {
-    cardsEl.innerHTML = '';
-    lastRefreshedWrap.classList.add('hidden');
-  }
-
-  employeesCache = employees || [];
-  trucksCache = trucks || [];
-  expensesCache = expenses || [];
-  investmentsCache = investments || [];
-  chiniExpensesCache = chiniExpenses || [];
-  landRecordsCache = landRecords || [];
-  vehiclesCache = vehicles || [];
-  billingCompaniesCache = billingCompanies || [];
-  billsCache = bills || [];
-  suppliersCache = suppliers || [];
-  salaryRowsCache = (salary && salary.rows) || [];
-  salaryLedgersCache = salaryLedgers || [];
-  renderEmployeeOptions(employeesCache);
-  renderEmployeeRows(filterEmployees(employeesCache));
-  renderSalaryRows(salaryRowsCache);
-  renderSalarySummaries(salaryRowsCache);
-  renderSalaryLedgers(salaryLedgersCache);
-  renderTruckRows(filterTrucks(trucksCache).sort((a, b) => (a.date < b.date ? 1 : -1)));
-  renderExpenseRows(expensesCache);
-  renderInvestmentRows(investmentsCache);
-  renderInvestmentSummary();
-  renderChiniRows(chiniExpensesCache);
-  renderLandRows(landRecordsCache);
-  renderVehicleRows(vehiclesCache);
-  renderBillingCompanies(billingCompaniesCache);
-  renderBills(filterBills(billsCache));
-  renderSuppliers(suppliersCache);
-
-  // Update detail view if active
-  if (activeSupplierId && supplierDetailPanel && !supplierDetailPanel.classList.contains('hidden')) {
-    const sup = suppliersCache.find(s => s.id === activeSupplierId);
-    if (sup) {
-      // Re-fetch transactions to be sure
-      api(`/api/suppliers/${activeSupplierId}/transactions`)
-        .then(txs => renderSupplierTransactions(txs, sup))
-        .catch(console.error);
+    if (dashboard) {
+      renderCards(dashboard);
+      lastRefreshedEl.textContent = `Last refreshed: ${formatLastRefreshed()}`;
+      lastRefreshedWrap.classList.toggle('hidden', !hasPermission('dashboard:view'));
+    } else {
+      cardsEl.innerHTML = '';
+      lastRefreshedWrap.classList.add('hidden');
     }
-  }
 
-  renderChiniRows(chiniExpensesCache);
-  renderLandRows(landRecordsCache);
-  renderVehicleRows(vehiclesCache);
-  renderAttendanceReportRows((attendanceReport && attendanceReport.rows) || []);
+    employeesCache = employees || [];
+    trucksCache = trucks || [];
+    expensesCache = expenses || [];
+    investmentsCache = investments || [];
+    chiniExpensesCache = chiniExpenses || [];
+    landRecordsCache = landRecords || [];
+    vehiclesCache = vehicles || [];
+    billingCompaniesCache = billingCompanies || [];
+    billsCache = bills || [];
+    suppliersCache = suppliers || [];
+    salaryRowsCache = (salary && salary.rows) || [];
+    salaryLedgersCache = salaryLedgers || [];
+
+    renderEmployeeOptions(employeesCache);
+    renderEmployeeRows(filterEmployees(employeesCache));
+    renderSalaryRows(salaryRowsCache);
+    renderSalarySummaries(salaryRowsCache);
+    renderSalaryLedgers(salaryLedgersCache);
+    renderTruckRows(filterTrucks(trucksCache).sort((a, b) => (a.date < b.date ? 1 : -1)));
+    renderExpenseRows(expensesCache);
+    renderExpenseSalaryGiven();
+    renderInvestmentRows(investmentsCache);
+    renderInvestmentSummary();
+    renderChiniRows(chiniExpensesCache);
+    renderLandRows(landRecordsCache);
+    renderVehicleRows(vehiclesCache);
+    renderBillingCompanies(billingCompaniesCache);
+    renderBills(filterBills(billsCache));
+    renderSuppliers(suppliersCache);
+    renderAttendanceReportRows((attendanceReport && attendanceReport.rows) || []);
+
+    if (activeSupplierId && supplierDetailPanel && !supplierDetailPanel.classList.contains('hidden')) {
+      const sup = suppliersCache.find((s) => s.id === activeSupplierId);
+      if (sup) {
+        safeLoad(`supplier-transactions:${activeSupplierId}`, api(`/api/suppliers/${activeSupplierId}/transactions`), [])
+          .then((txs) => renderSupplierTransactions(txs, sup))
+          .catch(console.error);
+      }
+    }
+
+    if (refreshErrors.length) {
+      const now = Date.now();
+      if (now - lastRefreshErrorToastAt > 30000) {
+        lastRefreshErrorToastAt = now;
+        showToast(`Refresh partial: ${refreshErrors[0]}`, 'error');
+      }
+    }
+  })();
+
+  refreshInFlight = task;
+  try {
+    await task;
+  } finally {
+    if (refreshInFlight === task) refreshInFlight = null;
+  }
 }
 
 async function bootstrapSession() {
@@ -2036,12 +2142,23 @@ expenseForm.addEventListener('submit', async (e) => {
     editingExpenseId = null;
     const submitBtn = expenseForm.querySelector('button[type="submit"]');
     if (submitBtn) submitBtn.textContent = 'Add Expense';
+    if (expenseCancelEditBtn) expenseCancelEditBtn.classList.add('hidden');
     setDefaultDates();
     await refresh();
     showToast(method === 'PUT' ? 'Expense updated' : 'Expense added');
   } catch (err) {
     showToast(err.message, 'error');
   }
+});
+
+expenseCancelEditBtn?.addEventListener('click', () => {
+  editingExpenseId = null;
+  expenseForm.reset();
+  const submitBtn = expenseForm.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.textContent = 'Add Expense';
+  expenseCancelEditBtn.classList.add('hidden');
+  setDefaultDates();
+  showToast('Expense edit cancelled');
 });
 
 investmentForm?.addEventListener('submit', async (e) => {
