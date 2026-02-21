@@ -1,4 +1,29 @@
-node_modules/
-.env
+# macOS
 .DS_Store
-npm-debug.log*
+
+# Node
+node_modules
+frontend/node_modules
+frontend/.next
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+backend/.venv/
+
+# Environment
+.env
+.env.*
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+backend/.env
+frontend/.env.local
+
+# Logs
+*.log
+
+# Build outputs
+frontend/out

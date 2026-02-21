@@ -1,161 +1,206 @@
-# Company Operations Dashboard
+# Market War Radar - AI Founder Intelligence Engine
 
-A secure operations app to manage:
-- Employees (create, update, delete)
-- Daily attendance
-- Monthly attendance report
-- Salary advances and remaining salary
-- Truck/raw material entries and reporting
-- CSV exports and PDF salary slips
+Production-ready full-stack starter that ingests founder pain signals from Reddit, Product Hunt, and Twitter/X, clusters market problems, generates startup ideas, scores validation potential, and exposes everything in a modern dashboard.
 
-## Key Upgrades Added
+## Stack
 
-- Role-based auth (`admin`, `accountant`, `manager`)
-- Password hashing with `bcryptjs`
-- Change-password API + UI
-- Employee edit/delete actions
-- Monthly attendance report (table + CSV)
-- Production PostgreSQL storage mode with automatic schema setup
-- Local JSON fallback mode for quick start
+- Frontend: Next.js App Router, Tailwind CSS, shadcn-style components, Supabase Auth (email)
+- Backend: FastAPI, PostgreSQL (Supabase-compatible), OpenAI API, APScheduler jobs
+- Deployment:
+  - Frontend: Vercel (`frontend/vercel.json`)
+  - Backend: Render (`render.yaml`)
+  - Container: Root `Dockerfile`
 
-## Demo Login Users
+## Project Structure
 
-- `admin / admin123`
-- `accountant / account123`
-- `manager / manager123`
+```text
+.
+├── backend
+│   ├── app
+│   │   ├── api
+│   │   │   ├── deps.py
+│   │   │   ├── router.py
+│   │   │   └── routes
+│   │   │       ├── admin.py
+│   │   │       ├── clusters.py
+│   │   │       ├── dashboard.py
+│   │   │       ├── health.py
+│   │   │       └── ideas.py
+│   │   ├── core
+│   │   │   └── config.py
+│   │   ├── db
+│   │   │   ├── init_db.py
+│   │   │   └── session.py
+│   │   ├── jobs
+│   │   │   ├── scheduler.py
+│   │   │   └── tasks.py
+│   │   ├── models
+│   │   │   ├── admin_filter.py
+│   │   │   ├── cluster.py
+│   │   │   ├── idea.py
+│   │   │   ├── pain.py
+│   │   │   └── post.py
+│   │   ├── schemas
+│   │   │   ├── admin.py
+│   │   │   ├── cluster.py
+│   │   │   ├── dashboard.py
+│   │   │   ├── idea.py
+│   │   │   ├── pain.py
+│   │   │   └── post.py
+│   │   ├── services
+│   │   │   ├── ai
+│   │   │   │   ├── idea_generator.py
+│   │   │   │   ├── openai_client.py
+│   │   │   │   ├── pain_extractor.py
+│   │   │   │   └── validation.py
+│   │   │   ├── clustering
+│   │   │   │   └── cluster_engine.py
+│   │   │   ├── collectors
+│   │   │   │   ├── base.py
+│   │   │   │   ├── producthunt_collector.py
+│   │   │   │   ├── reddit_collector.py
+│   │   │   │   └── twitter_collector.py
+│   │   │   └── pipeline.py
+│   │   └── main.py
+│   ├── .env.example
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── tests
+│       └── test_validation.py
+├── frontend
+│   ├── app
+│   │   ├── (auth)/login/page.tsx
+│   │   ├── (protected)/clusters/[id]/page.tsx
+│   │   ├── (protected)/dashboard/page.tsx
+│   │   ├── (protected)/ideas/[id]/page.tsx
+│   │   ├── globals.css
+│   │   ├── layout.tsx
+│   │   └── page.tsx
+│   ├── components
+│   │   ├── dashboard
+│   │   └── ui
+│   ├── lib
+│   │   ├── api.ts
+│   │   ├── supabase
+│   │   ├── types.ts
+│   │   └── utils.ts
+│   ├── middleware.ts
+│   ├── package.json
+│   ├── tailwind.config.ts
+│   └── vercel.json
+├── Dockerfile
+├── ENVIRONMENT.md
+├── docker-compose.yml
+└── render.yaml
+```
 
-Change credentials immediately after first login.
-In JSON mode, existing plain-text `password` fields are auto-migrated to hashed `passwordHash` on first app start.
+## Core Capabilities
 
-## Tech
+1. Data Collection Module
+- Reddit via PRAW
+- Product Hunt GraphQL API
+- Twitter/X recent search API
+- Stores platform posts in `posts`
 
-- Backend: Node.js + Express
-- Auth: bcryptjs session tokens
-- PDF: PDFKit
-- DB Modes:
-  - `json` (default, uses `data/db.json`)
-  - `postgres` (set env vars below)
+2. Pain Extraction Agent
+- OpenAI extraction (with fallback heuristics)
+- Stores `pain_point`, `target_user`, `urgency_score`, `willingness_to_pay`, `existing_solutions` in `extracted_pains`
 
-## Run (JSON mode - local)
+3. Problem Clustering Engine
+- TF-IDF + agglomerative clustering
+- Creates `problem_clusters`
+- Tracks cluster trends (7d/30d)
 
-1. Install Node.js (v18+ recommended).
-2. Install dependencies:
+4. Idea Generator
+- For each cluster:
+  - 3 SaaS ideas
+  - 1 AI automation idea
+  - 1 B2B enterprise idea
+- Includes ICP, revenue model, MVP features, pricing estimate, GTM, and launch plan
+
+5. Validation Scoring
+- Weighted score (0-100):
+  - pain intensity
+  - frequency
+  - budget size
+  - competition level
+  - speed to MVP
+  - scalability
+
+6. Dashboard UI
+- KPI tiles
+- Top clusters
+- Trending signals
+- Highest-scoring ideas
+- Revenue model summary
+- Quick launch MVP plan
+- Cluster detail and idea detail pages
+
+7. Admin Panel
+- Manual keyword include/exclude
+- Geo filter (`INDIA` / `GLOBAL`)
+- Industry filter (SaaS, Energy, B2B, AI, Logistics)
+- Trigger scraping run and trend recalculation
+
+8. Background Jobs
+- Scrape pipeline every 6 hours
+- Trend recompute daily
+
+## Local Setup
+
+### 1) Backend
 
 ```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn app.main:app --reload --port 8000
+```
+
+### 2) Frontend
+
+```bash
+cd frontend
 npm install
+cp .env.example .env.local
+npm run dev
 ```
 
-3. Start:
+### 3) Docker Compose
 
 ```bash
-npm start
+docker compose up --build
 ```
 
-4. Open `http://localhost:3000`
+## API Endpoints
 
-## Run (PostgreSQL mode - production)
+- `GET /api/v1/health`
+- `GET /api/v1/dashboard/overview`
+- `GET /api/v1/clusters`
+- `GET /api/v1/clusters/{cluster_id}`
+- `GET /api/v1/ideas`
+- `GET /api/v1/ideas/{idea_id}`
+- `GET /api/v1/admin/filters`
+- `PUT /api/v1/admin/filters`
+- `POST /api/v1/admin/run-scrape`
+- `POST /api/v1/admin/recalculate-trends`
 
-1. Create a PostgreSQL database.
-2. Set env vars:
+## Deploy
 
-```bash
-export STORAGE_MODE=postgres
-export DATABASE_URL='postgres://USER:PASSWORD@HOST:5432/DBNAME'
-```
+### Frontend -> Vercel
+- Root directory: `frontend`
+- Framework: Next.js
+- Env vars from `frontend/.env.example`
 
-3. Start app:
+### Backend -> Render
+- Use included `render.yaml`
+- Set secret env vars in Render dashboard
+- Points to root `Dockerfile`
 
-```bash
-npm start
-```
+## Notes
 
-The app auto-creates required tables on startup.
-
-Health check endpoint:
-
-- `GET /healthz`
-
-## Publish (Render - fastest)
-
-1. Push this repo to GitHub.
-2. In Render, create a new `Blueprint` and select this repository.
-3. Render will read `/Users/shashankmishra/Documents/New project/render.yaml` and create:
-   - web service: `company-ops-dashboard`
-   - postgres database: `company-ops-db`
-4. Open the deployed web URL and login using demo credentials.
-5. Immediately change passwords from the app UI.
-
-## Publish (Docker)
-
-Build and run locally/prod:
-
-```bash
-docker build -t company-ops-dashboard .
-docker run -p 3000:3000 -e STORAGE_MODE=json company-ops-dashboard
-```
-
-## Important API Endpoints
-
-- `GET /healthz`
-
-- `POST /api/login`
-- `GET /api/me`
-- `POST /api/logout`
-- `POST /api/change-password`
-
-- `GET /api/employees`
-- `POST /api/employees`
-- `PUT /api/employees/:id`
-- `DELETE /api/employees/:id`
-
-- `POST /api/attendance`
-- `GET /api/attendance`
-- `GET /api/attendance-report`
-
-- `POST /api/advances`
-- `GET /api/salary-summary`
-- `GET /api/salary-slip/:employeeId.pdf`
-
-- `POST /api/trucks`
-- `GET /api/trucks`
-
-- `GET /api/export/salary.csv`
-- `GET /api/export/trucks.csv`
-- `GET /api/export/attendance.csv`
-
-## Permissions summary
-
-- `admin`: full access
-- `accountant`: employee create/update/delete, salary/advance, reports/exports
-- `manager`: attendance + trucks + attendance report
-
-## Production Hardening Checklist
-
-1. Use paid Render plans for both web service and database.
-2. Keep `STORAGE_MODE=postgres` in production.
-3. Set strong passwords and rotate them regularly.
-4. Restrict who can access admin credentials.
-5. Enable Render alerts (deploy failure, service down).
-6. Test `/healthz` after every deploy.
-7. Keep dependencies updated monthly or quarterly.
-8. Document an owner for operations and incident response.
-
-## Backup and Recovery (PostgreSQL)
-
-Daily backup with `pg_dump`:
-
-```bash
-pg_dump "$DATABASE_URL" > backup-$(date +%F).sql
-```
-
-Restore from backup:
-
-```bash
-psql "$DATABASE_URL" < backup-2026-02-12.sql
-```
-
-Recommended:
-
-1. Keep 7 daily backups + 4 weekly backups.
-2. Store backups outside the app server (cloud storage).
-3. Run a restore test at least once per month.
+- Set `ALLOW_ANON_READ=false` in production.
+- For Supabase Auth verification on backend, set `SUPABASE_JWT_SECRET`.
+- Scheduler runs inside FastAPI process; for larger scale, move jobs into a dedicated worker service.
