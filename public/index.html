@@ -70,14 +70,17 @@
     <section id="employeeSection" class="section-view">
       <div class="grid">
         <section class="panel" id="employeePanel">
-          <h2>Add Employee</h2>
+          <h2 id="employeeFormTitle">Add Employee</h2>
           <form id="employeeForm">
             <input name="name" placeholder="Employee Name" required />
             <input name="role" placeholder="Role" required />
             <input name="monthlySalary" type="number" min="1" step="0.01" placeholder="Monthly Salary" required />
             <label for="employeeJoiningDate">Joining Date</label>
             <input id="employeeJoiningDate" name="joiningDate" type="date" required />
-            <button type="submit">Add Employee</button>
+            <div class="row wrap">
+              <button id="employeeSubmitBtn" type="submit">Add Employee</button>
+              <button id="employeeCancelEditBtn" type="button" class="small warn hidden">Cancel Edit</button>
+            </div>
           </form>
         </section>
       </div>
@@ -197,7 +200,7 @@
           <h2>Salary Ledger Workspace</h2>
           <input id="salaryLedgerSearchInput" type="text" placeholder="Search employee/role in ledger" />
         </div>
-        <p class="hint">Choose employee, set monthly salary and duration, total salary is auto-calculated. Enter paid amount and remaining is auto-tracked.</p>
+        <p class="hint">Choose employee, set monthly salary and duration in months. Total salary is auto-calculated. Enter paid amount and remaining is auto-tracked.</p>
         <form id="salaryLedgerForm" class="salary-ledger-form">
           <div class="field-group">
             <label for="salaryLedgerEmployee">Employee</label>
@@ -208,16 +211,8 @@
             <input id="salaryLedgerMonthlySalaryApplied" name="monthlySalaryApplied" type="number" min="0" step="0.01" placeholder="Monthly Salary" required />
           </div>
           <div class="field-group">
-            <label for="salaryLedgerDurationStart">Duration Start</label>
-            <input id="salaryLedgerDurationStart" name="durationStart" type="date" required />
-          </div>
-          <div class="field-group">
-            <label for="salaryLedgerDurationEnd">Duration End</label>
-            <input id="salaryLedgerDurationEnd" name="durationEnd" type="date" required />
-          </div>
-          <div class="field-group">
-            <label for="salaryLedgerDurationDays">Duration (Days)</label>
-            <input id="salaryLedgerDurationDays" name="durationDays" type="number" min="1" step="1" readonly />
+            <label for="salaryLedgerDurationMonths">Duration (Months)</label>
+            <input id="salaryLedgerDurationMonths" name="durationMonths" type="number" min="0.01" step="0.01" placeholder="Example: 1, 1.5, 2" required />
           </div>
           <div class="field-group">
             <label for="salaryLedgerTotalPaidInput">Total Paid</label>
@@ -225,7 +220,7 @@
           </div>
           <div class="row wrap salary-ledger-tools">
             <button id="salaryLedgerAutoFillBtn" type="button" class="small">Use Employee Monthly Salary</button>
-            <button id="salaryLedgerCurrentMonthBtn" type="button" class="small">Use Current Month Duration</button>
+            <button id="salaryLedgerOneMonthBtn" type="button" class="small">Set Duration to 1 Month</button>
             <button id="salaryLedgerResetBtn" type="button" class="small warn">Clear Form</button>
           </div>
           <div class="summary-stat-grid salary-ledger-live-summary">
@@ -267,8 +262,7 @@
                   <th>Role</th>
                   <th>Updated</th>
                   <th>Monthly Salary Used</th>
-                  <th>Duration</th>
-                  <th>Days</th>
+                  <th>Duration (Months)</th>
                   <th>Total Salary</th>
                   <th>Total Paid</th>
                   <th>Remaining</th>

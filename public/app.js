@@ -77,6 +77,9 @@ const toastEl = document.getElementById('toast');
 const loginForm = document.getElementById('loginForm');
 const logoutBtn = document.getElementById('logoutBtn');
 const employeeForm = document.getElementById('employeeForm');
+const employeeFormTitle = document.getElementById('employeeFormTitle');
+const employeeSubmitBtn = document.getElementById('employeeSubmitBtn');
+const employeeCancelEditBtn = document.getElementById('employeeCancelEditBtn');
 const attendanceForm = document.getElementById('attendanceForm');
 const advanceForm = document.getElementById('advanceForm');
 const salaryLedgerForm = document.getElementById('salaryLedgerForm');
@@ -107,7 +110,7 @@ const salaryMonthInput = document.getElementById('salaryMonthInput');
 const salaryLedgerEmployeeSelect = document.getElementById('salaryLedgerEmployee');
 const salaryLedgerSearchInput = document.getElementById('salaryLedgerSearchInput');
 const salaryLedgerAutoFillBtn = document.getElementById('salaryLedgerAutoFillBtn');
-const salaryLedgerCurrentMonthBtn = document.getElementById('salaryLedgerCurrentMonthBtn');
+const salaryLedgerOneMonthBtn = document.getElementById('salaryLedgerOneMonthBtn');
 const salaryLedgerResetBtn = document.getElementById('salaryLedgerResetBtn');
 const salaryEmployeeSummaryEl = document.getElementById('salaryEmployeeSummary');
 const salaryOverallSummaryEl = document.getElementById('salaryOverallSummary');
@@ -141,6 +144,7 @@ let expenseFilter = { dateFrom: '', dateTo: '', description: '' };
 let editingTruckId = null;
 let editingExpenseId = null;
 let editingLandId = null;
+let editingEmployeeId = null;
 let activeSalaryMonth = monthISO();
 let billItemsState = [];
 let editingBillId = null;
@@ -192,63 +196,37 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(numeric) ? numeric : fallback;
 }
 
-function parseIsoDate(value) {
-  const text = String(value || '').slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
-  const [year, month, day] = text.split('-').map(Number);
-  const parsed = new Date(Date.UTC(year, month - 1, day));
-  if (
-    parsed.getUTCFullYear() !== year ||
-    parsed.getUTCMonth() !== month - 1 ||
-    parsed.getUTCDate() !== day
-  ) {
-    return null;
-  }
-  return parsed;
-}
-
 function findEmployeeById(employeeId) {
   return employeesCache.find((e) => String(e.id) === String(employeeId));
 }
 
-function durationDaysInclusive(startIso, endIso) {
-  const start = parseIsoDate(startIso);
-  const end = parseIsoDate(endIso);
-  if (!start || !end || start > end) return 0;
-  return Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
+function parseDurationMonthsValue(value, fallback = 1) {
+  const parsed = round2(Math.max(0, toNumber(value, fallback)));
+  return parsed > 0 ? parsed : fallback;
 }
 
-function defaultLedgerDurationStart(employee) {
-  const monthStart = `${monthISO()}-01`;
-  const joinText = String(employee?.joiningDate || employee?.createdAt || '').slice(0, 10);
-  const joinDate = parseIsoDate(joinText);
-  const monthStartDate = parseIsoDate(monthStart);
-  if (!joinDate || !monthStartDate) return monthStart;
-  return (joinDate > monthStartDate ? joinDate : monthStartDate).toISOString().slice(0, 10);
-}
-
-function defaultLedgerDurationEnd() {
-  return todayISO();
-}
-
-function calculateLedgerTotalFromDuration(monthlySalaryApplied, durationDays) {
+function calculateLedgerTotalFromMonths(monthlySalaryApplied, durationMonths) {
   const monthly = Math.max(0, toNumber(monthlySalaryApplied, 0));
-  const days = Math.max(0, Math.trunc(toNumber(durationDays, 0)));
-  if (monthly <= 0 || days <= 0) return 0;
-  return round2((monthly / 30) * days);
+  const months = Math.max(0, toNumber(durationMonths, 0));
+  if (monthly <= 0 || months <= 0) return 0;
+  return round2(monthly * months);
 }
 
 function normalizeLedgerRow(row) {
   const employee = findEmployeeById(row?.employeeId);
   const monthlyFromEmployee = round2(Math.max(0, toNumber(employee?.monthlySalary, 0)));
   const monthlySalaryApplied = round2(Math.max(0, toNumber(row?.monthlySalaryApplied, monthlyFromEmployee)));
-  const defaultStart = defaultLedgerDurationStart(employee);
-  const durationStart = String(row?.durationStart || defaultStart).slice(0, 10);
-  const durationEnd = String(row?.durationEnd || defaultLedgerDurationEnd()).slice(0, 10);
-  const rawDurationDays = Math.max(0, Math.trunc(toNumber(row?.durationDays, 0)));
-  const durationDays = rawDurationDays > 0 ? rawDurationDays : durationDaysInclusive(durationStart, durationEnd);
-  const durationTotal = calculateLedgerTotalFromDuration(monthlySalaryApplied, durationDays);
-  const totalToGive = round2(Math.max(0, toNumber(row?.totalToGive ?? row?.totalSalary, durationTotal)));
+  const durationMonthsFromPayload = round2(Math.max(0, toNumber(row?.durationMonths, 0)));
+  const durationDays = Math.max(0, Math.trunc(toNumber(row?.durationDays, 0)));
+  const durationMonthsFromDays = durationDays > 0 ? round2(durationDays / 30) : 0;
+  const totalHint = round2(Math.max(0, toNumber(row?.totalToGive ?? row?.totalSalary, 0)));
+  const durationMonthsFromTotal = monthlySalaryApplied > 0 && totalHint > 0 ? round2(totalHint / monthlySalaryApplied) : 0;
+  const durationMonths = parseDurationMonthsValue(
+    durationMonthsFromPayload || durationMonthsFromDays || durationMonthsFromTotal,
+    1
+  );
+  const monthsTotal = calculateLedgerTotalFromMonths(monthlySalaryApplied, durationMonths);
+  const totalToGive = round2(Math.max(0, toNumber(row?.totalToGive ?? row?.totalSalary, monthsTotal)));
   const totalPaid = round2(Math.max(0, toNumber(row?.totalPaid ?? row?.amountGiven, 0)));
   const remaining = round2(Math.max(0, totalToGive - totalPaid));
   const currentMonthSalary = monthlyFromEmployee;
@@ -259,9 +237,8 @@ function normalizeLedgerRow(row) {
   return {
     ...row,
     monthlySalaryApplied,
-    durationStart,
-    durationEnd,
-    durationDays: Math.max(0, durationDays),
+    durationMonths,
+    durationDays,
     period1ToGive: totalToGive,
     period1Paid: historicalPaid,
     period1Remaining: remaining,
@@ -446,7 +423,7 @@ function applyRoleUI() {
   const storageMode = me.storageMode ? ` | ${me.storageMode}` : '';
   userMeta.textContent = `${me.username} (${me.role}${storageMode})`;
 
-  setFormEnabled('employeePanel', hasPermission('employees:create'));
+  setFormEnabled('employeePanel', hasPermission('employees:create') || hasPermission('employees:update'));
   setFormEnabled('attendancePanel', hasPermission('attendance:create'));
   setFormEnabled('advancePanel', hasPermission('advances:create'));
   setFormEnabled('salaryLedgerPanel', hasPermission('salaryledger:update'));
@@ -565,10 +542,10 @@ function renderEmployeeOptions(employees) {
   if (salaryLedgerEmployeeSelect) {
     salaryLedgerEmployeeSelect.innerHTML = `<option value="">Select Employee</option>${options}`;
   }
-  if (prevAttendance && employees.some((e) => e.id === prevAttendance)) attendanceEmployeeEl.value = prevAttendance;
-  if (prevAdvance && employees.some((e) => e.id === prevAdvance)) advanceEmployeeEl.value = prevAdvance;
+  if (prevAttendance && employees.some((e) => String(e.id) === String(prevAttendance))) attendanceEmployeeEl.value = prevAttendance;
+  if (prevAdvance && employees.some((e) => String(e.id) === String(prevAdvance))) advanceEmployeeEl.value = prevAdvance;
   if (salaryLedgerEmployeeSelect) {
-    if (prevSalaryLedger && employees.some((e) => e.id === prevSalaryLedger)) {
+    if (prevSalaryLedger && employees.some((e) => String(e.id) === String(prevSalaryLedger))) {
       salaryLedgerEmployeeSelect.value = prevSalaryLedger;
     } else if (employees.length > 0) {
       salaryLedgerEmployeeSelect.value = employees[0].id;
@@ -583,6 +560,33 @@ function getInitials(name) {
     .slice(0, 2)
     .join('')
     .toUpperCase();
+}
+
+function resetEmployeeFormMode() {
+  editingEmployeeId = null;
+  if (employeeFormTitle) employeeFormTitle.textContent = 'Add Employee';
+  if (employeeSubmitBtn) employeeSubmitBtn.textContent = 'Add Employee';
+  if (employeeCancelEditBtn) employeeCancelEditBtn.classList.add('hidden');
+}
+
+function enterEmployeeEditMode(employee) {
+  if (!employeeForm) return;
+  const nameInput = employeeForm.querySelector('input[name="name"]');
+  const roleInput = employeeForm.querySelector('input[name="role"]');
+  const monthlySalaryInput = employeeForm.querySelector('input[name="monthlySalary"]');
+  const joiningDateInput = employeeForm.querySelector('input[name="joiningDate"]');
+  if (!nameInput || !roleInput || !monthlySalaryInput || !joiningDateInput) return;
+
+  editingEmployeeId = employee.id;
+  if (employeeFormTitle) employeeFormTitle.textContent = 'Edit Employee';
+  if (employeeSubmitBtn) employeeSubmitBtn.textContent = 'Update Employee';
+  if (employeeCancelEditBtn) employeeCancelEditBtn.classList.remove('hidden');
+  nameInput.value = employee.name || '';
+  roleInput.value = employee.role || '';
+  monthlySalaryInput.value = String(Number(employee.monthlySalary || 0));
+  joiningDateInput.value = String(employee.joiningDate || todayISO()).slice(0, 10);
+  activateSection('employeeSection');
+  employeeForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 function renderEmployeeRows(rows) {
@@ -627,32 +631,11 @@ function renderEmployeeRows(rows) {
 
   if (canEdit) {
     document.querySelectorAll('.emp-edit').forEach((btn) => {
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', () => {
         const id = btn.getAttribute('data-id');
-        const existing = employeesCache.find((e) => e.id === id);
+        const existing = employeesCache.find((e) => String(e.id) === String(id));
         if (!existing) return;
-
-        const name = prompt('Employee name', existing.name);
-        if (!name) return;
-        const role = prompt('Role', existing.role);
-        if (!role) return;
-        const salaryRaw = prompt('Monthly salary', String(existing.monthlySalary));
-        if (!salaryRaw) return;
-        const joiningDate = prompt('Joining date (YYYY-MM-DD)', existing.joiningDate || todayISO());
-        if (!joiningDate) return;
-
-        try {
-          await api(`/api/employees/${id}`, 'PUT', {
-            name,
-            role,
-            monthlySalary: Number(salaryRaw),
-            joiningDate
-          });
-          await refresh();
-          showToast('Employee updated');
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
+        enterEmployeeEditMode(existing);
       });
     });
   }
@@ -891,14 +874,13 @@ function renderSalaryLedgers(rows) {
     .map(
       (r) => {
         const ledgerDate = r.updatedAt ? String(r.updatedAt).slice(0, 10) : '-';
-        const durationLabel = r.durationStart && r.durationEnd ? `${r.durationStart} to ${r.durationEnd}` : '-';
+        const durationLabel = Number(r.durationMonths || 0) > 0 ? Number(r.durationMonths || 0).toFixed(2) : '-';
         return `<tr>
         <td>${escapeHtml(r.name || '-')}</td>
         <td>${escapeHtml(r.role || '-')}</td>
         <td>${ledgerDate}</td>
         <td class="money">${money(r.monthlySalaryApplied || 0)}</td>
-        <td>${escapeHtml(durationLabel)}</td>
-        <td>${Math.max(0, Number(r.durationDays || 0))}</td>
+        <td>${durationLabel}</td>
         <td class="money">${money(r.totalSalary)}</td>
         <td class="money">${money(r.totalPaid)}</td>
         <td class="money">${money(r.remaining)}</td>
@@ -933,42 +915,34 @@ function prefillSalaryLedgerForm() {
   const row = salaryLedgersCache.find((r) => String(r.employeeId) === String(employeeId));
   const employee = findEmployeeById(employeeId);
   const monthlySalaryAppliedEl = salaryLedgerForm.querySelector('input[name="monthlySalaryApplied"]');
-  const durationStartEl = salaryLedgerForm.querySelector('input[name="durationStart"]');
-  const durationEndEl = salaryLedgerForm.querySelector('input[name="durationEnd"]');
-  const durationDaysEl = salaryLedgerForm.querySelector('input[name="durationDays"]');
+  const durationMonthsEl = salaryLedgerForm.querySelector('input[name="durationMonths"]');
   const totalPaidEl = salaryLedgerForm.querySelector('input[name="totalPaid"]');
   const noteEl = salaryLedgerForm.querySelector('input[name="note"]');
-  if (!monthlySalaryAppliedEl || !durationStartEl || !durationEndEl || !durationDaysEl || !totalPaidEl || !noteEl) return;
+  if (!monthlySalaryAppliedEl || !durationMonthsEl || !totalPaidEl || !noteEl) return;
 
   const normalized = normalizeLedgerRow(row || { employeeId });
   const defaultMonthly = round2(Math.max(0, toNumber(employee?.monthlySalary, 0)));
   monthlySalaryAppliedEl.value = String(normalized.monthlySalaryApplied || defaultMonthly);
-  durationStartEl.value = normalized.durationStart || defaultLedgerDurationStart(employee);
-  durationEndEl.value = normalized.durationEnd || defaultLedgerDurationEnd();
-  durationDaysEl.value = String(Math.max(0, Number(normalized.durationDays || 0)));
+  durationMonthsEl.value = String(parseDurationMonthsValue(normalized.durationMonths, 1));
   totalPaidEl.value = String(Math.max(0, Number(normalized.totalPaid || 0)));
   noteEl.value = String(row?.note || '');
 
-  updateSalaryLedgerDurationPreview();
+  updateSalaryLedgerPreview();
 }
 
-function updateSalaryLedgerDurationPreview() {
+function updateSalaryLedgerPreview() {
   if (!salaryLedgerForm || !salaryLedgerEmployeeSelect) return;
   const monthlySalaryAppliedEl = salaryLedgerForm.querySelector('input[name="monthlySalaryApplied"]');
-  const durationStartEl = salaryLedgerForm.querySelector('input[name="durationStart"]');
-  const durationEndEl = salaryLedgerForm.querySelector('input[name="durationEnd"]');
-  const durationDaysEl = salaryLedgerForm.querySelector('input[name="durationDays"]');
+  const durationMonthsEl = salaryLedgerForm.querySelector('input[name="durationMonths"]');
   const totalPaidEl = salaryLedgerForm.querySelector('input[name="totalPaid"]');
   const computedPaidEl = document.getElementById('salaryLedgerComputedPaid');
   const computedToGiveEl = document.getElementById('salaryLedgerComputedToGive');
   const previewEl = document.getElementById('salaryLedgerRemainingPreview');
-  if (!monthlySalaryAppliedEl || !durationStartEl || !durationEndEl || !durationDaysEl || !totalPaidEl || !previewEl) return;
+  if (!monthlySalaryAppliedEl || !durationMonthsEl || !totalPaidEl || !previewEl) return;
   const monthlySalaryApplied = Math.max(0, toNumber(monthlySalaryAppliedEl.value, 0));
-  const durationStart = String(durationStartEl.value || '').slice(0, 10);
-  const durationEnd = String(durationEndEl.value || '').slice(0, 10);
-  const durationDays = durationDaysInclusive(durationStart, durationEnd);
-  durationDaysEl.value = durationDays > 0 ? String(durationDays) : '';
-  const totalToGive = calculateLedgerTotalFromDuration(monthlySalaryApplied, durationDays);
+  const durationMonths = parseDurationMonthsValue(durationMonthsEl.value, 1);
+  durationMonthsEl.value = String(durationMonths);
+  const totalToGive = calculateLedgerTotalFromMonths(monthlySalaryApplied, durationMonths);
   const totalPaid = round2(Math.max(0, toNumber(totalPaidEl.value, 0)));
   const remaining = Math.max(0, round2(totalToGive - totalPaid));
   if (computedPaidEl) computedPaidEl.textContent = money(totalPaid);
@@ -987,7 +961,7 @@ function autoFillSalaryLedgerSections() {
   const monthlySalaryAppliedEl = salaryLedgerForm.querySelector('input[name="monthlySalaryApplied"]');
   if (!monthlySalaryAppliedEl) return;
   monthlySalaryAppliedEl.value = String(round2(Math.max(0, Number(employee.monthlySalary || 0))));
-  updateSalaryLedgerDurationPreview();
+  updateSalaryLedgerPreview();
   showToast('Monthly salary copied from employee profile');
 }
 
@@ -2048,6 +2022,7 @@ async function bootstrapSession() {
     me = await api('/api/me');
     setVisibility(true);
     applyRoleUI();
+    resetEmployeeFormMode();
     setDefaultDates();
     await refresh();
     ensureAutoRefresh();
@@ -2073,6 +2048,7 @@ loginForm.addEventListener('submit', async (e) => {
     me.storageMode = result.storageMode;
     setVisibility(true);
     applyRoleUI();
+    resetEmployeeFormMode();
     setDefaultDates();
     await refresh();
     ensureAutoRefresh();
@@ -2102,6 +2078,8 @@ logoutBtn.addEventListener('click', async () => {
   billingCompaniesCache = [];
   billsCache = [];
   salaryLedgersCache = [];
+  resetEmployeeFormMode();
+  if (employeeForm) employeeForm.reset();
   if (autoRefreshTimer) {
     clearInterval(autoRefreshTimer);
     autoRefreshTimer = null;
@@ -2670,19 +2648,30 @@ employeeForm.addEventListener('submit', async (e) => {
   const fd = new FormData(employeeForm);
 
   try {
-    await api('/api/employees', 'POST', {
+    const endpoint = editingEmployeeId ? `/api/employees/${editingEmployeeId}` : '/api/employees';
+    const method = editingEmployeeId ? 'PUT' : 'POST';
+    await api(endpoint, method, {
       name: fd.get('name'),
       role: fd.get('role'),
       monthlySalary: fd.get('monthlySalary'),
       joiningDate: fd.get('joiningDate')
     });
     employeeForm.reset();
+    resetEmployeeFormMode();
     setDefaultDates();
     await refresh();
-    showToast('Employee added');
+    showToast(method === 'PUT' ? 'Employee updated' : 'Employee added');
   } catch (err) {
     showToast(err.message, 'error');
   }
+});
+
+employeeCancelEditBtn?.addEventListener('click', () => {
+  editingEmployeeId = null;
+  employeeForm.reset();
+  resetEmployeeFormMode();
+  setDefaultDates();
+  showToast('Employee edit cancelled');
 });
 
 attendanceForm.addEventListener('submit', async (e) => {
@@ -2727,9 +2716,7 @@ salaryLedgerForm?.addEventListener('submit', async (e) => {
   const fd = new FormData(salaryLedgerForm);
   const employeeId = String(fd.get('employeeId') || '');
   const monthlySalaryApplied = round2(Math.max(0, toNumber(fd.get('monthlySalaryApplied'), 0)));
-  const durationStart = String(fd.get('durationStart') || '').slice(0, 10);
-  const durationEnd = String(fd.get('durationEnd') || '').slice(0, 10);
-  const durationDays = durationDaysInclusive(durationStart, durationEnd);
+  const durationMonths = parseDurationMonthsValue(fd.get('durationMonths'), 1);
   const totalPaid = round2(Math.max(0, toNumber(fd.get('totalPaid'), 0)));
   if (!employeeId) {
     showToast('Select employee', 'error');
@@ -2739,11 +2726,11 @@ salaryLedgerForm?.addEventListener('submit', async (e) => {
     showToast('Monthly salary must be greater than 0', 'error');
     return;
   }
-  if (durationDays <= 0) {
+  if (durationMonths <= 0) {
     showToast('Choose a valid duration', 'error');
     return;
   }
-  const totalToGive = calculateLedgerTotalFromDuration(monthlySalaryApplied, durationDays);
+  const totalToGive = calculateLedgerTotalFromMonths(monthlySalaryApplied, durationMonths);
   if (totalPaid > totalToGive) {
     showToast('Total Paid cannot be greater than Total To Give', 'error');
     return;
@@ -2754,9 +2741,7 @@ salaryLedgerForm?.addEventListener('submit', async (e) => {
       totalPaid,
       totalToGive,
       monthlySalaryApplied,
-      durationStart,
-      durationEnd,
-      durationDays,
+      durationMonths,
       note: fd.get('note') || ''
     });
     await refresh();
@@ -2881,35 +2866,34 @@ salaryLedgerAutoFillBtn?.addEventListener('click', () => {
   autoFillSalaryLedgerSections();
 });
 
-salaryLedgerCurrentMonthBtn?.addEventListener('click', () => {
-  if (!salaryLedgerForm || !salaryLedgerEmployeeSelect) return;
-  const employee = findEmployeeById(salaryLedgerEmployeeSelect.value);
-  const startEl = salaryLedgerForm.querySelector('input[name="durationStart"]');
-  const endEl = salaryLedgerForm.querySelector('input[name="durationEnd"]');
-  if (!startEl || !endEl) return;
-  startEl.value = defaultLedgerDurationStart(employee);
-  endEl.value = defaultLedgerDurationEnd();
-  updateSalaryLedgerDurationPreview();
-  showToast('Duration set to current month range');
+salaryLedgerOneMonthBtn?.addEventListener('click', () => {
+  if (!salaryLedgerForm) return;
+  const durationMonthsEl = salaryLedgerForm.querySelector('input[name="durationMonths"]');
+  if (!durationMonthsEl) return;
+  durationMonthsEl.value = '1';
+  updateSalaryLedgerPreview();
+  showToast('Duration set to 1 month');
 });
 
 salaryLedgerResetBtn?.addEventListener('click', () => {
   if (!salaryLedgerForm) return;
-  ['totalPaid'].forEach((name) => {
+  ['totalPaid', 'durationMonths'].forEach((name) => {
     const input = salaryLedgerForm.querySelector(`input[name="${name}"]`);
     if (input) input.value = '0';
   });
+  const durationMonthsEl = salaryLedgerForm.querySelector('input[name="durationMonths"]');
+  if (durationMonthsEl) durationMonthsEl.value = '1';
   const noteEl = salaryLedgerForm.querySelector('input[name="note"]');
   if (noteEl) noteEl.value = '';
-  updateSalaryLedgerDurationPreview();
+  updateSalaryLedgerPreview();
   showToast('Ledger form cleared');
 });
 
 salaryLedgerForm
-  ?.querySelectorAll('input[name="monthlySalaryApplied"], input[name="durationStart"], input[name="durationEnd"], input[name="totalPaid"]')
+  ?.querySelectorAll('input[name="monthlySalaryApplied"], input[name="durationMonths"], input[name="totalPaid"]')
   ?.forEach((input) => {
-    input.addEventListener('input', updateSalaryLedgerDurationPreview);
-    input.addEventListener('change', updateSalaryLedgerDurationPreview);
+    input.addEventListener('input', updateSalaryLedgerPreview);
+    input.addEventListener('change', updateSalaryLedgerPreview);
   });
 
 sectionNav.addEventListener('click', (e) => {

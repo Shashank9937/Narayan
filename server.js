@@ -66,6 +66,7 @@ const ROLE_PERMISSIONS = {
   manager: [
     'dashboard:view',
     'employees:view',
+    'employees:update',
     'attendance:view',
     'attendance:create',
     'attendance:report',
@@ -859,11 +860,47 @@ function jsonStore() {
         const durationStart = normalizeISODateText(ledger?.durationStart);
         const durationEnd = normalizeISODateText(ledger?.durationEnd);
         const storedDurationDays = Math.max(0, Math.trunc(toSafeNumber(ledger?.durationDays, 0)));
+        const storedDurationMonths = roundMoney(Math.max(0, toSafeNumber(ledger?.durationMonths, 0)));
         const durationDays = storedDurationDays > 0 ? storedDurationDays : isoDaysInclusive(durationStart, durationEnd);
         const monthlySalaryApplied = roundMoney(Math.max(0, toSafeNumber(ledger?.monthlySalaryApplied, e.monthlySalary)));
-        const hasDurationModel = Boolean(ledger && durationStart && durationEnd && durationDays > 0);
+        const hasMonthsModel = Boolean(ledger && monthlySalaryApplied > 0 && storedDurationMonths > 0);
+        const hasDateModel = Boolean(ledger && durationStart && durationEnd && durationDays > 0);
 
-        if (hasDurationModel) {
+        if (hasMonthsModel) {
+          const fallbackTotal = roundMoney(monthlySalaryApplied * storedDurationMonths);
+          const totalSalary = roundMoney(Math.max(0, toSafeNumber(ledger?.totalSalary, fallbackTotal)));
+          const totalPaid = roundMoney(Math.max(0, toSafeNumber(ledger?.amountGiven, 0)));
+          const remaining = roundMoney(Math.max(0, totalSalary - totalPaid));
+          return {
+            employeeId: e.id,
+            name: e.name,
+            role: e.role,
+            monthlySalary: Number(e.monthlySalary || 0),
+            monthlySalaryApplied,
+            durationMonths: storedDurationMonths,
+            durationStart: '',
+            durationEnd: '',
+            durationDays: 0,
+            totalSalary,
+            amountGiven: totalPaid,
+            totalPaid,
+            totalToGive: totalSalary,
+            period1ToGive: totalSalary,
+            period1Paid: totalPaid,
+            period2ToGive: 0,
+            period2Paid: 0,
+            advancesFromFeb: 0,
+            currentMonthSalary: monthlySalaryApplied,
+            currentMonthAdvance: Number(currentMonthAdvance || 0),
+            remaining,
+            note: ledger?.note || '',
+            pending: remaining,
+            ledgerMode: 'months',
+            updatedAt: ledger?.updatedAt || null
+          };
+        }
+
+        if (hasDateModel) {
           const fallbackTotal = roundMoney((monthlySalaryApplied / 30) * durationDays);
           const totalSalary = roundMoney(Math.max(0, toSafeNumber(ledger?.totalSalary, fallbackTotal)));
           const totalPaid = roundMoney(Math.max(0, toSafeNumber(ledger?.amountGiven, 0)));
@@ -874,6 +911,7 @@ function jsonStore() {
             role: e.role,
             monthlySalary: Number(e.monthlySalary || 0),
             monthlySalaryApplied,
+            durationMonths: roundMoney(durationDays / 30),
             durationStart,
             durationEnd,
             durationDays,
@@ -914,6 +952,7 @@ function jsonStore() {
           role: e.role,
           monthlySalary: Number(e.monthlySalary || 0),
           monthlySalaryApplied: Number(e.monthlySalary || 0),
+          durationMonths: 0,
           durationStart: '',
           durationEnd: '',
           durationDays: 0,
@@ -960,7 +999,10 @@ function jsonStore() {
       const durationEnd = normalizeISODateText(extra.durationEnd);
       const durationDaysFromPayload = Math.max(0, Math.trunc(toSafeNumber(extra.durationDays, 0)));
       const durationDays = durationDaysFromPayload > 0 ? durationDaysFromPayload : isoDaysInclusive(durationStart, durationEnd);
-      const hasDurationModel = Boolean(durationStart && durationEnd && durationDays > 0);
+      const durationMonths = roundMoney(Math.max(0, toSafeNumber(extra.durationMonths, 0)));
+      const hasDateModel = Boolean(durationStart && durationEnd && durationDays > 0);
+      const hasMonthsModel = Boolean(monthlySalaryApplied > 0 && durationMonths > 0);
+      const hasModernModel = hasDateModel || hasMonthsModel;
       const existing = db.salaryLedgers.find((l) => l.employeeId === employeeId);
       if (existing) {
         existing.totalSalary = computedTotal;
@@ -969,11 +1011,12 @@ function jsonStore() {
         existing.period1Paid = section1Paid;
         existing.period2ToGive = section2ToGive;
         existing.period2Paid = section2Paid;
-        if (hasDurationModel) {
+        if (hasModernModel) {
           existing.monthlySalaryApplied = monthlySalaryApplied;
-          existing.durationStart = durationStart;
-          existing.durationEnd = durationEnd;
-          existing.durationDays = durationDays;
+          existing.durationStart = hasDateModel ? durationStart : '';
+          existing.durationEnd = hasDateModel ? durationEnd : '';
+          existing.durationDays = hasDateModel ? durationDays : 0;
+          existing.durationMonths = hasMonthsModel ? durationMonths : 0;
         }
         existing.note = String(note || '').trim();
         existing.updatedAt = new Date().toISOString();
@@ -989,10 +1032,11 @@ function jsonStore() {
         period1Paid: section1Paid,
         period2ToGive: section2ToGive,
         period2Paid: section2Paid,
-        monthlySalaryApplied: hasDurationModel ? monthlySalaryApplied : 0,
-        durationStart: hasDurationModel ? durationStart : '',
-        durationEnd: hasDurationModel ? durationEnd : '',
-        durationDays: hasDurationModel ? durationDays : 0,
+        monthlySalaryApplied: hasModernModel ? monthlySalaryApplied : 0,
+        durationStart: hasDateModel ? durationStart : '',
+        durationEnd: hasDateModel ? durationEnd : '',
+        durationDays: hasDateModel ? durationDays : 0,
+        durationMonths: hasMonthsModel ? durationMonths : 0,
         note: String(note || '').trim(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -1778,6 +1822,7 @@ function postgresStore() {
         ALTER TABLE salary_ledgers ADD COLUMN IF NOT EXISTS duration_start DATE;
         ALTER TABLE salary_ledgers ADD COLUMN IF NOT EXISTS duration_end DATE;
         ALTER TABLE salary_ledgers ADD COLUMN IF NOT EXISTS duration_days INTEGER;
+        ALTER TABLE salary_ledgers ADD COLUMN IF NOT EXISTS duration_months NUMERIC(10,2);
 
         CREATE TABLE IF NOT EXISTS trucks (
           id TEXT PRIMARY KEY,
@@ -2220,6 +2265,7 @@ function postgresStore() {
                 sl.duration_start,
                 sl.duration_end,
                 COALESCE(sl.duration_days, 0) AS duration_days,
+                COALESCE(sl.duration_months, 0) AS duration_months,
                 COALESCE(
                   (SELECT SUM(sa.amount) FROM salary_advances sa WHERE sa.employee_id = e.id AND sa.date >= DATE '2026-02-01'),
                   0
@@ -2241,11 +2287,46 @@ function postgresStore() {
         const durationStart = r.duration_start ? String(r.duration_start).slice(0, 10) : '';
         const durationEnd = r.duration_end ? String(r.duration_end).slice(0, 10) : '';
         const storedDurationDays = Math.max(0, Math.trunc(toSafeNumber(r.duration_days, 0)));
+        const storedDurationMonths = roundMoney(Math.max(0, toSafeNumber(r.duration_months, 0)));
         const durationDays = storedDurationDays > 0 ? storedDurationDays : isoDaysInclusive(durationStart, durationEnd);
-        const hasDurationModel = Boolean(durationStart && durationEnd && durationDays > 0);
+        const hasDateModel = Boolean(durationStart && durationEnd && durationDays > 0);
         const employeeMonthly = Number(r.monthly_salary || 0);
         const monthlySalaryApplied = roundMoney(Math.max(0, toSafeNumber(r.monthly_salary_applied, employeeMonthly)));
-        if (hasDurationModel) {
+        const hasMonthsModel = Boolean(monthlySalaryApplied > 0 && storedDurationMonths > 0);
+        if (hasMonthsModel) {
+          const fallbackTotal = roundMoney(monthlySalaryApplied * storedDurationMonths);
+          const totalSalary = roundMoney(Math.max(0, toSafeNumber(r.total_salary, fallbackTotal)));
+          const totalPaid = roundMoney(Math.max(0, toSafeNumber(r.amount_given, 0)));
+          const remaining = roundMoney(Math.max(0, totalSalary - totalPaid));
+          return {
+            employeeId: r.employee_id,
+            name: r.name,
+            role: r.role,
+            monthlySalary: employeeMonthly,
+            monthlySalaryApplied,
+            durationMonths: storedDurationMonths,
+            durationStart: '',
+            durationEnd: '',
+            durationDays: 0,
+            totalSalary,
+            amountGiven: totalPaid,
+            totalPaid,
+            totalToGive: totalSalary,
+            period1ToGive: totalSalary,
+            period1Paid: totalPaid,
+            period2ToGive: 0,
+            period2Paid: 0,
+            advancesFromFeb: 0,
+            currentMonthSalary: monthlySalaryApplied,
+            currentMonthAdvance: Number(r.current_month_advance || 0),
+            remaining,
+            note: r.note || '',
+            pending: remaining,
+            ledgerMode: 'months',
+            updatedAt: r.updated_at || null
+          };
+        }
+        if (hasDateModel) {
           const fallbackTotal = roundMoney((monthlySalaryApplied / 30) * durationDays);
           const totalSalary = roundMoney(Math.max(0, toSafeNumber(r.total_salary, fallbackTotal)));
           const totalPaid = roundMoney(Math.max(0, toSafeNumber(r.amount_given, 0)));
@@ -2256,6 +2337,7 @@ function postgresStore() {
             role: r.role,
             monthlySalary: employeeMonthly,
             monthlySalaryApplied,
+            durationMonths: roundMoney(durationDays / 30),
             durationStart,
             durationEnd,
             durationDays,
@@ -2293,6 +2375,7 @@ function postgresStore() {
           role: r.role,
           monthlySalary: employeeMonthly,
           monthlySalaryApplied: employeeMonthly,
+          durationMonths: 0,
           durationStart: '',
           durationEnd: '',
           durationDays: 0,
@@ -2338,7 +2421,10 @@ function postgresStore() {
       const durationEnd = normalizeISODateText(extra.durationEnd);
       const durationDaysFromPayload = Math.max(0, Math.trunc(toSafeNumber(extra.durationDays, 0)));
       const durationDays = durationDaysFromPayload > 0 ? durationDaysFromPayload : isoDaysInclusive(durationStart, durationEnd);
-      const hasDurationModel = Boolean(durationStart && durationEnd && durationDays > 0);
+      const durationMonths = roundMoney(Math.max(0, toSafeNumber(extra.durationMonths, 0)));
+      const hasDateModel = Boolean(durationStart && durationEnd && durationDays > 0);
+      const hasMonthsModel = Boolean(monthlySalaryApplied > 0 && durationMonths > 0);
+      const hasModernModel = hasDateModel || hasMonthsModel;
       const existing = await pool.query('SELECT id FROM salary_ledgers WHERE employee_id = $1', [employeeId]);
       if (existing.rows[0]) {
         const id = existing.rows[0].id;
@@ -2355,6 +2441,7 @@ function postgresStore() {
                   duration_start = $10,
                   duration_end = $11,
                   duration_days = $12,
+                  duration_months = $13,
                   updated_at = NOW()
             WHERE id = $1`,
           [
@@ -2366,10 +2453,11 @@ function postgresStore() {
             section1Paid,
             section2ToGive,
             section2Paid,
-            hasDurationModel ? monthlySalaryApplied : null,
-            hasDurationModel ? durationStart : null,
-            hasDurationModel ? durationEnd : null,
-            hasDurationModel ? durationDays : null
+            hasModernModel ? monthlySalaryApplied : null,
+            hasDateModel ? durationStart : null,
+            hasDateModel ? durationEnd : null,
+            hasDateModel ? durationDays : null,
+            hasMonthsModel ? durationMonths : null
           ]
         );
         return {
@@ -2381,10 +2469,11 @@ function postgresStore() {
           period1Paid: section1Paid,
           period2ToGive: section2ToGive,
           period2Paid: section2Paid,
-          monthlySalaryApplied: hasDurationModel ? monthlySalaryApplied : 0,
-          durationStart: hasDurationModel ? durationStart : '',
-          durationEnd: hasDurationModel ? durationEnd : '',
-          durationDays: hasDurationModel ? durationDays : 0,
+          monthlySalaryApplied: hasModernModel ? monthlySalaryApplied : 0,
+          durationMonths: hasMonthsModel ? durationMonths : 0,
+          durationStart: hasDateModel ? durationStart : '',
+          durationEnd: hasDateModel ? durationEnd : '',
+          durationDays: hasDateModel ? durationDays : 0,
           note: String(note || '').trim()
         };
       }
@@ -2397,10 +2486,11 @@ function postgresStore() {
         period1Paid: section1Paid,
         period2ToGive: section2ToGive,
         period2Paid: section2Paid,
-        monthlySalaryApplied: hasDurationModel ? monthlySalaryApplied : 0,
-        durationStart: hasDurationModel ? durationStart : '',
-        durationEnd: hasDurationModel ? durationEnd : '',
-        durationDays: hasDurationModel ? durationDays : 0,
+        monthlySalaryApplied: hasModernModel ? monthlySalaryApplied : 0,
+        durationMonths: hasMonthsModel ? durationMonths : 0,
+        durationStart: hasDateModel ? durationStart : '',
+        durationEnd: hasDateModel ? durationEnd : '',
+        durationDays: hasDateModel ? durationDays : 0,
         note: String(note || '').trim(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -2420,10 +2510,11 @@ function postgresStore() {
             duration_start,
             duration_end,
             duration_days,
+            duration_months,
             created_at,
             updated_at
           )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
         [
           row.id,
           row.employeeId,
@@ -2434,10 +2525,11 @@ function postgresStore() {
           row.period1Paid,
           row.period2ToGive,
           row.period2Paid,
-          hasDurationModel ? row.monthlySalaryApplied : null,
-          hasDurationModel ? row.durationStart : null,
-          hasDurationModel ? row.durationEnd : null,
-          hasDurationModel ? row.durationDays : null,
+          hasModernModel ? row.monthlySalaryApplied : null,
+          hasDateModel ? row.durationStart : null,
+          hasDateModel ? row.durationEnd : null,
+          hasDateModel ? row.durationDays : null,
+          hasMonthsModel ? row.durationMonths : null,
           row.createdAt,
           row.updatedAt
         ]
@@ -3931,6 +4023,7 @@ app.put('/api/salary-ledgers/:employeeId', auth, requirePermission('salaryledger
     period2ToGive,
     period2Paid,
     monthlySalaryApplied,
+    durationMonths,
     durationStart,
     durationEnd,
     durationDays,
@@ -3949,10 +4042,12 @@ app.put('/api/salary-ledgers/:employeeId', auth, requirePermission('salaryledger
     const durationStartText = normalizeISODateText(durationStart);
     const durationEndText = normalizeISODateText(durationEnd);
     const durationDaysInput = parseNumeric(durationDays);
+    const durationMonthsInput = parseNumeric(durationMonths);
     const monthlyAppliedInput = parseNumeric(monthlySalaryApplied);
-    const hasDurationPayload = Boolean(durationStartText || durationEndText || durationDaysInput != null || monthlyAppliedInput != null);
+    const hasDateDurationPayload = Boolean(durationStartText || durationEndText || durationDaysInput != null);
+    const hasMonthsPayload = durationMonthsInput != null;
 
-    if (hasDurationPayload) {
+    if (hasDateDurationPayload) {
       if (!durationStartText || !durationEndText) {
         return res.status(400).json({ error: 'durationStart and durationEnd are required' });
       }
@@ -3988,9 +4083,46 @@ app.put('/api/salary-ledgers/:employeeId', auth, requirePermission('salaryledger
         0,
         {
           monthlySalaryApplied: appliedMonthly,
+          durationMonths: 0,
           durationStart: durationStartText,
           durationEnd: durationEndText,
           durationDays: normalizedDays
+        }
+      );
+      return res.json(row);
+    }
+
+    if (hasMonthsPayload) {
+      const normalizedMonths = roundMoney(Math.max(0, toSafeNumber(durationMonthsInput, 0)));
+      if (!Number.isFinite(normalizedMonths) || normalizedMonths <= 0) {
+        return res.status(400).json({ error: 'durationMonths must be a positive number' });
+      }
+      const appliedMonthly = monthlyAppliedInput != null ? Number(monthlyAppliedInput) : Number(employee.monthlySalary || 0);
+      if (!Number.isFinite(appliedMonthly) || appliedMonthly <= 0) {
+        return res.status(400).json({ error: 'monthlySalaryApplied must be a positive number' });
+      }
+      const paidRaw = totalPaid != null ? totalPaid : amountGiven;
+      const paid = roundMoney(Math.max(0, toSafeNumber(paidRaw, 0)));
+      const computedTotal = roundMoney(appliedMonthly * normalizedMonths);
+      if (paid > computedTotal) {
+        return res.status(400).json({ error: 'totalPaid cannot be greater than calculated total salary' });
+      }
+      const row = await store.upsertSalaryLedger(
+        req.params.employeeId,
+        computedTotal,
+        paid,
+        note,
+        computedTotal,
+        computedTotal,
+        paid,
+        0,
+        0,
+        {
+          monthlySalaryApplied: appliedMonthly,
+          durationMonths: normalizedMonths,
+          durationStart: '',
+          durationEnd: '',
+          durationDays: 0
         }
       );
       return res.json(row);
