@@ -101,6 +101,7 @@ const lastRefreshedEl = document.getElementById('lastRefreshed');
 const manualRefreshBtn = document.getElementById('manualRefreshBtn');
 const expenseDateFromInput = document.getElementById('expenseDateFrom');
 const expenseDateToInput = document.getElementById('expenseDateTo');
+const expenseSearchInput = document.getElementById('expenseSearchInput');
 const expenseFilterBtn = document.getElementById('expenseFilterBtn');
 const expenseClearBtn = document.getElementById('expenseClearBtn');
 
@@ -119,7 +120,7 @@ let activeSupplierId = null;
 let salaryRowsCache = [];
 let salaryLedgersCache = [];
 let autoRefreshTimer = null;
-let expenseFilter = { dateFrom: '', dateTo: '' };
+let expenseFilter = { dateFrom: '', dateTo: '', description: '' };
 let editingTruckId = null;
 let editingExpenseId = null;
 let editingLandId = null;
@@ -1036,9 +1037,13 @@ function renderTruckRows(rows) {
 function renderExpenseRows(rows) {
   const canEdit = hasPermission('expenses:update');
   const canDelete = hasPermission('expenses:delete');
+  const descriptionQuery = String(expenseFilter.description || '')
+    .trim()
+    .toLowerCase();
   const filtered = rows.filter((e) => {
     if (expenseFilter.dateFrom && e.date < expenseFilter.dateFrom) return false;
     if (expenseFilter.dateTo && e.date > expenseFilter.dateTo) return false;
+    if (descriptionQuery && !String(e.description || '').toLowerCase().includes(descriptionQuery)) return false;
     return true;
   });
 
@@ -1616,7 +1621,7 @@ function filterTrucks(rows) {
   const q = (truckSearchInput.value || '').trim().toLowerCase();
   if (!q) return rows;
   return rows.filter((t) =>
-    `${t.truckNumber} ${t.driverName || ''} ${t.rawMaterial} ${partyLabel(t.party)} ${t.origin || ''} ${t.destination || ''}`
+    `${t.truckNumber} ${t.driverName || ''} ${t.rawMaterial} ${partyLabel(t.party)} ${t.quantity || ''} ${t.origin || ''} ${t.destination || ''}`
       .toLowerCase()
       .includes(q)
   );
@@ -2457,15 +2462,25 @@ truckSearchInput.addEventListener('input', () => {
 expenseFilterBtn?.addEventListener('click', () => {
   expenseFilter = {
     dateFrom: expenseDateFromInput?.value || '',
-    dateTo: expenseDateToInput?.value || ''
+    dateTo: expenseDateToInput?.value || '',
+    description: expenseSearchInput?.value || ''
   };
   renderExpenseRows(expensesCache);
 });
 
 expenseClearBtn?.addEventListener('click', () => {
-  expenseFilter = { dateFrom: '', dateTo: '' };
+  expenseFilter = { dateFrom: '', dateTo: '', description: '' };
   if (expenseDateFromInput) expenseDateFromInput.value = '';
   if (expenseDateToInput) expenseDateToInput.value = '';
+  if (expenseSearchInput) expenseSearchInput.value = '';
+  renderExpenseRows(expensesCache);
+});
+
+expenseSearchInput?.addEventListener('input', () => {
+  expenseFilter = {
+    ...expenseFilter,
+    description: expenseSearchInput.value || ''
+  };
   renderExpenseRows(expensesCache);
 });
 
