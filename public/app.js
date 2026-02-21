@@ -55,6 +55,8 @@ const truckPelletRevenueEl = document.getElementById('truckPelletRevenue');
 const truckPelletRevenueNarayanEl = document.getElementById('truckPelletRevenueNarayan');
 const truckPelletRevenueMaaVaishnoEl = document.getElementById('truckPelletRevenueMaaVaishno');
 const truckBriquetteRevenueEl = document.getElementById('truckBriquetteRevenue');
+const truckBriquetteRevenueNarayanEl = document.getElementById('truckBriquetteRevenueNarayan');
+const truckBriquetteRevenueMaaVaishnoEl = document.getElementById('truckBriquetteRevenueMaaVaishno');
 
 const attendanceEmployeeEl = document.getElementById('attendanceEmployee');
 const advanceEmployeeEl = document.getElementById('advanceEmployee');
@@ -850,6 +852,8 @@ function renderTruckRows(rows) {
   let pelletRevenueNarayan = 0;
   let pelletRevenueMaaVaishno = 0;
   let briquetteRevenue = 0;
+  let briquetteRevenueNarayan = 0;
+  let briquetteRevenueMaaVaishno = 0;
 
   rows.forEach(row => {
     const qty = Number(row.quantity) || 0;
@@ -863,6 +867,8 @@ function renderTruckRows(rows) {
     } else if (material === 'briquettes') {
       briquetteTotal += qty;
       briquetteRevenue += amount;
+      if (row.party === 'narayan') briquetteRevenueNarayan += amount;
+      if (row.party === 'maa_vaishno') briquetteRevenueMaaVaishno += amount;
     }
   });
 
@@ -875,6 +881,12 @@ function renderTruckRows(rows) {
     truckPelletRevenueMaaVaishnoEl.textContent = `Maa Vaishno: ${money(pelletRevenueMaaVaishno)}`;
   }
   if (truckBriquetteRevenueEl) truckBriquetteRevenueEl.textContent = money(briquetteRevenue);
+  if (truckBriquetteRevenueNarayanEl) {
+    truckBriquetteRevenueNarayanEl.textContent = `Narayan: ${money(briquetteRevenueNarayan)}`;
+  }
+  if (truckBriquetteRevenueMaaVaishnoEl) {
+    truckBriquetteRevenueMaaVaishnoEl.textContent = `Maa Vaishno: ${money(briquetteRevenueMaaVaishno)}`;
+  }
   const narayanTotal = rows
     .filter((t) => t.party === 'narayan' && t.totalAmount != null)
     .reduce((sum, t) => sum + Number(t.totalAmount), 0);
