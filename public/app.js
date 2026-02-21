@@ -52,6 +52,8 @@ const cancelBillEditBtn = document.getElementById('cancelBillEditBtn');
 const truckPelletTotalEl = document.getElementById('truckPelletTotal');
 const truckBriquetteTotalEl = document.getElementById('truckBriquetteTotal');
 const truckPelletRevenueEl = document.getElementById('truckPelletRevenue');
+const truckPelletRevenueNarayanEl = document.getElementById('truckPelletRevenueNarayan');
+const truckPelletRevenueMaaVaishnoEl = document.getElementById('truckPelletRevenueMaaVaishno');
 const truckBriquetteRevenueEl = document.getElementById('truckBriquetteRevenue');
 
 const attendanceEmployeeEl = document.getElementById('attendanceEmployee');
@@ -845,6 +847,8 @@ function renderTruckRows(rows) {
   let pelletTotal = 0;
   let briquetteTotal = 0;
   let pelletRevenue = 0;
+  let pelletRevenueNarayan = 0;
+  let pelletRevenueMaaVaishno = 0;
   let briquetteRevenue = 0;
 
   rows.forEach(row => {
@@ -854,6 +858,8 @@ function renderTruckRows(rows) {
     if (material === 'pellet') {
       pelletTotal += qty;
       pelletRevenue += amount;
+      if (row.party === 'narayan') pelletRevenueNarayan += amount;
+      if (row.party === 'maa_vaishno') pelletRevenueMaaVaishno += amount;
     } else if (material === 'briquettes') {
       briquetteTotal += qty;
       briquetteRevenue += amount;
@@ -864,6 +870,10 @@ function renderTruckRows(rows) {
   if (truckPelletTotalEl) truckPelletTotalEl.textContent = `${pelletTotal.toFixed(2)} Qntl`;
   if (truckBriquetteTotalEl) truckBriquetteTotalEl.textContent = `${briquetteTotal.toFixed(2)} Qntl`;
   if (truckPelletRevenueEl) truckPelletRevenueEl.textContent = money(pelletRevenue);
+  if (truckPelletRevenueNarayanEl) truckPelletRevenueNarayanEl.textContent = `Narayan: ${money(pelletRevenueNarayan)}`;
+  if (truckPelletRevenueMaaVaishnoEl) {
+    truckPelletRevenueMaaVaishnoEl.textContent = `Maa Vaishno: ${money(pelletRevenueMaaVaishno)}`;
+  }
   if (truckBriquetteRevenueEl) truckBriquetteRevenueEl.textContent = money(briquetteRevenue);
   const narayanTotal = rows
     .filter((t) => t.party === 'narayan' && t.totalAmount != null)
