@@ -200,19 +200,27 @@
           <h2>Salary Ledger Workspace</h2>
           <input id="salaryLedgerSearchInput" type="text" placeholder="Search employee/role in ledger" />
         </div>
-        <p class="hint">Choose employee, set monthly salary and duration in months. Total salary is auto-calculated. Enter paid amount and remaining is auto-tracked.</p>
+        <p class="hint">Select employee, set salary session dates, opening pending and paid amount. Remaining is carried forward automatically into the next session.</p>
         <form id="salaryLedgerForm" class="salary-ledger-form">
           <div class="field-group">
             <label for="salaryLedgerEmployee">Employee</label>
             <select name="employeeId" id="salaryLedgerEmployee" required></select>
           </div>
           <div class="field-group">
+            <label for="salaryLedgerFromDate">From Date</label>
+            <input id="salaryLedgerFromDate" name="durationStart" type="date" required />
+          </div>
+          <div class="field-group">
+            <label for="salaryLedgerToDate">To Date</label>
+            <input id="salaryLedgerToDate" name="durationEnd" type="date" required />
+          </div>
+          <div class="field-group">
             <label for="salaryLedgerMonthlySalaryApplied">Monthly Salary Used</label>
             <input id="salaryLedgerMonthlySalaryApplied" name="monthlySalaryApplied" type="number" min="0" step="0.01" placeholder="Monthly Salary" required />
           </div>
           <div class="field-group">
-            <label for="salaryLedgerDurationMonths">Duration (Months)</label>
-            <input id="salaryLedgerDurationMonths" name="durationMonths" type="number" min="0.01" step="0.01" placeholder="Example: 1, 1.5, 2" required />
+            <label for="salaryLedgerOpeningPendingInput">Opening Pending (Previous Session)</label>
+            <input id="salaryLedgerOpeningPendingInput" name="openingPending" type="number" min="0" step="0.01" placeholder="Carry Forward Pending" />
           </div>
           <div class="field-group">
             <label for="salaryLedgerTotalPaidInput">Total Paid</label>
@@ -220,12 +228,21 @@
           </div>
           <div class="row wrap salary-ledger-tools">
             <button id="salaryLedgerAutoFillBtn" type="button" class="small">Use Employee Monthly Salary</button>
-            <button id="salaryLedgerOneMonthBtn" type="button" class="small">Set Duration to 1 Month</button>
+            <button id="salaryLedgerCurrentMonthBtn" type="button" class="small">Set Current Month Dates</button>
+            <button id="salaryLedgerCarryBtn" type="button" class="small">Carry Previous Remaining</button>
             <button id="salaryLedgerResetBtn" type="button" class="small warn">Clear Form</button>
           </div>
           <div class="summary-stat-grid salary-ledger-live-summary">
             <div class="summary-stat">
-              <div class="label">Calculated Total Salary</div>
+              <div class="label">Days</div>
+              <div id="salaryLedgerComputedDays" class="value">0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Period Salary</div>
+              <div id="salaryLedgerComputedPeriodSalary" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Total To Give</div>
               <div id="salaryLedgerComputedToGive" class="value">₹0</div>
             </div>
             <div class="summary-stat">
@@ -260,10 +277,12 @@
                 <tr>
                   <th>Employee</th>
                   <th>Role</th>
+                  <th>Period</th>
+                  <th>Days</th>
                   <th>Updated</th>
-                  <th>Monthly Salary Used</th>
-                  <th>Duration (Months)</th>
-                  <th>Total Salary</th>
+                  <th>Opening Pending</th>
+                  <th>Period Salary</th>
+                  <th>Total To Give</th>
                   <th>Total Paid</th>
                   <th>Remaining</th>
                   <th>Note</th>

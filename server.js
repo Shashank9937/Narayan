@@ -228,6 +228,70 @@ function toSafeNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function normalizeSalaryLedgerEntry(employee, ledger, currentMonthAdvance = 0, advancesFromFeb = 0) {
+  const monthlySalary = roundMoney(Math.max(0, toSafeNumber(employee?.monthlySalary, 0)));
+  const durationStart = normalizeISODateText(ledger?.durationStart || ledger?.sessionFrom || ledger?.fromDate);
+  const durationEnd = normalizeISODateText(ledger?.durationEnd || ledger?.sessionTo || ledger?.toDate);
+  const storedDurationDays = Math.max(0, Math.trunc(toSafeNumber(ledger?.durationDays, 0)));
+  const durationDays = storedDurationDays > 0 ? storedDurationDays : isoDaysInclusive(durationStart, durationEnd);
+  const durationMonthsStored = roundMoney(
+    Math.max(0, toSafeNumber(ledger?.durationMonths, durationDays > 0 ? durationDays / 30 : 0))
+  );
+  const monthlySalaryApplied = roundMoney(
+    Math.max(0, toSafeNumber(ledger?.monthlySalaryApplied, monthlySalary))
+  );
+  const openingPending = roundMoney(Math.max(0, toSafeNumber(ledger?.openingPending, 0)));
+  const computedFromDays =
+    durationDays > 0 && monthlySalaryApplied > 0 ? roundMoney((monthlySalaryApplied / 30) * durationDays) : 0;
+  const computedFromMonths =
+    durationMonthsStored > 0 && monthlySalaryApplied > 0 ? roundMoney(monthlySalaryApplied * durationMonthsStored) : 0;
+  const periodSalarySeed = computedFromDays || computedFromMonths || toSafeNumber(ledger?.totalSalary, 0);
+  let periodSalary = roundMoney(Math.max(0, toSafeNumber(ledger?.periodSalary, periodSalarySeed)));
+  const totalToGiveSeed = roundMoney(openingPending + periodSalary);
+  const totalToGive = roundMoney(
+    Math.max(0, toSafeNumber(ledger?.totalToGive ?? ledger?.totalSalary, totalToGiveSeed))
+  );
+  if (periodSalary <= 0) {
+    periodSalary = roundMoney(Math.max(0, totalToGive - openingPending));
+  }
+  const paidSeed = toSafeNumber(ledger?.sessionPaid ?? ledger?.totalPaid ?? ledger?.amountGiven, 0);
+  const totalPaid = roundMoney(Math.max(0, Math.min(totalToGive, paidSeed)));
+  const remaining = roundMoney(Math.max(0, totalToGive - totalPaid));
+  const normalizedCurrentMonthAdvance = roundMoney(Math.max(0, toSafeNumber(currentMonthAdvance, 0)));
+  const normalizedAdvancesFromFeb = roundMoney(Math.max(0, toSafeNumber(advancesFromFeb, 0)));
+
+  return {
+    employeeId: employee.id,
+    name: employee.name,
+    role: employee.role,
+    monthlySalary,
+    monthlySalaryApplied,
+    durationMonths: durationMonthsStored,
+    durationStart,
+    durationEnd,
+    durationDays,
+    openingPending,
+    periodSalary,
+    totalSalary: totalToGive,
+    amountGiven: totalPaid,
+    sessionPaid: totalPaid,
+    totalPaid,
+    totalToGive,
+    period1ToGive: totalToGive,
+    period1Paid: totalPaid,
+    period2ToGive: 0,
+    period2Paid: normalizedCurrentMonthAdvance,
+    advancesFromFeb: normalizedAdvancesFromFeb,
+    currentMonthSalary: monthlySalaryApplied,
+    currentMonthAdvance: normalizedCurrentMonthAdvance,
+    remaining,
+    note: ledger?.note || '',
+    pending: remaining,
+    ledgerMode: durationStart && durationEnd ? 'session' : 'legacy',
+    updatedAt: ledger?.updatedAt || null
+  };
+}
+
 function parseBooleanInput(value, fallback = false) {
   if (value == null) return fallback;
   if (typeof value === 'boolean') return value;
@@ -933,125 +997,24 @@ function jsonStore() {
       const liveStart = '2026-02-01';
       const thisMonth = currentMonth();
       return db.employees.map((e) => {
-        const ledger = db.salaryLedgers.find((l) => l.employeeId === e.id);
+        const ledger = db.salaryLedgers.find((l) => l.employeeId === e.id) || {};
         const currentMonthAdvance = db.salaryAdvances
           .filter((a) => a.employeeId === e.id && monthOf(a.date) === thisMonth)
           .reduce((sum, a) => sum + Number(a.amount || 0), 0);
-        const durationStart = normalizeISODateText(ledger?.durationStart);
-        const durationEnd = normalizeISODateText(ledger?.durationEnd);
-        const storedDurationDays = Math.max(0, Math.trunc(toSafeNumber(ledger?.durationDays, 0)));
-        const storedDurationMonths = roundMoney(Math.max(0, toSafeNumber(ledger?.durationMonths, 0)));
-        const durationDays = storedDurationDays > 0 ? storedDurationDays : isoDaysInclusive(durationStart, durationEnd);
-        const monthlySalaryApplied = roundMoney(Math.max(0, toSafeNumber(ledger?.monthlySalaryApplied, e.monthlySalary)));
-        const hasMonthsModel = Boolean(ledger && monthlySalaryApplied > 0 && storedDurationMonths > 0);
-        const hasDateModel = Boolean(ledger && durationStart && durationEnd && durationDays > 0);
-
-        if (hasMonthsModel) {
-          const fallbackTotal = roundMoney(monthlySalaryApplied * storedDurationMonths);
-          const totalSalary = roundMoney(Math.max(0, toSafeNumber(ledger?.totalSalary, fallbackTotal)));
-          const totalPaid = roundMoney(Math.max(0, toSafeNumber(ledger?.amountGiven, 0)));
-          const remaining = roundMoney(Math.max(0, totalSalary - totalPaid));
-          return {
-            employeeId: e.id,
-            name: e.name,
-            role: e.role,
-            monthlySalary: Number(e.monthlySalary || 0),
-            monthlySalaryApplied,
-            durationMonths: storedDurationMonths,
-            durationStart: '',
-            durationEnd: '',
-            durationDays: 0,
-            totalSalary,
-            amountGiven: totalPaid,
-            totalPaid,
-            totalToGive: totalSalary,
-            period1ToGive: totalSalary,
-            period1Paid: totalPaid,
-            period2ToGive: 0,
-            period2Paid: 0,
-            advancesFromFeb: 0,
-            currentMonthSalary: monthlySalaryApplied,
-            currentMonthAdvance: Number(currentMonthAdvance || 0),
-            remaining,
-            note: ledger?.note || '',
-            pending: remaining,
-            ledgerMode: 'months',
-            updatedAt: ledger?.updatedAt || null
-          };
-        }
-
-        if (hasDateModel) {
-          const fallbackTotal = roundMoney((monthlySalaryApplied / 30) * durationDays);
-          const totalSalary = roundMoney(Math.max(0, toSafeNumber(ledger?.totalSalary, fallbackTotal)));
-          const totalPaid = roundMoney(Math.max(0, toSafeNumber(ledger?.amountGiven, 0)));
-          const remaining = roundMoney(Math.max(0, totalSalary - totalPaid));
-          return {
-            employeeId: e.id,
-            name: e.name,
-            role: e.role,
-            monthlySalary: Number(e.monthlySalary || 0),
-            monthlySalaryApplied,
-            durationMonths: roundMoney(durationDays / 30),
-            durationStart,
-            durationEnd,
-            durationDays,
-            totalSalary,
-            amountGiven: totalPaid,
-            totalPaid,
-            totalToGive: totalSalary,
-            period1ToGive: totalSalary,
-            period1Paid: totalPaid,
-            period2ToGive: 0,
-            period2Paid: 0,
-            advancesFromFeb: 0,
-            currentMonthSalary: monthlySalaryApplied,
-            currentMonthAdvance: Number(currentMonthAdvance || 0),
-            remaining,
-            note: ledger?.note || '',
-            pending: remaining,
-            ledgerMode: 'duration',
-            updatedAt: ledger?.updatedAt || null
-          };
-        }
-
-        const totalSalary = Number(ledger?.totalSalary || 0);
-        const amountGiven = Number(ledger?.amountGiven || 0);
-        const period1ToGive = Number(ledger?.period1ToGive || 0);
         const advancesFromFeb = db.salaryAdvances
           .filter((a) => a.employeeId === e.id && String(a.date || '') >= liveStart)
           .reduce((sum, a) => sum + Number(a.amount || 0), 0);
-        const period2Paid = Number(advancesFromFeb || 0);
-        const storedPeriod1Paid = Number(ledger?.period1Paid || 0);
-        const period1Paid = storedPeriod1Paid > 0 ? storedPeriod1Paid : Math.max(0, amountGiven - period2Paid);
-        const period2ToGive = Number(ledger?.period2ToGive || 0);
-        const totalPaid = period1Paid + period2Paid;
-        const remaining = Math.max(0, totalSalary - totalPaid);
-        return {
-          employeeId: e.id,
-          name: e.name,
-          role: e.role,
-          monthlySalary: Number(e.monthlySalary || 0),
-          monthlySalaryApplied: Number(e.monthlySalary || 0),
-          durationMonths: 0,
-          durationStart: '',
-          durationEnd: '',
-          durationDays: 0,
-          totalSalary,
-          amountGiven: totalPaid,
-          totalPaid,
-          totalToGive: totalSalary,
-          period1ToGive,
-          period1Paid,
-          period2ToGive,
-          period2Paid,
-          advancesFromFeb: period2Paid,
-          currentMonthAdvance: Number(currentMonthAdvance || 0),
-          remaining,
-          note: ledger?.note || '',
-          pending: remaining,
-          ledgerMode: 'legacy',
-          updatedAt: ledger?.updatedAt || null
-        };
+        return normalizeSalaryLedgerEntry(
+          {
+            id: e.id,
+            name: e.name,
+            role: e.role,
+            monthlySalary: Number(e.monthlySalary || 0)
+          },
+          ledger,
+          currentMonthAdvance,
+          advancesFromFeb
+        );
       });
     },
     async upsertSalaryLedger(
@@ -1067,37 +1030,48 @@ function jsonStore() {
       extra = {}
     ) {
       const db = readJsonDb();
-      const paid = Number(amountGiven);
-      const computedTotal =
-        totalToGive != null && totalToGive !== '' ? Number(totalToGive) : Number(totalSalary);
-      const section1ToGive = Number(period1ToGive || 0);
-      const section1Paid = Number(period1Paid || 0);
-      const section2ToGive = Number(period2ToGive || 0);
-      const section2Paid = Number(period2Paid || 0);
+      const paidRaw = roundMoney(Math.max(0, toSafeNumber(amountGiven, 0)));
+      const openingPending = roundMoney(Math.max(0, toSafeNumber(extra.openingPending, 0)));
       const monthlySalaryApplied = roundMoney(Math.max(0, toSafeNumber(extra.monthlySalaryApplied, 0)));
-      const durationStart = normalizeISODateText(extra.durationStart);
-      const durationEnd = normalizeISODateText(extra.durationEnd);
+      const durationStart = normalizeISODateText(extra.durationStart || extra.sessionFrom);
+      const durationEnd = normalizeISODateText(extra.durationEnd || extra.sessionTo);
       const durationDaysFromPayload = Math.max(0, Math.trunc(toSafeNumber(extra.durationDays, 0)));
       const durationDays = durationDaysFromPayload > 0 ? durationDaysFromPayload : isoDaysInclusive(durationStart, durationEnd);
-      const durationMonths = roundMoney(Math.max(0, toSafeNumber(extra.durationMonths, 0)));
-      const hasDateModel = Boolean(durationStart && durationEnd && durationDays > 0);
-      const hasMonthsModel = Boolean(monthlySalaryApplied > 0 && durationMonths > 0);
-      const hasModernModel = hasDateModel || hasMonthsModel;
+      const durationMonths = roundMoney(
+        Math.max(0, toSafeNumber(extra.durationMonths, durationDays > 0 ? durationDays / 30 : 0))
+      );
+      const periodFromDays =
+        durationDays > 0 && monthlySalaryApplied > 0 ? roundMoney((monthlySalaryApplied / 30) * durationDays) : 0;
+      const periodFromMonths =
+        durationMonths > 0 && monthlySalaryApplied > 0 ? roundMoney(monthlySalaryApplied * durationMonths) : 0;
+      const periodSalary = roundMoney(Math.max(0, toSafeNumber(extra.periodSalary, periodFromDays || periodFromMonths)));
+      const computedTotalSeed = roundMoney(openingPending + periodSalary);
+      const computedTotal = roundMoney(
+        Math.max(0, toSafeNumber(totalToGive != null && totalToGive !== '' ? totalToGive : totalSalary, computedTotalSeed))
+      );
+      const paid = roundMoney(Math.max(0, Math.min(computedTotal, paidRaw)));
+      const section1ToGive = roundMoney(Math.max(0, toSafeNumber(period1ToGive, computedTotal)));
+      const section1Paid = roundMoney(Math.max(0, toSafeNumber(period1Paid, paid)));
+      const section2ToGive = roundMoney(Math.max(0, toSafeNumber(period2ToGive, 0)));
+      const section2Paid = roundMoney(Math.max(0, toSafeNumber(period2Paid, 0)));
+      const resolvedPeriodSalary = periodSalary > 0 ? periodSalary : roundMoney(Math.max(0, computedTotal - openingPending));
       const existing = db.salaryLedgers.find((l) => l.employeeId === employeeId);
       if (existing) {
         existing.totalSalary = computedTotal;
+        existing.totalToGive = computedTotal;
         existing.amountGiven = paid;
+        existing.sessionPaid = paid;
+        existing.openingPending = openingPending;
+        existing.periodSalary = resolvedPeriodSalary;
         existing.period1ToGive = section1ToGive;
         existing.period1Paid = section1Paid;
         existing.period2ToGive = section2ToGive;
         existing.period2Paid = section2Paid;
-        if (hasModernModel) {
-          existing.monthlySalaryApplied = monthlySalaryApplied;
-          existing.durationStart = hasDateModel ? durationStart : '';
-          existing.durationEnd = hasDateModel ? durationEnd : '';
-          existing.durationDays = hasDateModel ? durationDays : 0;
-          existing.durationMonths = hasMonthsModel ? durationMonths : 0;
-        }
+        existing.monthlySalaryApplied = monthlySalaryApplied;
+        existing.durationStart = durationStart;
+        existing.durationEnd = durationEnd;
+        existing.durationDays = durationDays;
+        existing.durationMonths = durationMonths;
         existing.note = String(note || '').trim();
         existing.updatedAt = new Date().toISOString();
         writeJsonDb(db);
@@ -1107,16 +1081,20 @@ function jsonStore() {
         id: uid('sld'),
         employeeId,
         totalSalary: computedTotal,
+        totalToGive: computedTotal,
         amountGiven: paid,
+        sessionPaid: paid,
+        openingPending,
+        periodSalary: resolvedPeriodSalary,
         period1ToGive: section1ToGive,
         period1Paid: section1Paid,
         period2ToGive: section2ToGive,
         period2Paid: section2Paid,
-        monthlySalaryApplied: hasModernModel ? monthlySalaryApplied : 0,
-        durationStart: hasDateModel ? durationStart : '',
-        durationEnd: hasDateModel ? durationEnd : '',
-        durationDays: hasDateModel ? durationDays : 0,
-        durationMonths: hasMonthsModel ? durationMonths : 0,
+        monthlySalaryApplied,
+        durationStart,
+        durationEnd,
+        durationDays,
+        durationMonths,
         note: String(note || '').trim(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -1925,6 +1903,8 @@ function postgresStore() {
         ALTER TABLE salary_ledgers ADD COLUMN IF NOT EXISTS duration_end DATE;
         ALTER TABLE salary_ledgers ADD COLUMN IF NOT EXISTS duration_days INTEGER;
         ALTER TABLE salary_ledgers ADD COLUMN IF NOT EXISTS duration_months NUMERIC(10,2);
+        ALTER TABLE salary_ledgers ADD COLUMN IF NOT EXISTS opening_pending NUMERIC(12,2) NOT NULL DEFAULT 0;
+        ALTER TABLE salary_ledgers ADD COLUMN IF NOT EXISTS period_salary NUMERIC(12,2) NOT NULL DEFAULT 0;
 
         CREATE TABLE IF NOT EXISTS trucks (
           id TEXT PRIMARY KEY,
@@ -2363,6 +2343,8 @@ function postgresStore() {
                 COALESCE(e.monthly_salary, 0) AS monthly_salary,
                 COALESCE(sl.total_salary, 0) AS total_salary,
                 COALESCE(sl.amount_given, 0) AS amount_given,
+                COALESCE(sl.opening_pending, 0) AS opening_pending,
+                COALESCE(sl.period_salary, 0) AS period_salary,
                 COALESCE(sl.period1_to_give, 0) AS period1_to_give,
                 COALESCE(sl.period1_paid, 0) AS period1_paid,
                 COALESCE(sl.period2_to_give, 0) AS period2_to_give,
@@ -2389,119 +2371,37 @@ function postgresStore() {
          LEFT JOIN salary_ledgers sl ON sl.employee_id = e.id
          ORDER BY e.name`
       );
-      return res.rows.map((r) => {
-        const durationStart = r.duration_start ? String(r.duration_start).slice(0, 10) : '';
-        const durationEnd = r.duration_end ? String(r.duration_end).slice(0, 10) : '';
-        const storedDurationDays = Math.max(0, Math.trunc(toSafeNumber(r.duration_days, 0)));
-        const storedDurationMonths = roundMoney(Math.max(0, toSafeNumber(r.duration_months, 0)));
-        const durationDays = storedDurationDays > 0 ? storedDurationDays : isoDaysInclusive(durationStart, durationEnd);
-        const hasDateModel = Boolean(durationStart && durationEnd && durationDays > 0);
-        const employeeMonthly = Number(r.monthly_salary || 0);
-        const monthlySalaryApplied = roundMoney(Math.max(0, toSafeNumber(r.monthly_salary_applied, employeeMonthly)));
-        const hasMonthsModel = Boolean(monthlySalaryApplied > 0 && storedDurationMonths > 0);
-        if (hasMonthsModel) {
-          const fallbackTotal = roundMoney(monthlySalaryApplied * storedDurationMonths);
-          const totalSalary = roundMoney(Math.max(0, toSafeNumber(r.total_salary, fallbackTotal)));
-          const totalPaid = roundMoney(Math.max(0, toSafeNumber(r.amount_given, 0)));
-          const remaining = roundMoney(Math.max(0, totalSalary - totalPaid));
-          return {
-            employeeId: r.employee_id,
+      return res.rows.map((r) =>
+        normalizeSalaryLedgerEntry(
+          {
+            id: r.employee_id,
             name: r.name,
             role: r.role,
-            monthlySalary: employeeMonthly,
-            monthlySalaryApplied,
-            durationMonths: storedDurationMonths,
-            durationStart: '',
-            durationEnd: '',
-            durationDays: 0,
-            totalSalary,
-            amountGiven: totalPaid,
-            totalPaid,
-            totalToGive: totalSalary,
-            period1ToGive: totalSalary,
-            period1Paid: totalPaid,
-            period2ToGive: 0,
-            period2Paid: 0,
-            advancesFromFeb: 0,
-            currentMonthSalary: monthlySalaryApplied,
-            currentMonthAdvance: Number(r.current_month_advance || 0),
-            remaining,
+            monthlySalary: Number(r.monthly_salary || 0)
+          },
+          {
+            totalSalary: Number(r.total_salary || 0),
+            totalToGive: Number(r.total_salary || 0),
+            amountGiven: Number(r.amount_given || 0),
+            sessionPaid: Number(r.amount_given || 0),
+            openingPending: Number(r.opening_pending || 0),
+            periodSalary: Number(r.period_salary || 0),
+            period1ToGive: Number(r.period1_to_give || 0),
+            period1Paid: Number(r.period1_paid || 0),
+            period2ToGive: Number(r.period2_to_give || 0),
+            period2Paid: Number(r.period2_paid || 0),
+            monthlySalaryApplied: r.monthly_salary_applied == null ? null : Number(r.monthly_salary_applied),
+            durationStart: r.duration_start ? String(r.duration_start).slice(0, 10) : '',
+            durationEnd: r.duration_end ? String(r.duration_end).slice(0, 10) : '',
+            durationDays: Number(r.duration_days || 0),
+            durationMonths: Number(r.duration_months || 0),
             note: r.note || '',
-            pending: remaining,
-            ledgerMode: 'months',
             updatedAt: r.updated_at || null
-          };
-        }
-        if (hasDateModel) {
-          const fallbackTotal = roundMoney((monthlySalaryApplied / 30) * durationDays);
-          const totalSalary = roundMoney(Math.max(0, toSafeNumber(r.total_salary, fallbackTotal)));
-          const totalPaid = roundMoney(Math.max(0, toSafeNumber(r.amount_given, 0)));
-          const remaining = roundMoney(Math.max(0, totalSalary - totalPaid));
-          return {
-            employeeId: r.employee_id,
-            name: r.name,
-            role: r.role,
-            monthlySalary: employeeMonthly,
-            monthlySalaryApplied,
-            durationMonths: roundMoney(durationDays / 30),
-            durationStart,
-            durationEnd,
-            durationDays,
-            totalSalary,
-            amountGiven: totalPaid,
-            totalPaid,
-            totalToGive: totalSalary,
-            period1ToGive: totalSalary,
-            period1Paid: totalPaid,
-            period2ToGive: 0,
-            period2Paid: 0,
-            advancesFromFeb: 0,
-            currentMonthSalary: monthlySalaryApplied,
-            currentMonthAdvance: Number(r.current_month_advance || 0),
-            remaining,
-            note: r.note || '',
-            pending: remaining,
-            ledgerMode: 'duration',
-            updatedAt: r.updated_at || null
-          };
-        }
-
-        const totalSalary = Number(r.total_salary || 0);
-        const amountGiven = Number(r.amount_given || 0);
-        const period1ToGive = Number(r.period1_to_give || 0);
-        const period2Paid = Number(r.advances_from_feb || 0);
-        const storedPeriod1Paid = Number(r.period1_paid || 0);
-        const period1Paid = storedPeriod1Paid > 0 ? storedPeriod1Paid : Math.max(0, amountGiven - period2Paid);
-        const period2ToGive = Number(r.period2_to_give || 0);
-        const totalPaid = period1Paid + period2Paid;
-        const remaining = Math.max(0, totalSalary - totalPaid);
-        return {
-          employeeId: r.employee_id,
-          name: r.name,
-          role: r.role,
-          monthlySalary: employeeMonthly,
-          monthlySalaryApplied: employeeMonthly,
-          durationMonths: 0,
-          durationStart: '',
-          durationEnd: '',
-          durationDays: 0,
-          totalSalary,
-          amountGiven: totalPaid,
-          totalPaid,
-          totalToGive: totalSalary,
-          period1ToGive,
-          period1Paid,
-          period2ToGive,
-          period2Paid,
-          advancesFromFeb: period2Paid,
-          currentMonthAdvance: Number(r.current_month_advance || 0),
-          remaining,
-          note: r.note || '',
-          pending: remaining,
-          ledgerMode: 'legacy',
-          updatedAt: r.updated_at || null
-        };
-      });
+          },
+          Number(r.current_month_advance || 0),
+          Number(r.advances_from_feb || 0)
+        )
+      );
     },
     async upsertSalaryLedger(
       employeeId,
@@ -2515,22 +2415,31 @@ function postgresStore() {
       period2Paid,
       extra = {}
     ) {
-      const paid = Number(amountGiven);
-      const computedTotal =
-        totalToGive != null && totalToGive !== '' ? Number(totalToGive) : Number(totalSalary);
-      const section1ToGive = Number(period1ToGive || 0);
-      const section1Paid = Number(period1Paid || 0);
-      const section2ToGive = Number(period2ToGive || 0);
-      const section2Paid = Number(period2Paid || 0);
+      const paidRaw = roundMoney(Math.max(0, toSafeNumber(amountGiven, 0)));
+      const openingPending = roundMoney(Math.max(0, toSafeNumber(extra.openingPending, 0)));
       const monthlySalaryApplied = roundMoney(Math.max(0, toSafeNumber(extra.monthlySalaryApplied, 0)));
-      const durationStart = normalizeISODateText(extra.durationStart);
-      const durationEnd = normalizeISODateText(extra.durationEnd);
+      const durationStart = normalizeISODateText(extra.durationStart || extra.sessionFrom);
+      const durationEnd = normalizeISODateText(extra.durationEnd || extra.sessionTo);
       const durationDaysFromPayload = Math.max(0, Math.trunc(toSafeNumber(extra.durationDays, 0)));
       const durationDays = durationDaysFromPayload > 0 ? durationDaysFromPayload : isoDaysInclusive(durationStart, durationEnd);
-      const durationMonths = roundMoney(Math.max(0, toSafeNumber(extra.durationMonths, 0)));
-      const hasDateModel = Boolean(durationStart && durationEnd && durationDays > 0);
-      const hasMonthsModel = Boolean(monthlySalaryApplied > 0 && durationMonths > 0);
-      const hasModernModel = hasDateModel || hasMonthsModel;
+      const durationMonths = roundMoney(
+        Math.max(0, toSafeNumber(extra.durationMonths, durationDays > 0 ? durationDays / 30 : 0))
+      );
+      const periodFromDays =
+        durationDays > 0 && monthlySalaryApplied > 0 ? roundMoney((monthlySalaryApplied / 30) * durationDays) : 0;
+      const periodFromMonths =
+        durationMonths > 0 && monthlySalaryApplied > 0 ? roundMoney(monthlySalaryApplied * durationMonths) : 0;
+      const periodSalary = roundMoney(Math.max(0, toSafeNumber(extra.periodSalary, periodFromDays || periodFromMonths)));
+      const computedTotalSeed = roundMoney(openingPending + periodSalary);
+      const computedTotal = roundMoney(
+        Math.max(0, toSafeNumber(totalToGive != null && totalToGive !== '' ? totalToGive : totalSalary, computedTotalSeed))
+      );
+      const paid = roundMoney(Math.max(0, Math.min(computedTotal, paidRaw)));
+      const section1ToGive = roundMoney(Math.max(0, toSafeNumber(period1ToGive, computedTotal)));
+      const section1Paid = roundMoney(Math.max(0, toSafeNumber(period1Paid, paid)));
+      const section2ToGive = roundMoney(Math.max(0, toSafeNumber(period2ToGive, 0)));
+      const section2Paid = roundMoney(Math.max(0, toSafeNumber(period2Paid, 0)));
+      const resolvedPeriodSalary = periodSalary > 0 ? periodSalary : roundMoney(Math.max(0, computedTotal - openingPending));
       const existing = await pool.query('SELECT id FROM salary_ledgers WHERE employee_id = $1', [employeeId]);
       if (existing.rows[0]) {
         const id = existing.rows[0].id;
@@ -2548,6 +2457,8 @@ function postgresStore() {
                   duration_end = $11,
                   duration_days = $12,
                   duration_months = $13,
+                  opening_pending = $14,
+                  period_salary = $15,
                   updated_at = NOW()
             WHERE id = $1`,
           [
@@ -2559,27 +2470,33 @@ function postgresStore() {
             section1Paid,
             section2ToGive,
             section2Paid,
-            hasModernModel ? monthlySalaryApplied : null,
-            hasDateModel ? durationStart : null,
-            hasDateModel ? durationEnd : null,
-            hasDateModel ? durationDays : null,
-            hasMonthsModel ? durationMonths : null
+            monthlySalaryApplied || null,
+            durationStart || null,
+            durationEnd || null,
+            durationDays || null,
+            durationMonths || null,
+            openingPending,
+            resolvedPeriodSalary
           ]
         );
         return {
           id,
           employeeId,
           totalSalary: computedTotal,
+          totalToGive: computedTotal,
           amountGiven: paid,
+          sessionPaid: paid,
+          openingPending,
+          periodSalary: resolvedPeriodSalary,
           period1ToGive: section1ToGive,
           period1Paid: section1Paid,
           period2ToGive: section2ToGive,
           period2Paid: section2Paid,
-          monthlySalaryApplied: hasModernModel ? monthlySalaryApplied : 0,
-          durationMonths: hasMonthsModel ? durationMonths : 0,
-          durationStart: hasDateModel ? durationStart : '',
-          durationEnd: hasDateModel ? durationEnd : '',
-          durationDays: hasDateModel ? durationDays : 0,
+          monthlySalaryApplied,
+          durationMonths,
+          durationStart,
+          durationEnd,
+          durationDays,
           note: String(note || '').trim()
         };
       }
@@ -2587,16 +2504,20 @@ function postgresStore() {
         id: uid('sld'),
         employeeId,
         totalSalary: computedTotal,
+        totalToGive: computedTotal,
         amountGiven: paid,
+        sessionPaid: paid,
+        openingPending,
+        periodSalary: resolvedPeriodSalary,
         period1ToGive: section1ToGive,
         period1Paid: section1Paid,
         period2ToGive: section2ToGive,
         period2Paid: section2Paid,
-        monthlySalaryApplied: hasModernModel ? monthlySalaryApplied : 0,
-        durationMonths: hasMonthsModel ? durationMonths : 0,
-        durationStart: hasDateModel ? durationStart : '',
-        durationEnd: hasDateModel ? durationEnd : '',
-        durationDays: hasDateModel ? durationDays : 0,
+        monthlySalaryApplied,
+        durationMonths,
+        durationStart,
+        durationEnd,
+        durationDays,
         note: String(note || '').trim(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -2617,10 +2538,12 @@ function postgresStore() {
             duration_end,
             duration_days,
             duration_months,
+            opening_pending,
+            period_salary,
             created_at,
             updated_at
           )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
         [
           row.id,
           row.employeeId,
@@ -2631,11 +2554,13 @@ function postgresStore() {
           row.period1Paid,
           row.period2ToGive,
           row.period2Paid,
-          hasModernModel ? row.monthlySalaryApplied : null,
-          hasDateModel ? row.durationStart : null,
-          hasDateModel ? row.durationEnd : null,
-          hasDateModel ? row.durationDays : null,
-          hasMonthsModel ? row.durationMonths : null,
+          row.monthlySalaryApplied || null,
+          row.durationStart || null,
+          row.durationEnd || null,
+          row.durationDays || null,
+          row.durationMonths || null,
+          row.openingPending,
+          row.periodSalary,
           row.createdAt,
           row.updatedAt
         ]
@@ -4230,15 +4155,16 @@ app.put('/api/salary-ledgers/:employeeId', auth, requirePermission('salaryledger
     amountGiven,
     totalPaid,
     totalToGive,
-    period1ToGive,
-    period1Paid,
-    period2ToGive,
-    period2Paid,
     monthlySalaryApplied,
-    durationMonths,
     durationStart,
     durationEnd,
+    sessionFrom,
+    sessionTo,
+    fromDate,
+    toDate,
     durationDays,
+    openingPending,
+    periodSalary,
     note
   } = req.body;
   const parseNumeric = (value) => {
@@ -4251,156 +4177,231 @@ app.put('/api/salary-ledgers/:employeeId', auth, requirePermission('salaryledger
     const employee = await store.getEmployeeById(req.params.employeeId);
     if (!employee) return res.status(404).json({ error: 'Employee not found' });
 
-    const durationStartText = normalizeISODateText(durationStart);
-    const durationEndText = normalizeISODateText(durationEnd);
+    const durationStartText = normalizeISODateText(durationStart || sessionFrom || fromDate);
+    const durationEndText = normalizeISODateText(durationEnd || sessionTo || toDate);
+    if (!durationStartText || !durationEndText) {
+      return res.status(400).json({ error: 'durationStart and durationEnd are required' });
+    }
+    const startDate = parseISODate(durationStartText);
+    const endDate = parseISODate(durationEndText);
+    if (!startDate || !endDate || startDate > endDate) {
+      return res.status(400).json({ error: 'durationStart must be on or before durationEnd' });
+    }
     const durationDaysInput = parseNumeric(durationDays);
-    const durationMonthsInput = parseNumeric(durationMonths);
+    const computedDays = isoDaysInclusive(durationStartText, durationEndText);
+    const normalizedDays = durationDaysInput != null ? Math.trunc(durationDaysInput) : computedDays;
+    if (!Number.isFinite(normalizedDays) || normalizedDays <= 0) {
+      return res.status(400).json({ error: 'durationDays must be a positive whole number' });
+    }
+
     const monthlyAppliedInput = parseNumeric(monthlySalaryApplied);
-    const hasDateDurationPayload = Boolean(durationStartText || durationEndText || durationDaysInput != null);
-    const hasMonthsPayload = durationMonthsInput != null;
-
-    if (hasDateDurationPayload) {
-      if (!durationStartText || !durationEndText) {
-        return res.status(400).json({ error: 'durationStart and durationEnd are required' });
-      }
-      const startDate = parseISODate(durationStartText);
-      const endDate = parseISODate(durationEndText);
-      if (!startDate || !endDate || startDate > endDate) {
-        return res.status(400).json({ error: 'durationStart must be on or before durationEnd' });
-      }
-      const computedDays = isoDaysInclusive(durationStartText, durationEndText);
-      const normalizedDays = durationDaysInput != null ? Math.trunc(durationDaysInput) : computedDays;
-      if (!Number.isFinite(normalizedDays) || normalizedDays <= 0) {
-        return res.status(400).json({ error: 'durationDays must be a positive whole number' });
-      }
-      const appliedMonthly = monthlyAppliedInput != null ? Number(monthlyAppliedInput) : Number(employee.monthlySalary || 0);
-      if (!Number.isFinite(appliedMonthly) || appliedMonthly <= 0) {
-        return res.status(400).json({ error: 'monthlySalaryApplied must be a positive number' });
-      }
-      const paidRaw = totalPaid != null ? totalPaid : amountGiven;
-      const paid = roundMoney(Math.max(0, toSafeNumber(paidRaw, 0)));
-      const computedTotal = roundMoney((appliedMonthly / 30) * normalizedDays);
-      if (paid > computedTotal) {
-        return res.status(400).json({ error: 'totalPaid cannot be greater than calculated total salary' });
-      }
-      const row = await store.upsertSalaryLedger(
-        req.params.employeeId,
-        computedTotal,
-        paid,
-        note,
-        computedTotal,
-        computedTotal,
-        paid,
-        0,
-        0,
-        {
-          monthlySalaryApplied: appliedMonthly,
-          durationMonths: 0,
-          durationStart: durationStartText,
-          durationEnd: durationEndText,
-          durationDays: normalizedDays
-        }
-      );
-      return res.json(row);
+    const appliedMonthly = roundMoney(
+      Math.max(0, toSafeNumber(monthlyAppliedInput != null ? monthlyAppliedInput : employee.monthlySalary, 0))
+    );
+    if (!Number.isFinite(appliedMonthly) || appliedMonthly <= 0) {
+      return res.status(400).json({ error: 'monthlySalaryApplied must be a positive number' });
     }
 
-    if (hasMonthsPayload) {
-      const normalizedMonths = roundMoney(Math.max(0, toSafeNumber(durationMonthsInput, 0)));
-      if (!Number.isFinite(normalizedMonths) || normalizedMonths <= 0) {
-        return res.status(400).json({ error: 'durationMonths must be a positive number' });
-      }
-      const appliedMonthly = monthlyAppliedInput != null ? Number(monthlyAppliedInput) : Number(employee.monthlySalary || 0);
-      if (!Number.isFinite(appliedMonthly) || appliedMonthly <= 0) {
-        return res.status(400).json({ error: 'monthlySalaryApplied must be a positive number' });
-      }
-      const paidRaw = totalPaid != null ? totalPaid : amountGiven;
-      const paid = roundMoney(Math.max(0, toSafeNumber(paidRaw, 0)));
-      const computedTotal = roundMoney(appliedMonthly * normalizedMonths);
-      if (paid > computedTotal) {
-        return res.status(400).json({ error: 'totalPaid cannot be greater than calculated total salary' });
-      }
-      const row = await store.upsertSalaryLedger(
-        req.params.employeeId,
-        computedTotal,
-        paid,
-        note,
-        computedTotal,
-        computedTotal,
-        paid,
-        0,
-        0,
-        {
-          monthlySalaryApplied: appliedMonthly,
-          durationMonths: normalizedMonths,
-          durationStart: '',
-          durationEnd: '',
-          durationDays: 0
-        }
-      );
-      return res.json(row);
-    }
+    const existingRows = await store.listSalaryLedgers();
+    const existing = existingRows.find((r) => String(r.employeeId) === String(req.params.employeeId)) || null;
 
-    const section1ToGive = parseNumeric(period1ToGive);
-    const section1Paid = parseNumeric(period1Paid);
-    const section2ToGive = parseNumeric(period2ToGive);
-    const section2Paid = parseNumeric(period2Paid);
-    const hasSectionPayload = [section1ToGive, section1Paid, section2ToGive, section2Paid].some((v) => v != null);
+    const openingPendingInput = parseNumeric(openingPending);
+    const normalizedOpeningPending = roundMoney(
+      Math.max(0, toSafeNumber(openingPendingInput != null ? openingPendingInput : existing?.remaining, 0))
+    );
 
-    if (hasSectionPayload) {
-      if ([section1ToGive, section1Paid, section2ToGive, section2Paid].some((v) => v == null || Number.isNaN(v) || v < 0)) {
-        return res.status(400).json({ error: 'Section totals and paid values must be valid non-negative numbers' });
-      }
-      if (section1Paid > section1ToGive) {
-        return res.status(400).json({ error: 'Section A paid cannot be greater than Section A total to give' });
-      }
-      if (section2Paid > section2ToGive) {
-        return res.status(400).json({ error: 'Section B paid cannot be greater than Section B total to give' });
-      }
+    const periodSalaryInput = parseNumeric(periodSalary);
+    const computedPeriodSalary = roundMoney((appliedMonthly / 30) * normalizedDays);
+    const normalizedPeriodSalary = roundMoney(
+      Math.max(0, toSafeNumber(periodSalaryInput != null ? periodSalaryInput : computedPeriodSalary, computedPeriodSalary))
+    );
+
+    const calculatedTotalToGive = roundMoney(normalizedOpeningPending + normalizedPeriodSalary);
+    const explicitTotalToGiveInput = parseNumeric(totalToGive != null ? totalToGive : totalSalary);
+    const normalizedTotalToGive = roundMoney(
+      Math.max(0, toSafeNumber(explicitTotalToGiveInput != null ? explicitTotalToGiveInput : calculatedTotalToGive, calculatedTotalToGive))
+    );
+    if (Math.abs(normalizedTotalToGive - calculatedTotalToGive) > 0.01) {
+      return res.status(400).json({ error: 'totalToGive must equal openingPending + periodSalary' });
     }
 
     const paidRaw = totalPaid != null ? totalPaid : amountGiven;
-    const toGiveRaw = totalToGive;
-    const totalRaw = totalSalary;
-    const sectionToGiveTotal = hasSectionPayload ? Number(section1ToGive || 0) + Number(section2ToGive || 0) : null;
-    const sectionPaidTotal = hasSectionPayload ? Number(section1Paid || 0) + Number(section2Paid || 0) : null;
-
-    if (paidRaw == null && !hasSectionPayload) {
-      return res.status(400).json({ error: 'totalPaid and totalToGive are required' });
-    }
-    if ((toGiveRaw == null && totalRaw == null) && !hasSectionPayload) {
-      return res.status(400).json({ error: 'totalPaid and totalToGive are required' });
-    }
-
-    const given = Number(paidRaw != null ? paidRaw : sectionPaidTotal || 0);
-    const toGive = Number(toGiveRaw != null ? toGiveRaw : (totalRaw != null ? totalRaw : sectionToGiveTotal || 0));
-    const total = Number(totalRaw != null ? totalRaw : toGive);
-    if (Number.isNaN(total) || total < 0 || Number.isNaN(given) || given < 0 || Number.isNaN(toGive) || toGive < 0) {
-      return res.status(400).json({ error: 'totalPaid, totalToGive and totalSalary must be valid non-negative numbers' });
-    }
-    if (hasSectionPayload && Math.abs(toGive - sectionToGiveTotal) > 0.01) {
-      return res.status(400).json({ error: 'Total To Give must match Section A + Section B To Give' });
-    }
-    if (hasSectionPayload && Math.abs(given - sectionPaidTotal) > 0.01) {
-      return res.status(400).json({ error: 'Total Paid must match Section A + Section B Paid' });
-    }
-    if (given > toGive) {
+    const paid = roundMoney(Math.max(0, toSafeNumber(paidRaw, 0)));
+    if (paid > normalizedTotalToGive) {
       return res.status(400).json({ error: 'totalPaid cannot be greater than totalToGive' });
     }
+
     const row = await store.upsertSalaryLedger(
       req.params.employeeId,
-      total,
-      given,
+      normalizedTotalToGive,
+      paid,
       note,
-      toGive,
-      hasSectionPayload ? section1ToGive : 0,
-      hasSectionPayload ? section1Paid : 0,
-      hasSectionPayload ? section2ToGive : 0,
-      hasSectionPayload ? section2Paid : 0
+      normalizedTotalToGive,
+      normalizedTotalToGive,
+      paid,
+      0,
+      0,
+      {
+        monthlySalaryApplied: appliedMonthly,
+        durationMonths: roundMoney(normalizedDays / 30),
+        durationStart: durationStartText,
+        durationEnd: durationEndText,
+        durationDays: normalizedDays,
+        openingPending: normalizedOpeningPending,
+        periodSalary: normalizedPeriodSalary
+      }
     );
     return res.json(row);
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to update salary ledger' });
+  }
+});
+
+app.get('/api/salary-ledgers/:employeeId.pdf', auth, requirePermission('salaryledger:view'), async (req, res) => {
+  try {
+    const employee = await store.getEmployeeById(req.params.employeeId);
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+
+    const rows = await store.listSalaryLedgers();
+    const row =
+      rows.find((r) => String(r.employeeId) === String(req.params.employeeId)) ||
+      normalizeSalaryLedgerEntry(
+        {
+          id: employee.id,
+          name: employee.name,
+          role: employee.role,
+          monthlySalary: Number(employee.monthlySalary || 0)
+        },
+        {},
+        0,
+        0
+      );
+    const periodLabel =
+      row.durationStart && row.durationEnd
+        ? `${row.durationStart} to ${row.durationEnd}`
+        : 'No period selected';
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="salary-ledger-${String(employee.name || 'employee').replace(/\s+/g, '-')}.pdf"`
+    );
+
+    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    doc.pipe(res);
+
+    const pageWidth = doc.page.width;
+    const pageMargin = 40;
+    const contentWidth = pageWidth - pageMargin * 2;
+    const centerX = pageWidth / 2;
+    const colors = {
+      brand: '#0F3C8A',
+      brandLight: '#EAF2FF',
+      text: '#1A2538',
+      muted: '#5D6A7E',
+      border: '#D6DEEB',
+      success: '#0F9D58'
+    };
+    const moneyText = (n) =>
+      `₹${toSafeNumber(n, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const generatedAt = new Date().toISOString();
+
+    doc.save().roundedRect(pageMargin, 30, contentWidth, 90, 12).fill(colors.brandLight).restore();
+    doc.save().circle(centerX, 57, 20).fill(colors.brand).restore();
+    doc
+      .fillColor('#FFFFFF')
+      .font('Helvetica-Bold')
+      .fontSize(14)
+      .text('NE', centerX - 10, 50, { width: 20, align: 'center' });
+    doc
+      .fillColor(colors.brand)
+      .font('Helvetica-Bold')
+      .fontSize(17)
+      .text(APP_NAME, pageMargin, 82, { width: contentWidth, align: 'center' });
+    doc
+      .fillColor(colors.text)
+      .font('Helvetica-Bold')
+      .fontSize(12)
+      .text('Salary Ledger Statement', pageMargin, 102, { width: contentWidth, align: 'center' });
+
+    const details = [
+      ['Employee', row.name || employee.name || '-'],
+      ['Role', row.role || employee.role || '-'],
+      ['Period', periodLabel],
+      ['Days Counted', row.durationDays > 0 ? String(row.durationDays) : '-'],
+      ['Monthly Salary Used', moneyText(row.monthlySalaryApplied)],
+      ['Opening Pending', moneyText(row.openingPending)],
+      ['Period Salary', moneyText(row.periodSalary)],
+      ['Total To Give', moneyText(row.totalToGive)],
+      ['Total Paid', moneyText(row.totalPaid)],
+      ['Remaining', moneyText(row.remaining)],
+      ['Last Updated', row.updatedAt ? String(row.updatedAt).slice(0, 19).replace('T', ' ') : '-'],
+      ['Generated', generatedAt]
+    ];
+
+    let y = 136;
+    const cardHeight = 24;
+    const leftX = pageMargin;
+    const rightX = pageMargin + contentWidth / 2;
+    const colWidth = contentWidth / 2;
+    details.forEach((item, idx) => {
+      const x = idx % 2 === 0 ? leftX : rightX;
+      if (idx % 2 === 0) y += cardHeight;
+      doc
+        .save()
+        .roundedRect(x, y, colWidth - 8, cardHeight - 4, 6)
+        .fill(idx % 4 === 0 || idx % 4 === 1 ? '#FFFFFF' : '#F7FAFF')
+        .restore();
+      doc
+        .save()
+        .roundedRect(x, y, colWidth - 8, cardHeight - 4, 6)
+        .strokeColor(colors.border)
+        .lineWidth(1)
+        .stroke()
+        .restore();
+      doc.fillColor(colors.muted).font('Helvetica-Bold').fontSize(9).text(item[0], x + 8, y + 5);
+      doc.fillColor(colors.text).font('Helvetica').fontSize(9.5).text(String(item[1] || '-'), x + 102, y + 5, {
+        width: colWidth - 118,
+        ellipsis: true
+      });
+    });
+
+    y += 34;
+    doc.fillColor(colors.brand).font('Helvetica-Bold').fontSize(11).text('Note', pageMargin, y);
+    y += 16;
+    doc
+      .save()
+      .roundedRect(pageMargin, y, contentWidth, 58, 8)
+      .fill('#FFFFFF')
+      .restore();
+    doc
+      .save()
+      .roundedRect(pageMargin, y, contentWidth, 58, 8)
+      .strokeColor(colors.border)
+      .lineWidth(1)
+      .stroke()
+      .restore();
+    doc.fillColor(colors.text).font('Helvetica').fontSize(10).text(row.note || '-', pageMargin + 10, y + 10, {
+      width: contentWidth - 20
+    });
+
+    const footerY = doc.page.height - 44;
+    doc.save().moveTo(pageMargin, footerY - 8).lineTo(pageMargin + contentWidth, footerY - 8).strokeColor(colors.border).stroke().restore();
+    doc.fillColor(colors.success).font('Helvetica-Bold').fontSize(10).text(`Remaining Payable: ${moneyText(row.remaining)}`, pageMargin, footerY - 2);
+    doc
+      .fillColor(colors.muted)
+      .font('Helvetica')
+      .fontSize(9)
+      .text(`${APP_NAME} • Salary ledger generated`, pageMargin, footerY + 11, {
+        width: contentWidth,
+        align: 'center'
+      });
+
+    doc.end();
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to generate salary ledger PDF' });
   }
 });
 
