@@ -131,6 +131,9 @@ const expenseDateToInput = document.getElementById('expenseDateTo');
 const expenseSearchInput = document.getElementById('expenseSearchInput');
 const expenseFilterBtn = document.getElementById('expenseFilterBtn');
 const expenseClearBtn = document.getElementById('expenseClearBtn');
+const expenseDownloadPdfBtn = document.getElementById('expenseDownloadPdfBtn');
+const investmentDownloadPdfBtn = document.getElementById('investmentDownloadPdfBtn');
+const landDownloadPdfBtn = document.getElementById('landDownloadPdfBtn');
 
 let me = null;
 let employeesCache = [];
@@ -3209,6 +3212,17 @@ function buildTruckExportParams() {
   return params.toString();
 }
 
+function buildExpensePdfExportParams() {
+  const params = new URLSearchParams();
+  const dateFrom = String(expenseDateFromInput?.value || expenseFilter.dateFrom || '').trim();
+  const dateTo = String(expenseDateToInput?.value || expenseFilter.dateTo || '').trim();
+  const description = String(expenseSearchInput?.value || expenseFilter.description || '').trim();
+  if (dateFrom) params.set('dateFrom', dateFrom);
+  if (dateTo) params.set('dateTo', dateTo);
+  if (description) params.set('description', description);
+  return params.toString();
+}
+
 downloadSalaryCsvBtn.addEventListener('click', () => {
   downloadWithAuth(`/api/export/salary.csv?month=${getActiveSalaryMonth()}`);
 });
@@ -3243,6 +3257,23 @@ downloadTruckReportBtn?.addEventListener('click', () => {
 
 downloadAttendanceCsvBtn.addEventListener('click', () => {
   downloadWithAuth(`/api/export/attendance.csv?month=${attendanceMonthInput.value || monthISO()}`);
+});
+
+expenseDownloadPdfBtn?.addEventListener('click', () => {
+  const query = buildExpensePdfExportParams();
+  const url = query ? `/api/export/expenses.pdf?${query}` : '/api/export/expenses.pdf';
+  downloadWithAuth(url);
+  showToast('Expense PDF download started');
+});
+
+investmentDownloadPdfBtn?.addEventListener('click', () => {
+  downloadWithAuth('/api/export/investments.pdf');
+  showToast('Investment PDF download started');
+});
+
+landDownloadPdfBtn?.addEventListener('click', () => {
+  downloadWithAuth('/api/export/land.pdf');
+  showToast('Land PDF download started');
 });
 
 activateSection('overviewSection');

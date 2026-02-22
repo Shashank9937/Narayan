@@ -5795,6 +5795,121 @@ app.get('/api/bills/:id.pdf', auth, requirePermission('billing:view'), async (re
   }
 });
 
+function fitPdfCellText(doc, value, maxWidth) {
+  const source = String(value == null || value === '' ? '-' : value)
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!source || source === '-') return '-';
+  if (doc.widthOfString(source) <= maxWidth) return source;
+  const ellipsis = '...';
+  let clipped = source;
+  while (clipped.length > 1 && doc.widthOfString(`${clipped}${ellipsis}`) > maxWidth) {
+    clipped = clipped.slice(0, -1);
+  }
+  return `${clipped}${ellipsis}`;
+}
+
+function sendTabularPdfReport(res, { fileName, title, filters = [], summary = [], columns = [], rows = [] }) {
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+  const doc = new PDFDocument({ margin: 28, size: 'A4' });
+  doc.pipe(res);
+
+  const left = 28;
+  const usableWidth = doc.page.width - 56;
+  const generatedAt = new Date().toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+
+  doc.font('Helvetica-Bold').fontSize(17).fillColor('#0f3b74').text(`${APP_NAME} - ${title}`, left, 26, {
+    width: usableWidth
+  });
+  let y = 50;
+  doc.font('Helvetica').fontSize(10).fillColor('#26364a').text(`Generated: ${generatedAt}`, left, y, {
+    width: usableWidth
+  });
+  y += 14;
+  if (filters.length) {
+    doc.font('Helvetica').fontSize(10).fillColor('#26364a').text(`Filters: ${filters.join(' | ')}`, left, y, {
+      width: usableWidth
+    });
+    y += 14;
+  }
+  if (summary.length) {
+    doc.font('Helvetica-Bold').fontSize(10).fillColor('#111827').text(summary.join(' | '), left, y, {
+      width: usableWidth
+    });
+    y += 18;
+  } else {
+    y += 8;
+  }
+
+  const normalizedCols = columns.map((col) => ({
+    ...col,
+    width: Math.max(40, Number(col.width || 80)),
+    align: col.align === 'right' ? 'right' : 'left'
+  }));
+  const totalWidth = Math.max(1, normalizedCols.reduce((sum, c) => sum + c.width, 0));
+  const scale = usableWidth / totalWidth;
+  const widths = normalizedCols.map((c) => c.width * scale);
+  const rowHeight = 14;
+  const renderHeader = () => {
+    doc.save().roundedRect(left, y - 2, usableWidth, 20, 4).fill('#e6efff').restore();
+    let x = left + 2;
+    normalizedCols.forEach((col, idx) => {
+      doc.font('Helvetica-Bold').fontSize(9).fillColor('#13315a').text(col.label, x, y + 3, {
+        width: widths[idx] - 4,
+        align: col.align
+      });
+      x += widths[idx];
+    });
+    y += 22;
+  };
+
+  if (!rows.length) {
+    doc.font('Helvetica').fontSize(11).fillColor('#374151').text('No records found for selected filters.', left, y + 6, {
+      width: usableWidth
+    });
+    doc.end();
+    return;
+  }
+
+  renderHeader();
+  rows.forEach((row) => {
+    if (y > doc.page.height - 48) {
+      doc.addPage();
+      y = 30;
+      renderHeader();
+    }
+    let x = left + 2;
+    normalizedCols.forEach((col, idx) => {
+      doc.font('Helvetica').fontSize(9).fillColor('#111827');
+      const text = fitPdfCellText(doc, row[col.key], widths[idx] - 6);
+      doc.text(text, x, y, {
+        width: widths[idx] - 4,
+        align: col.align
+      });
+      x += widths[idx];
+    });
+    doc
+      .save()
+      .moveTo(left, y + 12)
+      .lineTo(left + usableWidth, y + 12)
+      .strokeColor('#e5e7eb')
+      .lineWidth(0.8)
+      .stroke()
+      .restore();
+    y += rowHeight;
+  });
+
+  doc.end();
+}
+
 app.get('/api/export/salary.csv', auth, requirePermission('export:view'), async (req, res) => {
   const month = req.query.month || currentMonth();
 
@@ -6050,6 +6165,184 @@ app.get('/api/export/trucks.pdf', auth, requirePermission('export:view'), async 
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to export truck PDF' });
+  }
+});
+
+app.get('/api/export/expenses.pdf', auth, requirePermission('expenses:view'), async (req, res) => {
+  try {
+    const partyQuery = String(req.query.party || '').trim().toLowerCase();
+    let partyFilter = '';
+    if (partyQuery && partyQuery !== 'all') {
+      partyFilter = truckPartyKey(partyQuery);
+      if (!partyFilter) {
+        return res.status(400).json({ error: 'party must be all, narayan, or maa_vaishno' });
+      }
+    }
+
+    const dateFrom = normalizeISODateText(req.query.dateFrom);
+    const dateTo = normalizeISODateText(req.query.dateTo);
+    const description = String(req.query.description || '').trim().toLowerCase();
+
+    const rows = (await store.listExpenses({ dateFrom, dateTo }))
+      .filter((r) => {
+        const rowParty = truckPartyKey(r.party || 'narayan') || 'narayan';
+        if (partyFilter && rowParty !== partyFilter) return false;
+        if (description && !String(r.description || '').toLowerCase().includes(description)) return false;
+        return true;
+      })
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+    const narayanTotal = rows
+      .filter((r) => (truckPartyKey(r.party || 'narayan') || 'narayan') === 'narayan')
+      .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+    const maaVaishnoTotal = rows
+      .filter((r) => (truckPartyKey(r.party || 'narayan') || 'narayan') === 'maa_vaishno')
+      .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+    const totalAmount = narayanTotal + maaVaishnoTotal;
+
+    const partyLabel = partyFilter ? (partyFilter === 'narayan' ? 'Narayan' : 'Maa Vaishno') : 'All';
+    const filters = [];
+    if (dateFrom || dateTo) filters.push(`Date: ${dateFrom || '-'} to ${dateTo || '-'}`);
+    if (partyFilter) filters.push(`Party: ${partyLabel}`);
+    if (description) filters.push(`Description: ${description}`);
+
+    const summary = [
+      `Records: ${rows.length}`,
+      `Narayan: ${moneyInr(narayanTotal)}`,
+      `Maa Vaishno: ${moneyInr(maaVaishnoTotal)}`,
+      `Total: ${moneyInr(totalAmount)}`
+    ];
+    const reportRows = rows.map((r) => ({
+      date: r.date || '-',
+      party: (truckPartyKey(r.party || 'narayan') || 'narayan') === 'maa_vaishno' ? 'Maa Vaishno' : 'Narayan',
+      description: r.description || '-',
+      amount: moneyInr(r.amount || 0)
+    }));
+
+    const fileSuffix = partyFilter || 'all';
+    sendTabularPdfReport(res, {
+      fileName: `expense-report-${fileSuffix}.pdf`,
+      title: 'Expense Report',
+      filters,
+      summary,
+      columns: [
+        { key: 'date', label: 'Date', width: 78 },
+        { key: 'party', label: 'Party', width: 92 },
+        { key: 'description', label: 'Description', width: 250 },
+        { key: 'amount', label: 'Amount', width: 110, align: 'right' }
+      ],
+      rows: reportRows
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to export expense PDF' });
+  }
+});
+
+app.get('/api/export/investments.pdf', auth, requirePermission('investments:view'), async (req, res) => {
+  try {
+    const partyQuery = String(req.query.party || '').trim().toLowerCase();
+    let partyFilter = '';
+    if (partyQuery && partyQuery !== 'all') {
+      partyFilter = truckPartyKey(partyQuery);
+      if (!partyFilter) {
+        return res.status(400).json({ error: 'party must be all, narayan, or maa_vaishno' });
+      }
+    }
+
+    const dateFrom = normalizeISODateText(req.query.dateFrom);
+    const dateTo = normalizeISODateText(req.query.dateTo);
+    const rows = (await store.listInvestments({ dateFrom, dateTo }))
+      .filter((r) => {
+        if (!partyFilter) return true;
+        const rowParty = truckPartyKey(r.party || 'narayan') || 'narayan';
+        return rowParty === partyFilter;
+      })
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+    const narayanTotal = rows
+      .filter((r) => (truckPartyKey(r.party || 'narayan') || 'narayan') === 'narayan')
+      .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+    const maaVaishnoTotal = rows
+      .filter((r) => (truckPartyKey(r.party || 'narayan') || 'narayan') === 'maa_vaishno')
+      .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+    const totalAmount = narayanTotal + maaVaishnoTotal;
+    const partyLabel = partyFilter ? (partyFilter === 'narayan' ? 'Narayan' : 'Maa Vaishno') : 'All';
+
+    const filters = [];
+    if (dateFrom || dateTo) filters.push(`Date: ${dateFrom || '-'} to ${dateTo || '-'}`);
+    if (partyFilter) filters.push(`Party: ${partyLabel}`);
+
+    const summary = [
+      `Records: ${rows.length}`,
+      `Narayan: ${moneyInr(narayanTotal)}`,
+      `Maa Vaishno: ${moneyInr(maaVaishnoTotal)}`,
+      `Total: ${moneyInr(totalAmount)}`
+    ];
+    const reportRows = rows.map((r) => ({
+      date: r.date || '-',
+      party: (truckPartyKey(r.party || 'narayan') || 'narayan') === 'maa_vaishno' ? 'Maa Vaishno' : 'Narayan',
+      amount: moneyInr(r.amount || 0),
+      note: r.note || '-'
+    }));
+
+    const fileSuffix = partyFilter || 'all';
+    sendTabularPdfReport(res, {
+      fileName: `investment-report-${fileSuffix}.pdf`,
+      title: 'Investment Report',
+      filters,
+      summary,
+      columns: [
+        { key: 'date', label: 'Date', width: 88 },
+        { key: 'party', label: 'Party', width: 96 },
+        { key: 'amount', label: 'Amount', width: 110, align: 'right' },
+        { key: 'note', label: 'Note', width: 236 }
+      ],
+      rows: reportRows
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to export investment PDF' });
+  }
+});
+
+app.get('/api/export/land.pdf', auth, requirePermission('land:view'), async (_req, res) => {
+  try {
+    const rows = (await store.listLandRecords()).sort((a, b) => {
+      const aTs = String(a.createdAt || a.updatedAt || '');
+      const bTs = String(b.createdAt || b.updatedAt || '');
+      return bTs.localeCompare(aTs);
+    });
+    const totalPaid = rows.reduce((sum, r) => sum + Number(r.amountPaid || 0), 0);
+    const totalToGive = rows.reduce((sum, r) => sum + Number(r.amountToBeGiven || 0), 0);
+
+    const summary = [
+      `Records: ${rows.length}`,
+      `Total Paid: ${moneyInr(totalPaid)}`,
+      `Total To Be Given: ${moneyInr(totalToGive)}`
+    ];
+    const reportRows = rows.map((r) => ({
+      area: r.area || '-',
+      ownerName: r.ownerName || '-',
+      amountPaid: moneyInr(r.amountPaid || 0),
+      amountToBeGiven: moneyInr(r.amountToBeGiven || 0)
+    }));
+
+    sendTabularPdfReport(res, {
+      fileName: 'land-report.pdf',
+      title: 'Land Report',
+      summary,
+      columns: [
+        { key: 'area', label: 'Area', width: 152 },
+        { key: 'ownerName', label: 'Owner Name', width: 174 },
+        { key: 'amountPaid', label: 'Amount Paid', width: 108, align: 'right' },
+        { key: 'amountToBeGiven', label: 'Amount To Be Given', width: 108, align: 'right' }
+      ],
+      rows: reportRows
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to export land PDF' });
   }
 });
 
