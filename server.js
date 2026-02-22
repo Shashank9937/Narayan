@@ -8,6 +8,7 @@ const { Pool } = require('pg');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DB_PATH = path.join(__dirname, 'data', 'db.json');
+const DB_BACKUP_PATH = path.join(__dirname, 'data', 'db.backup.json');
 const STORAGE_MODE = process.env.STORAGE_MODE === 'postgres' ? 'postgres' : 'json';
 const DATABASE_URL = process.env.DATABASE_URL;
 const APP_NAME = 'Narayan Enterprises';
@@ -653,24 +654,94 @@ function ensureDbShape(db) {
   return { db, changed };
 }
 
+function readJsonFileSafe(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (err) {
+    console.error(`[db] Failed to parse ${path.basename(filePath)}: ${err.message}`);
+    return null;
+  }
+}
+
+function writeFileAtomic(filePath, content) {
+  const dir = path.dirname(filePath);
+  const tempPath = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
+  try {
+    fs.writeFileSync(tempPath, content, 'utf8');
+    fs.renameSync(tempPath, filePath);
+  } finally {
+    if (fs.existsSync(tempPath)) {
+      try {
+        fs.unlinkSync(tempPath);
+      } catch (_err) {
+        // Ignore cleanup failures for temp files.
+      }
+    }
+  }
+}
+
 function readJsonDb() {
   if (!fs.existsSync(DB_PATH)) {
-    const ensured = ensureDbShape({});
-    fs.writeFileSync(DB_PATH, JSON.stringify(ensured.db, null, 2));
-    return ensured.db;
+    if (fs.existsSync(DB_BACKUP_PATH)) {
+      const fromBackup = readJsonFileSafe(DB_BACKUP_PATH);
+      if (fromBackup) {
+        const ensuredBackup = ensureDbShape(fromBackup);
+        writeJsonDb(ensuredBackup.db, { skipBackupRefresh: true });
+        return ensuredBackup.db;
+      }
+    }
+    const ensuredEmpty = ensureDbShape({});
+    writeJsonDb(ensuredEmpty.db);
+    return ensuredEmpty.db;
   }
 
-  const raw = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+  const raw = readJsonFileSafe(DB_PATH);
+  if (!raw) {
+    if (fs.existsSync(DB_BACKUP_PATH)) {
+      const fromBackup = readJsonFileSafe(DB_BACKUP_PATH);
+      if (fromBackup) {
+        const ensuredBackup = ensureDbShape(fromBackup);
+        writeJsonDb(ensuredBackup.db, { skipBackupRefresh: true });
+        return ensuredBackup.db;
+      }
+    }
+    const ensuredEmpty = ensureDbShape({});
+    writeJsonDb(ensuredEmpty.db);
+    return ensuredEmpty.db;
+  }
+
   const ensured = ensureDbShape(raw);
   if (ensured.changed) {
-    fs.writeFileSync(DB_PATH, JSON.stringify(ensured.db, null, 2));
+    writeJsonDb(ensured.db);
+  } else if (!fs.existsSync(DB_BACKUP_PATH)) {
+    try {
+      fs.copyFileSync(DB_PATH, DB_BACKUP_PATH);
+    } catch (err) {
+      console.error(`[db] Failed to create backup copy: ${err.message}`);
+    }
   }
   return ensured.db;
 }
 
-function writeJsonDb(db) {
+function writeJsonDb(db, options = {}) {
+  const skipBackupRefresh = Boolean(options.skipBackupRefresh);
   const ensured = ensureDbShape(db);
-  fs.writeFileSync(DB_PATH, JSON.stringify(ensured.db, null, 2));
+  const payload = JSON.stringify(ensured.db, null, 2);
+  if (!skipBackupRefresh && fs.existsSync(DB_PATH)) {
+    try {
+      fs.copyFileSync(DB_PATH, DB_BACKUP_PATH);
+    } catch (err) {
+      console.error(`[db] Failed to refresh backup before write: ${err.message}`);
+    }
+  }
+  writeFileAtomic(DB_PATH, payload);
+  if (skipBackupRefresh || !fs.existsSync(DB_BACKUP_PATH)) {
+    try {
+      fs.copyFileSync(DB_PATH, DB_BACKUP_PATH);
+    } catch (err) {
+      console.error(`[db] Failed to create backup after write: ${err.message}`);
+    }
+  }
 }
 
 function jsonStore() {

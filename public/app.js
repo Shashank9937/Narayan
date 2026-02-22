@@ -142,6 +142,8 @@ let billsCache = [];
 let activeSupplierId = null;
 let salaryRowsCache = [];
 let salaryLedgersCache = [];
+let dashboardCache = null;
+let attendanceReportCache = { rows: [] };
 let autoRefreshTimer = null;
 let expenseFilter = { dateFrom: '', dateTo: '', description: '' };
 let editingTruckId = null;
@@ -477,26 +479,36 @@ function applyRoleUI() {
 async function api(url, method = 'GET', body) {
   const headers = { 'Content-Type': 'application/json' };
   if (token()) headers.Authorization = `Bearer ${token()}`;
-  const controller = new AbortController();
-  const timeoutMs = method === 'GET' ? 15000 : 20000;
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutMs = method === 'GET' ? 30000 : 20000;
+  const attempts = method === 'GET' ? 2 : 1;
   let res;
+  let lastErr = null;
 
-  try {
-    res = await fetch(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-      signal: controller.signal
-    });
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      throw new Error(`Request timeout (${timeoutMs / 1000}s): ${url}`);
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      res = await fetch(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      lastErr = null;
+      break;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      lastErr = err.name === 'AbortError'
+        ? new Error(`Request timeout (${timeoutMs / 1000}s): ${url}`)
+        : err;
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, 600 * attempt));
+        continue;
+      }
     }
-    throw err;
-  } finally {
-    clearTimeout(timeoutId);
   }
+  if (lastErr) throw lastErr;
 
   if (res.status === 401) {
     setToken('');
@@ -1995,26 +2007,36 @@ async function refresh() {
 
     const requests = [
       hasPermission('dashboard:view')
-        ? safeLoad('dashboard', api(`/api/dashboard?month=${month}&today=${todayISO()}`), null)
+        ? safeLoad('dashboard', api(`/api/dashboard?month=${month}&today=${todayISO()}`), dashboardCache)
         : Promise.resolve(null),
-      hasPermission('employees:view') ? safeLoad('employees', api('/api/employees'), []) : Promise.resolve([]),
-      hasPermission('salary:view')
-        ? safeLoad('salary', api(`/api/salary-summary?month=${month}`), { rows: [] })
-        : Promise.resolve({ rows: [] }),
-      hasPermission('salaryledger:view') ? safeLoad('salary-ledgers', api('/api/salary-ledgers'), []) : Promise.resolve([]),
-      hasPermission('trucks:view') ? safeLoad('trucks', api('/api/trucks'), []) : Promise.resolve([]),
-      hasPermission('expenses:view') ? safeLoad('expenses', api('/api/expenses'), []) : Promise.resolve([]),
-      hasPermission('investments:view') ? safeLoad('investments', api('/api/investments'), []) : Promise.resolve([]),
-      hasPermission('chini:view') ? safeLoad('chini', api('/api/chini-expenses'), []) : Promise.resolve([]),
-      hasPermission('land:view') ? safeLoad('land', api('/api/lands'), []) : Promise.resolve([]),
-      hasPermission('vehicles:view') ? safeLoad('vehicles', api('/api/vehicles'), []) : Promise.resolve([]),
-      hasPermission('billing:view')
-        ? safeLoad('billing-companies', api('/api/billing/companies'), [])
+      hasPermission('employees:view')
+        ? safeLoad('employees', api('/api/employees'), employeesCache)
         : Promise.resolve([]),
-      hasPermission('billing:view') ? safeLoad('bills', api('/api/bills'), []) : Promise.resolve([]),
-      hasPermission('suppliers:view') ? safeLoad('suppliers', api('/api/suppliers'), []) : Promise.resolve([]),
+      hasPermission('salary:view')
+        ? safeLoad('salary', api(`/api/salary-summary?month=${month}`), { rows: salaryRowsCache })
+        : Promise.resolve({ rows: [] }),
+      hasPermission('salaryledger:view')
+        ? safeLoad('salary-ledgers', api('/api/salary-ledgers'), salaryLedgersCache)
+        : Promise.resolve([]),
+      hasPermission('trucks:view') ? safeLoad('trucks', api('/api/trucks'), trucksCache) : Promise.resolve([]),
+      hasPermission('expenses:view') ? safeLoad('expenses', api('/api/expenses'), expensesCache) : Promise.resolve([]),
+      hasPermission('investments:view')
+        ? safeLoad('investments', api('/api/investments'), investmentsCache)
+        : Promise.resolve([]),
+      hasPermission('chini:view') ? safeLoad('chini', api('/api/chini-expenses'), chiniExpensesCache) : Promise.resolve([]),
+      hasPermission('land:view') ? safeLoad('land', api('/api/lands'), landRecordsCache) : Promise.resolve([]),
+      hasPermission('vehicles:view') ? safeLoad('vehicles', api('/api/vehicles'), vehiclesCache) : Promise.resolve([]),
+      hasPermission('billing:view')
+        ? safeLoad('billing-companies', api('/api/billing/companies'), billingCompaniesCache)
+        : Promise.resolve([]),
+      hasPermission('billing:view') ? safeLoad('bills', api('/api/bills'), billsCache) : Promise.resolve([]),
+      hasPermission('suppliers:view') ? safeLoad('suppliers', api('/api/suppliers'), suppliersCache) : Promise.resolve([]),
       hasPermission('attendance:report')
-        ? safeLoad('attendance-report', api(`/api/attendance-report?month=${attendanceMonthInput.value || month}`), { rows: [] })
+        ? safeLoad(
+          'attendance-report',
+          api(`/api/attendance-report?month=${attendanceMonthInput.value || month}`),
+          attendanceReportCache
+        )
         : Promise.resolve({ rows: [] })
     ];
 
@@ -2035,27 +2057,31 @@ async function refresh() {
       attendanceReport
     ] = await Promise.all(requests);
 
-    if (dashboard) {
+    if (dashboard && hasPermission('dashboard:view')) {
+      dashboardCache = dashboard;
       renderCards(dashboard);
       lastRefreshedEl.textContent = `Last refreshed: ${formatLastRefreshed()}`;
       lastRefreshedWrap.classList.toggle('hidden', !hasPermission('dashboard:view'));
-    } else {
+    } else if (!hasPermission('dashboard:view')) {
       cardsEl.innerHTML = '';
       lastRefreshedWrap.classList.add('hidden');
     }
 
-    employeesCache = employees || [];
-    trucksCache = trucks || [];
-    expensesCache = expenses || [];
-    investmentsCache = investments || [];
-    chiniExpensesCache = chiniExpenses || [];
-    landRecordsCache = landRecords || [];
-    vehiclesCache = vehicles || [];
-    billingCompaniesCache = billingCompanies || [];
-    billsCache = bills || [];
-    suppliersCache = suppliers || [];
-    salaryRowsCache = (salary && salary.rows) || [];
-    salaryLedgersCache = salaryLedgers || [];
+    employeesCache = Array.isArray(employees) ? employees : employeesCache;
+    trucksCache = Array.isArray(trucks) ? trucks : trucksCache;
+    expensesCache = Array.isArray(expenses) ? expenses : expensesCache;
+    investmentsCache = Array.isArray(investments) ? investments : investmentsCache;
+    chiniExpensesCache = Array.isArray(chiniExpenses) ? chiniExpenses : chiniExpensesCache;
+    landRecordsCache = Array.isArray(landRecords) ? landRecords : landRecordsCache;
+    vehiclesCache = Array.isArray(vehicles) ? vehicles : vehiclesCache;
+    billingCompaniesCache = Array.isArray(billingCompanies) ? billingCompanies : billingCompaniesCache;
+    billsCache = Array.isArray(bills) ? bills : billsCache;
+    suppliersCache = Array.isArray(suppliers) ? suppliers : suppliersCache;
+    salaryRowsCache = salary && Array.isArray(salary.rows) ? salary.rows : salaryRowsCache;
+    salaryLedgersCache = Array.isArray(salaryLedgers) ? salaryLedgers : salaryLedgersCache;
+    attendanceReportCache = attendanceReport && Array.isArray(attendanceReport.rows)
+      ? attendanceReport
+      : attendanceReportCache;
 
     renderEmployeeOptions(employeesCache);
     renderEmployeeRows(filterEmployees(employeesCache));
@@ -2073,7 +2099,7 @@ async function refresh() {
     renderBillingCompanies(billingCompaniesCache);
     renderBills(filterBills(billsCache));
     renderSuppliers(suppliersCache);
-    renderAttendanceReportRows((attendanceReport && attendanceReport.rows) || []);
+    renderAttendanceReportRows(attendanceReportCache.rows || []);
 
     if (activeSupplierId && supplierDetailPanel && !supplierDetailPanel.classList.contains('hidden')) {
       const sup = suppliersCache.find((s) => s.id === activeSupplierId);
@@ -2169,6 +2195,8 @@ logoutBtn.addEventListener('click', async () => {
   billingCompaniesCache = [];
   billsCache = [];
   salaryLedgersCache = [];
+  dashboardCache = null;
+  attendanceReportCache = { rows: [] };
   resetEmployeeFormMode();
   resetTruckFormMode();
   if (employeeForm) employeeForm.reset();
