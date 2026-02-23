@@ -5213,6 +5213,11 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     }
     const joiningDate = normalizeISODateFlexible(employee.joiningDate);
     const joiningDateParsed = parseISODate(joiningDate);
+    const employeeCreatedDate = normalizeISODateFlexible(employee.createdAt);
+    const employeeCreatedDateParsed = parseISODate(employeeCreatedDate);
+    const legacyJoinCutoff = parseISODate('2010-01-01');
+    const hasSuspiciousLegacyJoiningDate =
+      Boolean(joiningDateParsed) && Boolean(legacyJoinCutoff) && joiningDateParsed < legacyJoinCutoff;
     const attendanceRows = await store.listAttendance();
     const ledgerRows = await store.listSalaryLedgers();
     const ledger = ledgerRows.find((r) => String(r.employeeId) === String(employee.id));
@@ -5295,7 +5300,16 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
       periodStart = ledgerStart;
     } else {
       const fallbackStart = attendanceStartPresent || advanceStart || attendanceStartAny || '';
-      if (fallbackStart && fallbackStart > periodStart) periodStart = fallbackStart;
+      if (fallbackStart && fallbackStart > periodStart) {
+        periodStart = fallbackStart;
+      } else if (
+        hasSuspiciousLegacyJoiningDate &&
+        employeeCreatedDateParsed &&
+        employeeCreatedDateParsed >= monthStartDate &&
+        employeeCreatedDateParsed <= monthEndDate
+      ) {
+        periodStart = employeeCreatedDate;
+      }
     }
     if (!parseISODate(periodStart)) periodStart = monthStart;
 
@@ -5314,11 +5328,11 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     let advancesInPeriod = monthAdvances.filter((a) => {
       const d = normalizeISODateFlexible(a.date);
       if (!d) return false;
-      return d >= periodStart && d <= periodEnd;
+      return d <= periodEnd;
     });
     if (advancesInPeriod.length === 0) {
       const detailDebitsInPeriod = monthDetailDebits
-        .filter((entry) => entry.date >= periodStart && entry.date <= periodEnd)
+        .filter((entry) => entry.date <= periodEnd)
         .map((entry) => ({
           id: `slde_${String(entry.id || uid('slde'))}`,
           employeeId: employee.id,
@@ -5332,7 +5346,12 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     }
     if (advancesInPeriod.length === 0) {
       const ledgerPaidForCurrent = roundMoney(Math.max(0, toSafeNumber(ledger?.paidForCurrent, 0)));
-      if (ledgerPaidForCurrent > 0) {
+      const ledgerPaidForPrevious = roundMoney(Math.max(0, toSafeNumber(ledger?.paidForPrevious, 0)));
+      const ledgerTotalPaidSession = roundMoney(Math.max(0, toSafeNumber(ledger?.totalPaidThisSession, 0)));
+      const ledgerPaidFallback = roundMoney(
+        Math.max(ledgerPaidForCurrent, ledgerTotalPaidSession, ledgerPaidForPrevious, 0)
+      );
+      if (ledgerPaidFallback > 0) {
         const ledgerStart = normalizeISODateFlexible(ledger?.durationStart);
         const ledgerEnd = normalizeISODateFlexible(ledger?.durationEnd);
         const overlaps =
@@ -5343,7 +5362,7 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
               id: `ledger_${String(employee.id)}`,
               employeeId: employee.id,
               date: periodEnd,
-              amount: ledgerPaidForCurrent,
+              amount: ledgerPaidFallback,
               note: 'From salary ledger'
             }
           ];
