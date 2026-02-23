@@ -994,9 +994,17 @@ function jsonStore() {
       writeJsonDb(db);
       return row;
     },
+    async listEmployeeAdvances(employeeId) {
+      const db = readJsonDb();
+      return db.salaryAdvances
+        .filter((a) => String(a.employeeId) === String(employeeId))
+        .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+    },
     async getEmployeeAdvances(employeeId, month) {
       const db = readJsonDb();
-      return db.salaryAdvances.filter((a) => a.employeeId === employeeId && monthOf(a.date) === month);
+      return db.salaryAdvances.filter(
+        (a) => String(a.employeeId) === String(employeeId) && monthOf(a.date) === month
+      );
     },
     async setAdvancesForMonth(employeeId, month, totalAdvances) {
       const db = readJsonDb();
@@ -2338,6 +2346,21 @@ function postgresStore() {
         [row.id, row.employeeId, row.date, row.amount, row.note, row.createdAt]
       );
       return row;
+    },
+    async listEmployeeAdvances(employeeId) {
+      const res = await pool.query(
+        `SELECT * FROM salary_advances
+         WHERE employee_id = $1
+         ORDER BY date ASC`,
+        [employeeId]
+      );
+      return res.rows.map((r) => ({
+        id: r.id,
+        employeeId: r.employee_id,
+        date: String(r.date).slice(0, 10),
+        amount: Number(r.amount),
+        note: r.note || ''
+      }));
     },
     async getEmployeeAdvances(employeeId, month) {
       const res = await pool.query(
@@ -4593,7 +4616,10 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
       return res.status(404).json({ error: 'Employee not found' });
     }
 
-    const advances = await store.getEmployeeAdvances(employee.id, month);
+    const allAdvances =
+      typeof store.listEmployeeAdvances === 'function'
+        ? await store.listEmployeeAdvances(employee.id)
+        : await store.getEmployeeAdvances(employee.id, month);
     const [year, monthNum] = month.split('-').map(Number);
     if (!year || !monthNum || monthNum < 1 || monthNum > 12) {
       return res.status(400).json({ error: 'month must be in YYYY-MM format' });
@@ -4604,6 +4630,10 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     const monthEnd = `${month}-${String(monthDays).padStart(2, '0')}`;
     const joiningDate = normalizeISODateText(employee.joiningDate);
     const attendanceRows = await store.listAttendance();
+    const monthAdvances = allAdvances.filter((a) => {
+      const d = normalizeISODateText(a.date);
+      return Boolean(d) && d >= monthStart && d <= monthEnd;
+    });
 
     const requestedUpto = req.query.uptoDate ? String(req.query.uptoDate) : null;
     if (requestedUpto && !/^\d{4}-\d{2}-\d{2}$/.test(requestedUpto)) {
@@ -4633,16 +4663,20 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
       .map((a) => normalizeISODateText(a.date))
       .filter(Boolean)
       .sort()[0] || '';
-    const advanceStart = advances
+    const advanceStart = monthAdvances
       .map((a) => normalizeISODateText(a.date))
       .filter(Boolean)
       .sort()[0] || '';
-    const candidateStarts = [joiningDate, attendanceStart, advanceStart].filter(Boolean).sort();
-    const employmentStartHint = candidateStarts[0] || '';
 
-    // Start salary period from joining date, otherwise fallback to first attendance/advance date in the month.
+    // Join date takes priority. Attendance/advance is only a fallback when join date is missing/outside month.
     let periodStart = monthStart;
-    if (employmentStartHint && employmentStartHint > periodStart) periodStart = employmentStartHint;
+    if (joiningDate && joiningDate >= monthStart && joiningDate <= monthEnd) {
+      periodStart = joiningDate;
+    } else {
+      const fallbackStart = [attendanceStart, advanceStart].filter(Boolean).sort()[0] || '';
+      if (fallbackStart && fallbackStart > periodStart) periodStart = fallbackStart;
+    }
+    if (periodStart > periodEnd) periodStart = periodEnd;
 
     const startDate = parseISODate(periodStart);
     const endDate = parseISODate(periodEnd);
@@ -4654,11 +4688,33 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
       startDate <= endDate
         ? Math.floor((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1
         : 0;
-    const advancesInPeriod = advances.filter((a) => {
+    let advancesInPeriod = monthAdvances.filter((a) => {
       const d = normalizeISODateText(a.date);
       if (!d) return false;
       return d >= periodStart && d <= periodEnd;
     });
+    if (advancesInPeriod.length === 0) {
+      const ledgerRows = await store.listSalaryLedgers();
+      const ledger = ledgerRows.find((r) => String(r.employeeId) === String(employee.id));
+      const ledgerPaidForCurrent = roundMoney(Math.max(0, toSafeNumber(ledger?.paidForCurrent, 0)));
+      if (ledgerPaidForCurrent > 0) {
+        const ledgerStart = normalizeISODateText(ledger?.durationStart);
+        const ledgerEnd = normalizeISODateText(ledger?.durationEnd);
+        const overlaps =
+          ledgerStart && ledgerEnd ? !(ledgerEnd < periodStart || ledgerStart > periodEnd) : true;
+        if (overlaps) {
+          advancesInPeriod = [
+            {
+              id: `ledger_${String(employee.id)}`,
+              employeeId: employee.id,
+              date: periodEnd,
+              amount: ledgerPaidForCurrent,
+              note: 'From salary ledger'
+            }
+          ];
+        }
+      }
+    }
     const totalAdvance = advancesInPeriod.reduce((sum, a) => sum + Number(a.amount), 0);
     const monthlySalary = Number(employee.monthlySalary);
     const perDaySalary = monthlySalary / monthDays;

@@ -1322,6 +1322,7 @@ function renderTruckRows(rows) {
           <td>${t.totalAmount != null ? money(t.totalAmount) : '-'}</td>
           <td>${escapeHtml(t.origin || '-')}</td>
           <td>${escapeHtml(t.destination || '-')}</td>
+          <td>${escapeHtml(t.notes || '-')}</td>
           <td>${normalizeTruckMarkedText(Boolean(t.marked))}</td>
           <td>
             <div class="actions">
