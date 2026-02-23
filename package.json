@@ -4,7 +4,9 @@
   "description": "Attendance, salary, and truck reporting app",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "backup:json": "node scripts/backup-json-db.js",
+    "migrate:json-to-postgres": "node scripts/migrate-json-to-postgres.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
