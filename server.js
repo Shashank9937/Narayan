@@ -4424,6 +4424,7 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     const monthDays = daysInMonth(year, monthNum - 1);
     const monthEnd = `${month}-${String(monthDays).padStart(2, '0')}`;
     const joiningDate = normalizeISODateText(employee.joiningDate);
+    const attendanceRows = await store.listAttendance();
 
     const requestedUpto = req.query.uptoDate ? String(req.query.uptoDate) : null;
     if (requestedUpto && !/^\d{4}-\d{2}-\d{2}$/.test(requestedUpto)) {
@@ -4448,9 +4449,21 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     if (periodEnd < monthStart) periodEnd = monthStart;
     if (periodEnd > monthEnd) periodEnd = monthEnd;
 
-    // Start salary period from joining date when employee joined mid-month.
+    const attendanceStart = attendanceRows
+      .filter((a) => String(a.employeeId) === String(employee.id) && monthOf(a.date) === month)
+      .map((a) => normalizeISODateText(a.date))
+      .filter(Boolean)
+      .sort()[0] || '';
+    const advanceStart = advances
+      .map((a) => normalizeISODateText(a.date))
+      .filter(Boolean)
+      .sort()[0] || '';
+    const candidateStarts = [joiningDate, attendanceStart, advanceStart].filter(Boolean).sort();
+    const employmentStartHint = candidateStarts[0] || '';
+
+    // Start salary period from joining date, otherwise fallback to first attendance/advance date in the month.
     let periodStart = monthStart;
-    if (joiningDate && joiningDate > periodStart) periodStart = joiningDate;
+    if (employmentStartHint && employmentStartHint > periodStart) periodStart = employmentStartHint;
 
     const startDate = parseISODate(periodStart);
     const endDate = parseISODate(periodEnd);
@@ -4556,7 +4569,10 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     doc.text(generatedAt, pageMargin + 90, y + 64);
 
     doc.text(employee.name, pageMargin + contentWidth / 2 + 76, y + 12);
-    doc.text(`${employee.role} | Joined: ${joiningDate || '-'}`, pageMargin + contentWidth / 2 + 76, y + 38);
+    doc.text(`${employee.role} | Joined: ${joiningDate || '-'}`, pageMargin + contentWidth / 2 + 76, y + 38, {
+      width: contentWidth / 2 - 84,
+      ellipsis: true
+    });
     doc.text(`${daysCounted} / ${monthDays}`, pageMargin + contentWidth / 2 + 76, y + 64);
 
     // Compensation summary cards
