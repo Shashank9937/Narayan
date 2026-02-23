@@ -5218,19 +5218,27 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     const legacyJoinCutoff = parseISODate('2010-01-01');
     const hasSuspiciousLegacyJoiningDate =
       Boolean(joiningDateParsed) && Boolean(legacyJoinCutoff) && joiningDateParsed < legacyJoinCutoff;
+    let inferredJoiningDateForMonth = '';
+    if (hasSuspiciousLegacyJoiningDate && joiningDateParsed && joiningDateParsed.getUTCMonth() + 1 === monthNum) {
+      const inferred = `${month}-${String(joiningDateParsed.getUTCDate()).padStart(2, '0')}`;
+      if (parseISODate(inferred)) inferredJoiningDateForMonth = inferred;
+    }
+    const effectiveJoiningDate = inferredJoiningDateForMonth || joiningDate;
+    const effectiveJoiningDateParsed = parseISODate(effectiveJoiningDate);
     const attendanceRows = await store.listAttendance();
     const ledgerRows = await store.listSalaryLedgers();
     const ledger = ledgerRows.find((r) => String(r.employeeId) === String(employee.id));
     const detailEntries =
       typeof store.listSalaryLedgerEntries === 'function' ? await store.listSalaryLedgerEntries(employee.id) : [];
-    const monthAdvances = allAdvances
+    const normalizedAllAdvances = allAdvances
       .map((a) => ({
         ...a,
         date: normalizeISODateFlexible(a.date),
-        amount: roundMoney(Math.max(0, toSafeNumber(a.amount, 0))),
+        amount: roundMoney(toSafeNumber(a.amount, 0)),
         note: String(a.note || '').trim()
       }))
-      .filter((a) => Boolean(a.date) && a.date >= monthStart && a.date <= monthEnd);
+      .filter((a) => Boolean(a.date));
+    const monthAdvances = normalizedAllAdvances.filter((a) => a.date >= monthStart && a.date <= monthEnd);
     const monthDetailDebits = (detailEntries || [])
       .map((entry) => ({
         ...entry,
@@ -5291,11 +5299,11 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
 
     // Join date takes priority. Attendance/advance is only a fallback when join date is missing/outside month.
     let periodStart = monthStart;
-    if (joiningDateParsed && joiningDateParsed >= monthStartDate && joiningDateParsed <= monthEndDate) {
-      periodStart = joiningDate;
-    } else if (joiningDateParsed && joiningDateParsed > monthEndDate) {
+    if (effectiveJoiningDateParsed && effectiveJoiningDateParsed >= monthStartDate && effectiveJoiningDateParsed <= monthEndDate) {
+      periodStart = effectiveJoiningDate;
+    } else if (effectiveJoiningDateParsed && effectiveJoiningDateParsed > monthEndDate) {
       // Not joined in selected month: keep period start after month end so payable days become zero.
-      periodStart = joiningDate;
+      periodStart = effectiveJoiningDate;
     } else if (ledgerStart && ledgerStart >= monthStart && ledgerStart <= monthEnd) {
       periodStart = ledgerStart;
     } else {
@@ -5325,7 +5333,7 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
         : 0;
     const periodDisplayStart = startDate && startDate > endDate ? periodEnd : periodStart;
     // Apply advances for selected month up to the selected slip end-date.
-    let advancesInPeriod = monthAdvances.filter((a) => {
+    let advancesInPeriod = normalizedAllAdvances.filter((a) => {
       const d = normalizeISODateFlexible(a.date);
       if (!d) return false;
       return d <= periodEnd;
@@ -5348,8 +5356,10 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
       const ledgerPaidForCurrent = roundMoney(Math.max(0, toSafeNumber(ledger?.paidForCurrent, 0)));
       const ledgerPaidForPrevious = roundMoney(Math.max(0, toSafeNumber(ledger?.paidForPrevious, 0)));
       const ledgerTotalPaidSession = roundMoney(Math.max(0, toSafeNumber(ledger?.totalPaidThisSession, 0)));
+      const ledgerAmountGiven = roundMoney(Math.max(0, toSafeNumber(ledger?.amountGiven, 0)));
+      const ledgerTotalPaid = roundMoney(Math.max(0, toSafeNumber(ledger?.totalPaid, 0)));
       const ledgerPaidFallback = roundMoney(
-        Math.max(ledgerPaidForCurrent, ledgerTotalPaidSession, ledgerPaidForPrevious, 0)
+        Math.max(ledgerPaidForCurrent, ledgerTotalPaidSession, ledgerPaidForPrevious, ledgerAmountGiven, ledgerTotalPaid, 0)
       );
       if (ledgerPaidFallback > 0) {
         const ledgerStart = normalizeISODateFlexible(ledger?.durationStart);
@@ -5458,7 +5468,7 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     doc.text(generatedAt, pageMargin + 90, y + 64);
 
     doc.text(employee.name, pageMargin + contentWidth / 2 + 76, y + 12);
-    doc.text(`${employee.role} | Joined: ${joiningDate || '-'}`, pageMargin + contentWidth / 2 + 76, y + 38, {
+    doc.text(`${employee.role} | Joined: ${effectiveJoiningDate || joiningDate || '-'}`, pageMargin + contentWidth / 2 + 76, y + 38, {
       width: contentWidth / 2 - 84,
       ellipsis: true
     });
