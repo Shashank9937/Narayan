@@ -448,8 +448,7 @@ function setDefaultDates() {
     chiniForm,
     vehicleForm,
     supplierTransactionForm,
-    billForm,
-    salaryLedgerDetailForm
+    billForm
   ].forEach((form) => {
     if (!form) return;
     const dateInput = form.querySelector('input[type="date"]');
@@ -2590,6 +2589,7 @@ async function bootstrapSession() {
     resetEmployeeFormMode();
     resetTruckFormMode();
     setDefaultDates();
+    resetSalaryLedgerDetailForm();
     await refresh();
     ensureAutoRefresh();
     initSorting();
@@ -2617,6 +2617,7 @@ loginForm.addEventListener('submit', async (e) => {
     resetEmployeeFormMode();
     resetTruckFormMode();
     setDefaultDates();
+    resetSalaryLedgerDetailForm();
     await refresh();
     ensureAutoRefresh();
     loginForm.reset();
