@@ -1285,7 +1285,7 @@ function computeSalaryLedgerDetailView(employeeId) {
   const rows = entries.map((entry) => {
     const debit = round2(Math.max(0, toNumber(entry.debit, 0)));
     const credit = round2(Math.max(0, toNumber(entry.credit, 0)));
-    runningBalance = round2(runningBalance + debit - credit);
+    runningBalance = round2(runningBalance + credit - debit);
     debitSum = round2(debitSum + debit);
     creditSum = round2(creditSum + credit);
     return {

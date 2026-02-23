@@ -4984,7 +4984,7 @@ app.get('/api/salary-ledgers/:employeeId/statement.pdf', auth, requirePermission
     const statementRows = sortedEntries.map((entry) => {
       debitSum = roundMoney(debitSum + entry.debit);
       creditSum = roundMoney(creditSum + entry.credit);
-      runningBalance = roundMoney(runningBalance + entry.debit - entry.credit);
+      runningBalance = roundMoney(runningBalance + entry.credit - entry.debit);
       const particulars = entry.note ? `${entry.particulars} (${entry.note})` : entry.particulars;
       return {
         date: entry.date,

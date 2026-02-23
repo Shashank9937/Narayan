@@ -212,7 +212,7 @@
             </div>
           </div>
           <p class="hint">
-            Add each payment/salary line so employee can clearly understand what was charged and what was paid.
+            Tally style entry: put salary in Credit and payment in Debit. Balance shows remaining payable.
           </p>
           <form id="salaryLedgerDetailForm" class="salary-ledger-detail-form">
             <input type="hidden" name="entryId" />
@@ -239,12 +239,12 @@
               <input id="salaryLedgerDetailVoucherNo" name="voucherNo" placeholder="Voucher Number" />
             </div>
             <div class="field-group">
-              <label for="salaryLedgerDetailDebit">Debit (+ Salary)</label>
-              <input id="salaryLedgerDetailDebit" name="debit" type="number" min="0" step="0.01" placeholder="0" />
+              <label for="salaryLedgerDetailDebit">Debit (+ Paid)</label>
+              <input id="salaryLedgerDetailDebit" name="debit" type="number" min="0" step="0.01" placeholder="Paid Amount" />
             </div>
             <div class="field-group">
-              <label for="salaryLedgerDetailCredit">Credit (+ Paid)</label>
-              <input id="salaryLedgerDetailCredit" name="credit" type="number" min="0" step="0.01" placeholder="0" />
+              <label for="salaryLedgerDetailCredit">Credit (+ Salary)</label>
+              <input id="salaryLedgerDetailCredit" name="credit" type="number" min="0" step="0.01" placeholder="Salary Amount" />
             </div>
             <div class="field-group">
               <label for="salaryLedgerDetailNote">Note</label>
@@ -261,11 +261,11 @@
               <div id="salaryLedgerDetailOpeningBalance" class="value">₹0</div>
             </div>
             <div class="summary-stat">
-              <div class="label">Ledger Debit</div>
+              <div class="label">Total Paid (Debit)</div>
               <div id="salaryLedgerDetailDebitSum" class="value">₹0</div>
             </div>
             <div class="summary-stat">
-              <div class="label">Ledger Credit</div>
+              <div class="label">Total Salary (Credit)</div>
               <div id="salaryLedgerDetailCreditSum" class="value">₹0</div>
             </div>
             <div class="summary-stat">
