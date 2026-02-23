@@ -1,0 +1,16 @@
+{
+  "createdAt": "2026-02-23T09:48:14.979Z",
+  "dataDir": "/Users/shashankmishra/Documents/New project/data",
+  "files": [
+    {
+      "source": "/Users/shashankmishra/Documents/New project/data/db.json",
+      "destination": "/Users/shashankmishra/Documents/New project/data/backups/db.2026-02-23T09-48-14-975Z.json",
+      "bytes": 1705
+    },
+    {
+      "source": "/Users/shashankmishra/Documents/New project/data/db.backup.json",
+      "destination": "/Users/shashankmishra/Documents/New project/data/backups/db.backup.2026-02-23T09-48-14-975Z.json",
+      "bytes": 1705
+    }
+  ]
+}
