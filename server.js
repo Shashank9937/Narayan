@@ -4415,7 +4415,6 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     }
 
     const advances = await store.getEmployeeAdvances(employee.id, month);
-    const totalAdvance = advances.reduce((sum, a) => sum + Number(a.amount), 0);
     const [year, monthNum] = month.split('-').map(Number);
     if (!year || !monthNum || monthNum < 1 || monthNum > 12) {
       return res.status(400).json({ error: 'month must be in YYYY-MM format' });
@@ -4424,6 +4423,7 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     const monthStart = `${month}-01`;
     const monthDays = daysInMonth(year, monthNum - 1);
     const monthEnd = `${month}-${String(monthDays).padStart(2, '0')}`;
+    const joiningDate = normalizeISODateText(employee.joiningDate);
 
     const requestedUpto = req.query.uptoDate ? String(req.query.uptoDate) : null;
     if (requestedUpto && !/^\d{4}-\d{2}-\d{2}$/.test(requestedUpto)) {
@@ -4448,13 +4448,26 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     if (periodEnd < monthStart) periodEnd = monthStart;
     if (periodEnd > monthEnd) periodEnd = monthEnd;
 
-    const startDate = parseISODate(monthStart);
+    // Start salary period from joining date when employee joined mid-month.
+    let periodStart = monthStart;
+    if (joiningDate && joiningDate > periodStart) periodStart = joiningDate;
+
+    const startDate = parseISODate(periodStart);
     const endDate = parseISODate(periodEnd);
     if (!startDate || !endDate) {
       return res.status(400).json({ error: 'Invalid period dates' });
     }
 
-    const daysCounted = Math.floor((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+    const daysCounted =
+      startDate <= endDate
+        ? Math.floor((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1
+        : 0;
+    const advancesInPeriod = advances.filter((a) => {
+      const d = normalizeISODateText(a.date);
+      if (!d) return false;
+      return d >= periodStart && d <= periodEnd;
+    });
+    const totalAdvance = advancesInPeriod.reduce((sum, a) => sum + Number(a.amount), 0);
     const monthlySalary = Number(employee.monthlySalary);
     const perDaySalary = monthlySalary / monthDays;
     const proratedSalary = perDaySalary * daysCounted;
@@ -4539,11 +4552,11 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
 
     doc.fillColor(colors.text).font('Helvetica').fontSize(11);
     doc.text(month, pageMargin + 90, y + 12);
-    doc.text(`${monthStart} to ${periodEnd}`, pageMargin + 90, y + 38);
+    doc.text(`${periodStart} to ${periodEnd}`, pageMargin + 90, y + 38);
     doc.text(generatedAt, pageMargin + 90, y + 64);
 
     doc.text(employee.name, pageMargin + contentWidth / 2 + 76, y + 12);
-    doc.text(employee.role, pageMargin + contentWidth / 2 + 76, y + 38);
+    doc.text(`${employee.role} | Joined: ${joiningDate || '-'}`, pageMargin + contentWidth / 2 + 76, y + 38);
     doc.text(`${daysCounted} / ${monthDays}`, pageMargin + contentWidth / 2 + 76, y + 64);
 
     // Compensation summary cards
@@ -4595,11 +4608,11 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     doc.text('Note', pageMargin + 280, y + 7);
     y += 30;
 
-    if (advances.length === 0) {
+    if (advancesInPeriod.length === 0) {
       doc.fillColor(colors.muted).font('Helvetica').fontSize(10.5);
       doc.text('No advance transactions for this period.', pageMargin + 4, y + 2);
     } else {
-      advances.forEach((a, idx) => {
+      advancesInPeriod.forEach((a, idx) => {
         doc
           .save()
           .roundedRect(pageMargin, y - 2, contentWidth, 22, 4)
