@@ -692,6 +692,55 @@ th.sortable.desc::after {
   color: var(--text);
 }
 
+.salary-ledger-detail-card {
+  margin: 0.35rem 0 1rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(244, 249, 255, 0.86));
+  padding: 0.9rem;
+}
+
+.salary-ledger-detail-form {
+  display: grid;
+  gap: 0.68rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: end;
+  margin: 0.6rem 0;
+}
+
+.salary-ledger-detail-form .field-group {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.salary-ledger-detail-form .field-group label {
+  font-size: 0.76rem;
+  color: var(--text-light);
+  font-weight: 700;
+}
+
+.salary-ledger-detail-tools,
+.salary-ledger-detail-summary {
+  grid-column: 1 / -1;
+}
+
+.salary-ledger-detail-tools {
+  justify-content: flex-end;
+}
+
+#salaryLedgerDetailTable tr.ledger-static td {
+  background: rgba(15, 97, 255, 0.08);
+  font-weight: 700;
+}
+
+#salaryLedgerDetailTable tr.ledger-opening td {
+  color: var(--text-light);
+}
+
+#salaryLedgerDetailTable tr.ledger-closing td {
+  border-top: 2px solid rgba(15, 97, 255, 0.24);
+}
+
 .status-badge {
   display: inline-flex;
   align-items: center;
@@ -1177,6 +1226,10 @@ body.dark-mode button.emp-edit {
   border-color: #2b436c;
 }
 
+body.dark-mode #salaryLedgerDetailTable tr.ledger-static td {
+  background: rgba(18, 37, 64, 0.65);
+}
+
 @media (max-width: 1140px) {
   .app-shell {
     padding: 1.2rem;
@@ -1197,6 +1250,14 @@ body.dark-mode button.emp-edit {
   }
 
   .salary-ledger-tools {
+    justify-content: flex-start;
+  }
+
+  .salary-ledger-detail-form {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
+  .salary-ledger-detail-tools {
     justify-content: flex-start;
   }
 
@@ -1261,6 +1322,10 @@ body.dark-mode button.emp-edit {
   }
 
   .salary-ledger-form {
+    grid-template-columns: 1fr;
+  }
+
+  .salary-ledger-detail-form {
     grid-template-columns: 1fr;
   }
 

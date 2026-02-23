@@ -242,7 +242,7 @@
             <button id="salaryLedgerAutoFillBtn" type="button" class="small">Use Employee Monthly Salary</button>
             <button id="salaryLedgerCurrentMonthBtn" type="button" class="small">Set Current Month Dates</button>
             <button id="salaryLedgerCarryBtn" type="button" class="small">Carry Previous Remaining</button>
-            <button id="salaryLedgerDownloadBtn" type="button" class="small">Download Employee PDF</button>
+            <button id="salaryLedgerDownloadBtn" type="button" class="small">Download Summary PDF</button>
             <button id="salaryLedgerResetBtn" type="button" class="small warn">Clear Form</button>
           </div>
           <div class="summary-stat-grid salary-ledger-live-summary">
@@ -274,6 +274,95 @@
           <input name="note" placeholder="Note (optional)" class="full-span" />
           <button type="submit">Save Salary Ledger</button>
         </form>
+        <div class="salary-ledger-detail-card">
+          <div class="row wrap">
+            <h3>Employee Detailed Ledger (Tally Style)</h3>
+            <div class="row wrap">
+              <button id="salaryLedgerDetailRefreshBtn" type="button" class="small">Load Employee Ledger</button>
+              <button id="salaryLedgerDetailPdfBtn" type="button" class="small">Download Detailed PDF</button>
+            </div>
+          </div>
+          <p class="hint">
+            Add each payment/salary line so employee can clearly understand what was charged and what was paid.
+          </p>
+          <form id="salaryLedgerDetailForm" class="salary-ledger-detail-form">
+            <input type="hidden" name="entryId" />
+            <div class="field-group">
+              <label for="salaryLedgerDetailDate">Date</label>
+              <input id="salaryLedgerDetailDate" name="date" type="date" required />
+            </div>
+            <div class="field-group">
+              <label for="salaryLedgerDetailParticulars">Particulars</label>
+              <input id="salaryLedgerDetailParticulars" name="particulars" placeholder="Salary, Payment, Advance..." required />
+            </div>
+            <div class="field-group">
+              <label for="salaryLedgerDetailVoucherType">Vch Type</label>
+              <select id="salaryLedgerDetailVoucherType" name="voucherType">
+                <option value="Salary">Salary</option>
+                <option value="Payment">Payment</option>
+                <option value="Advance">Advance</option>
+                <option value="Adjustment">Adjustment</option>
+                <option value="Manual">Manual</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="salaryLedgerDetailVoucherNo">Vch No.</label>
+              <input id="salaryLedgerDetailVoucherNo" name="voucherNo" placeholder="Voucher Number" />
+            </div>
+            <div class="field-group">
+              <label for="salaryLedgerDetailDebit">Debit (+ Salary)</label>
+              <input id="salaryLedgerDetailDebit" name="debit" type="number" min="0" step="0.01" placeholder="0" />
+            </div>
+            <div class="field-group">
+              <label for="salaryLedgerDetailCredit">Credit (+ Paid)</label>
+              <input id="salaryLedgerDetailCredit" name="credit" type="number" min="0" step="0.01" placeholder="0" />
+            </div>
+            <div class="field-group">
+              <label for="salaryLedgerDetailNote">Note</label>
+              <input id="salaryLedgerDetailNote" name="note" placeholder="Optional note" />
+            </div>
+            <div class="row wrap salary-ledger-detail-tools">
+              <button id="salaryLedgerDetailSaveBtn" type="submit" class="small">Add Entry</button>
+              <button id="salaryLedgerDetailCancelBtn" type="button" class="small warn hidden">Cancel Edit</button>
+            </div>
+          </form>
+          <div class="summary-stat-grid salary-ledger-detail-summary">
+            <div class="summary-stat">
+              <div class="label">B/F Balance</div>
+              <div id="salaryLedgerDetailOpeningBalance" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Ledger Debit</div>
+              <div id="salaryLedgerDetailDebitSum" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Ledger Credit</div>
+              <div id="salaryLedgerDetailCreditSum" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Closing Balance</div>
+              <div id="salaryLedgerDetailClosingBalance" class="value">₹0</div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table id="salaryLedgerDetailTable">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Particulars</th>
+                  <th>Vch Type</th>
+                  <th>Vch No.</th>
+                  <th>Debit</th>
+                  <th>Credit</th>
+                  <th>Balance</th>
+                  <th>Note</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
         <div class="summary-stat-grid">
           <div class="summary-stat">
             <div class="label">Total Paid (All Employees)</div>

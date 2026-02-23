@@ -124,6 +124,12 @@ const salaryLedgerCurrentMonthBtn = document.getElementById('salaryLedgerCurrent
 const salaryLedgerCarryBtn = document.getElementById('salaryLedgerCarryBtn');
 const salaryLedgerDownloadBtn = document.getElementById('salaryLedgerDownloadBtn');
 const salaryLedgerResetBtn = document.getElementById('salaryLedgerResetBtn');
+const salaryLedgerDetailForm = document.getElementById('salaryLedgerDetailForm');
+const salaryLedgerDetailTableTbody = document.querySelector('#salaryLedgerDetailTable tbody');
+const salaryLedgerDetailRefreshBtn = document.getElementById('salaryLedgerDetailRefreshBtn');
+const salaryLedgerDetailPdfBtn = document.getElementById('salaryLedgerDetailPdfBtn');
+const salaryLedgerDetailSaveBtn = document.getElementById('salaryLedgerDetailSaveBtn');
+const salaryLedgerDetailCancelBtn = document.getElementById('salaryLedgerDetailCancelBtn');
 const salaryEmployeeSummaryEl = document.getElementById('salaryEmployeeSummary');
 const salaryOverallSummaryEl = document.getElementById('salaryOverallSummary');
 const brandLink = document.getElementById('brandLink');
@@ -162,11 +168,14 @@ let editingTruckId = null;
 let editingExpenseId = null;
 let editingLandId = null;
 let editingEmployeeId = null;
+let editingSalaryLedgerDetailId = null;
 let activeSalaryMonth = monthISO();
 let billItemsState = [];
 let editingBillId = null;
 let refreshInFlight = null;
 let lastRefreshErrorToastAt = 0;
+let salaryLedgerDetailEntriesCache = [];
+let salaryLedgerDetailEmployeeId = '';
 
 function showToast(message, type = 'ok') {
   toastEl.textContent = message;
@@ -430,7 +439,18 @@ function initSorting() {
 }
 
 function setDefaultDates() {
-  [attendanceForm, advanceForm, truckForm, expenseForm, investmentForm, chiniForm, vehicleForm, supplierTransactionForm, billForm].forEach((form) => {
+  [
+    attendanceForm,
+    advanceForm,
+    truckForm,
+    expenseForm,
+    investmentForm,
+    chiniForm,
+    vehicleForm,
+    supplierTransactionForm,
+    billForm,
+    salaryLedgerDetailForm
+  ].forEach((form) => {
     if (!form) return;
     const dateInput = form.querySelector('input[type="date"]');
     if (dateInput) dateInput.value = todayISO();
@@ -1009,6 +1029,14 @@ function renderSalaryLedgers(rows) {
     });
   });
   prefillSalaryLedgerForm();
+  const selectedEmployeeId = getSelectedSalaryLedgerEmployeeId();
+  if (selectedEmployeeId && selectedEmployeeId !== salaryLedgerDetailEmployeeId) {
+    loadSalaryLedgerDetailEntries({ employeeId: selectedEmployeeId, silent: true }).catch((err) => {
+      console.error('[salary-ledger-detail:load]', err);
+    });
+  } else {
+    renderSalaryLedgerDetail();
+  }
 }
 
 function prefillSalaryLedgerForm() {
@@ -1180,6 +1208,232 @@ function carryPreviousRemainingToNewSession() {
   if (salaryLedgerPaidForCurrentInput) salaryLedgerPaidForCurrentInput.value = '0';
   updateSalaryLedgerPreview();
   showToast('Previous remaining carried to new session');
+}
+
+function getSelectedSalaryLedgerEmployeeId() {
+  return String(salaryLedgerEmployeeSelect?.value || '').trim();
+}
+
+function normalizeSalaryLedgerDetailEntry(entry) {
+  return {
+    id: String(entry?.id || ''),
+    employeeId: String(entry?.employeeId || ''),
+    date: normalizeIsoDateValue(entry?.date),
+    particulars: String(entry?.particulars || '').trim(),
+    voucherType: String(entry?.voucherType || 'Manual').trim() || 'Manual',
+    voucherNo: String(entry?.voucherNo || '').trim(),
+    debit: round2(Math.max(0, toNumber(entry?.debit, 0))),
+    credit: round2(Math.max(0, toNumber(entry?.credit, 0))),
+    note: String(entry?.note || '').trim(),
+    createdAt: String(entry?.createdAt || ''),
+    updatedAt: String(entry?.updatedAt || '')
+  };
+}
+
+function sortSalaryLedgerDetailEntries(rows) {
+  return [...(rows || [])].sort((a, b) => {
+    const aDate = String(a.date || '');
+    const bDate = String(b.date || '');
+    if (aDate !== bDate) return aDate.localeCompare(bDate);
+    const aCreated = String(a.createdAt || '');
+    const bCreated = String(b.createdAt || '');
+    if (aCreated !== bCreated) return aCreated.localeCompare(bCreated);
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
+}
+
+function setSalaryLedgerDetailSummary(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = money(value);
+}
+
+function resetSalaryLedgerDetailForm() {
+  if (!salaryLedgerDetailForm) return;
+  salaryLedgerDetailForm.reset();
+  const dateInput = salaryLedgerDetailForm.querySelector('input[name="date"]');
+  if (dateInput) dateInput.value = todayISO();
+  const entryIdInput = salaryLedgerDetailForm.querySelector('input[name="entryId"]');
+  if (entryIdInput) entryIdInput.value = '';
+  editingSalaryLedgerDetailId = null;
+  if (salaryLedgerDetailSaveBtn) salaryLedgerDetailSaveBtn.textContent = 'Add Entry';
+  if (salaryLedgerDetailCancelBtn) salaryLedgerDetailCancelBtn.classList.add('hidden');
+}
+
+function computeSalaryLedgerDetailView(employeeId) {
+  const ledgerRow = normalizeLedgerRow(
+    salaryLedgersCache.find((r) => String(r.employeeId) === String(employeeId)) || { employeeId }
+  );
+  const openingBalance = round2(Math.max(0, toNumber(ledgerRow.openingPending, 0)));
+  const entries = sortSalaryLedgerDetailEntries(
+    (salaryLedgerDetailEntriesCache || [])
+      .map((entry) => normalizeSalaryLedgerDetailEntry(entry))
+      .filter((entry) => String(entry.employeeId) === String(employeeId))
+  );
+
+  let runningBalance = openingBalance;
+  let debitSum = 0;
+  let creditSum = 0;
+  const rows = entries.map((entry) => {
+    const debit = round2(Math.max(0, toNumber(entry.debit, 0)));
+    const credit = round2(Math.max(0, toNumber(entry.credit, 0)));
+    runningBalance = round2(runningBalance + debit - credit);
+    debitSum = round2(debitSum + debit);
+    creditSum = round2(creditSum + credit);
+    return {
+      ...entry,
+      debit,
+      credit,
+      balance: runningBalance
+    };
+  });
+
+  return {
+    openingBalance,
+    debitSum,
+    creditSum,
+    closingBalance: runningBalance,
+    rows,
+    ledgerRow
+  };
+}
+
+function renderSalaryLedgerDetail() {
+  if (!salaryLedgerDetailTableTbody) return;
+  const employeeId = getSelectedSalaryLedgerEmployeeId();
+  if (!employeeId) {
+    salaryLedgerDetailTableTbody.innerHTML = '<tr><td colspan="9">Select an employee to load detailed ledger.</td></tr>';
+    setSalaryLedgerDetailSummary('salaryLedgerDetailOpeningBalance', 0);
+    setSalaryLedgerDetailSummary('salaryLedgerDetailDebitSum', 0);
+    setSalaryLedgerDetailSummary('salaryLedgerDetailCreditSum', 0);
+    setSalaryLedgerDetailSummary('salaryLedgerDetailClosingBalance', 0);
+    return;
+  }
+
+  const canEdit = hasPermission('salaryledger:update');
+  const view = computeSalaryLedgerDetailView(employeeId);
+  setSalaryLedgerDetailSummary('salaryLedgerDetailOpeningBalance', view.openingBalance);
+  setSalaryLedgerDetailSummary('salaryLedgerDetailDebitSum', view.debitSum);
+  setSalaryLedgerDetailSummary('salaryLedgerDetailCreditSum', view.creditSum);
+  setSalaryLedgerDetailSummary('salaryLedgerDetailClosingBalance', view.closingBalance);
+
+  const openingDate = view.ledgerRow.durationStart || '-';
+  const openingRow = `<tr class="ledger-static ledger-opening">
+      <td>${openingDate}</td>
+      <td>Brought Forward</td>
+      <td>-</td>
+      <td>-</td>
+      <td class="money">-</td>
+      <td class="money">-</td>
+      <td class="money">${money(view.openingBalance)}</td>
+      <td>-</td>
+      <td>-</td>
+    </tr>`;
+
+  const entriesRows = view.rows
+    .map((entry) => {
+      const actions = canEdit
+        ? `<div class="actions">
+             <button type="button" class="small warn sldd-edit" data-id="${entry.id}">Edit</button>
+             <button type="button" class="small danger sldd-del" data-id="${entry.id}">Delete</button>
+           </div>`
+        : '-';
+      return `<tr>
+        <td>${entry.date || '-'}</td>
+        <td>${escapeHtml(entry.particulars || '-')}</td>
+        <td>${escapeHtml(entry.voucherType || '-')}</td>
+        <td>${escapeHtml(entry.voucherNo || '-')}</td>
+        <td class="money">${money(entry.debit)}</td>
+        <td class="money">${money(entry.credit)}</td>
+        <td class="money">${money(entry.balance)}</td>
+        <td>${escapeHtml(entry.note || '-')}</td>
+        <td>${actions}</td>
+      </tr>`;
+    })
+    .join('');
+
+  const emptyEntryRow = view.rows.length
+    ? ''
+    : '<tr><td colspan="9">No detailed entries yet. Add first salary/payment line.</td></tr>';
+
+  const closingRow = `<tr class="ledger-static ledger-closing">
+      <td>-</td>
+      <td><strong>Closing Balance</strong></td>
+      <td>-</td>
+      <td>-</td>
+      <td class="money"><strong>${money(view.debitSum)}</strong></td>
+      <td class="money"><strong>${money(view.creditSum)}</strong></td>
+      <td class="money"><strong>${money(view.closingBalance)}</strong></td>
+      <td>-</td>
+      <td>-</td>
+    </tr>`;
+
+  salaryLedgerDetailTableTbody.innerHTML = `${openingRow}${entriesRows}${emptyEntryRow}${closingRow}`;
+
+  if (!canEdit) return;
+  document.querySelectorAll('.sldd-edit').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = String(btn.getAttribute('data-id') || '');
+      const entry = view.rows.find((row) => String(row.id) === id);
+      if (!entry || !salaryLedgerDetailForm) return;
+      editingSalaryLedgerDetailId = id;
+      const setValue = (name, value) => {
+        const input = salaryLedgerDetailForm.querySelector(`[name="${name}"]`);
+        if (input) input.value = value;
+      };
+      setValue('entryId', entry.id);
+      setValue('date', entry.date || todayISO());
+      setValue('particulars', entry.particulars || '');
+      setValue('voucherType', entry.voucherType || 'Manual');
+      setValue('voucherNo', entry.voucherNo || '');
+      setValue('debit', String(entry.debit || 0));
+      setValue('credit', String(entry.credit || 0));
+      setValue('note', entry.note || '');
+      if (salaryLedgerDetailSaveBtn) salaryLedgerDetailSaveBtn.textContent = 'Update Entry';
+      if (salaryLedgerDetailCancelBtn) salaryLedgerDetailCancelBtn.classList.remove('hidden');
+      salaryLedgerDetailForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  });
+
+  document.querySelectorAll('.sldd-del').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = String(btn.getAttribute('data-id') || '');
+      if (!id) return;
+      if (!confirm('Delete this detailed ledger entry?')) return;
+      try {
+        await api(`/api/salary-ledger-entries/${id}`, 'DELETE');
+        if (editingSalaryLedgerDetailId === id) resetSalaryLedgerDetailForm();
+        await loadSalaryLedgerDetailEntries({ employeeId, silent: true });
+        showToast('Detailed ledger entry deleted');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  });
+}
+
+async function loadSalaryLedgerDetailEntries({ employeeId, silent = false } = {}) {
+  const selectedEmployeeId = String(employeeId || getSelectedSalaryLedgerEmployeeId()).trim();
+  if (!selectedEmployeeId) {
+    salaryLedgerDetailEmployeeId = '';
+    salaryLedgerDetailEntriesCache = [];
+    resetSalaryLedgerDetailForm();
+    renderSalaryLedgerDetail();
+    return [];
+  }
+  const rows = await api(`/api/salary-ledger-entries?employeeId=${encodeURIComponent(selectedEmployeeId)}`);
+  salaryLedgerDetailEntriesCache = Array.isArray(rows)
+    ? rows.map((row) => normalizeSalaryLedgerDetailEntry(row))
+    : [];
+  salaryLedgerDetailEmployeeId = selectedEmployeeId;
+  if (
+    editingSalaryLedgerDetailId &&
+    !salaryLedgerDetailEntriesCache.some((entry) => String(entry.id) === String(editingSalaryLedgerDetailId))
+  ) {
+    resetSalaryLedgerDetailForm();
+  }
+  renderSalaryLedgerDetail();
+  if (!silent) showToast('Detailed ledger loaded');
+  return salaryLedgerDetailEntriesCache;
 }
 
 function renderAttendanceReportRows(rows) {
@@ -2391,8 +2645,11 @@ logoutBtn.addEventListener('click', async () => {
   billingCompaniesCache = [];
   billsCache = [];
   salaryLedgersCache = [];
+  salaryLedgerDetailEntriesCache = [];
+  salaryLedgerDetailEmployeeId = '';
   dashboardCache = null;
   attendanceReportCache = { rows: [] };
+  resetSalaryLedgerDetailForm();
   resetEmployeeFormMode();
   resetTruckFormMode();
   if (employeeForm) employeeForm.reset();
@@ -3209,6 +3466,10 @@ salaryEmployeeSelect?.addEventListener('change', () => {
 
 salaryLedgerEmployeeSelect?.addEventListener('change', () => {
   prefillSalaryLedgerForm();
+  resetSalaryLedgerDetailForm();
+  loadSalaryLedgerDetailEntries({ employeeId: getSelectedSalaryLedgerEmployeeId(), silent: true }).catch((err) =>
+    showToast(err.message, 'error')
+  );
 });
 
 salaryLedgerSearchInput?.addEventListener('input', () => {
@@ -3234,6 +3495,82 @@ salaryLedgerDownloadBtn?.addEventListener('click', () => {
     return;
   }
   window.open(urlWithAuth(`/api/salary-ledgers/${employeeId}.pdf`), '_blank');
+});
+
+salaryLedgerDetailRefreshBtn?.addEventListener('click', async () => {
+  try {
+    await loadSalaryLedgerDetailEntries({ employeeId: getSelectedSalaryLedgerEmployeeId(), silent: false });
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+salaryLedgerDetailPdfBtn?.addEventListener('click', () => {
+  const employeeId = getSelectedSalaryLedgerEmployeeId();
+  if (!employeeId) {
+    showToast('Select employee first', 'error');
+    return;
+  }
+  window.open(urlWithAuth(`/api/salary-ledgers/${employeeId}/statement.pdf`), '_blank');
+});
+
+salaryLedgerDetailCancelBtn?.addEventListener('click', () => {
+  resetSalaryLedgerDetailForm();
+});
+
+salaryLedgerDetailForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const employeeId = getSelectedSalaryLedgerEmployeeId();
+  if (!employeeId) {
+    showToast('Select employee first', 'error');
+    return;
+  }
+  const fd = new FormData(salaryLedgerDetailForm);
+  const entryId = String(fd.get('entryId') || '').trim();
+  const date = normalizeIsoDateValue(fd.get('date'));
+  const particulars = String(fd.get('particulars') || '').trim();
+  const voucherType = String(fd.get('voucherType') || 'Manual').trim() || 'Manual';
+  const voucherNo = String(fd.get('voucherNo') || '').trim();
+  const debit = round2(Math.max(0, toNumber(fd.get('debit'), 0)));
+  const credit = round2(Math.max(0, toNumber(fd.get('credit'), 0)));
+  const note = String(fd.get('note') || '').trim();
+
+  if (!date) {
+    showToast('Enter a valid date', 'error');
+    return;
+  }
+  if (!particulars) {
+    showToast('Particulars are required', 'error');
+    return;
+  }
+  if (debit <= 0 && credit <= 0) {
+    showToast('Enter debit or credit amount', 'error');
+    return;
+  }
+
+  const payload = {
+    employeeId,
+    date,
+    particulars,
+    voucherType,
+    voucherNo,
+    debit,
+    credit,
+    note
+  };
+
+  try {
+    if (entryId) {
+      await api(`/api/salary-ledger-entries/${entryId}`, 'PUT', payload);
+    } else {
+      await api('/api/salary-ledger-entries', 'POST', payload);
+    }
+    await loadSalaryLedgerDetailEntries({ employeeId, silent: true });
+    resetSalaryLedgerDetailForm();
+    showToast(entryId ? 'Detailed entry updated' : 'Detailed entry added');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
 });
 
 salaryLedgerResetBtn?.addEventListener('click', () => {

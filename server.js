@@ -707,6 +707,7 @@ function ensureDbShape(db) {
   if (!Array.isArray(db.attendance)) db.attendance = [];
   if (!Array.isArray(db.salaryAdvances)) db.salaryAdvances = [];
   if (!Array.isArray(db.salaryLedgers)) db.salaryLedgers = [];
+  if (!Array.isArray(db.salaryLedgerEntries)) db.salaryLedgerEntries = [];
   if (!Array.isArray(db.trucks)) db.trucks = [];
   if (!Array.isArray(db.expenses)) db.expenses = [];
   if (!Array.isArray(db.investments)) db.investments = [];
@@ -934,6 +935,8 @@ function jsonStore() {
       if (before === db.employees.length) return false;
       db.attendance = db.attendance.filter((a) => a.employeeId !== id);
       db.salaryAdvances = db.salaryAdvances.filter((a) => a.employeeId !== id);
+      db.salaryLedgers = db.salaryLedgers.filter((l) => l.employeeId !== id);
+      db.salaryLedgerEntries = db.salaryLedgerEntries.filter((l) => l.employeeId !== id);
       writeJsonDb(db);
       return true;
     },
@@ -1152,6 +1155,89 @@ function jsonStore() {
       db.salaryLedgers.push(row);
       writeJsonDb(db);
       return row;
+    },
+    async listSalaryLedgerEntries(employeeId) {
+      const db = readJsonDb();
+      return db.salaryLedgerEntries
+        .filter((entry) => String(entry.employeeId) === String(employeeId))
+        .sort((a, b) => {
+          const aDate = String(a.date || '');
+          const bDate = String(b.date || '');
+          if (aDate !== bDate) return aDate.localeCompare(bDate);
+          const aCreated = String(a.createdAt || '');
+          const bCreated = String(b.createdAt || '');
+          if (aCreated !== bCreated) return aCreated.localeCompare(bCreated);
+          return String(a.id || '').localeCompare(String(b.id || ''));
+        })
+        .map((entry) => ({
+          id: entry.id,
+          employeeId: entry.employeeId,
+          date: normalizeISODateText(entry.date),
+          particulars: String(entry.particulars || '').trim(),
+          voucherType: String(entry.voucherType || 'Manual').trim() || 'Manual',
+          voucherNo: String(entry.voucherNo || '').trim(),
+          debit: roundMoney(Math.max(0, toSafeNumber(entry.debit, 0))),
+          credit: roundMoney(Math.max(0, toSafeNumber(entry.credit, 0))),
+          note: String(entry.note || '').trim(),
+          createdAt: entry.createdAt || null,
+          updatedAt: entry.updatedAt || null
+        }));
+    },
+    async createSalaryLedgerEntry(data) {
+      const db = readJsonDb();
+      const now = new Date().toISOString();
+      const row = {
+        id: uid('slde'),
+        employeeId: String(data.employeeId || '').trim(),
+        date: normalizeISODateText(data.date),
+        particulars: String(data.particulars || '').trim(),
+        voucherType: String(data.voucherType || 'Manual').trim() || 'Manual',
+        voucherNo: String(data.voucherNo || '').trim(),
+        debit: roundMoney(Math.max(0, toSafeNumber(data.debit, 0))),
+        credit: roundMoney(Math.max(0, toSafeNumber(data.credit, 0))),
+        note: String(data.note || '').trim(),
+        createdAt: now,
+        updatedAt: now
+      };
+      db.salaryLedgerEntries.push(row);
+      writeJsonDb(db);
+      return row;
+    },
+    async updateSalaryLedgerEntry(id, data) {
+      const db = readJsonDb();
+      const row = db.salaryLedgerEntries.find((entry) => String(entry.id) === String(id));
+      if (!row) return null;
+      row.employeeId = String(data.employeeId || row.employeeId || '').trim();
+      row.date = normalizeISODateText(data.date || row.date);
+      row.particulars = String(data.particulars || row.particulars || '').trim();
+      row.voucherType = String(data.voucherType || row.voucherType || 'Manual').trim() || 'Manual';
+      row.voucherNo = data.voucherNo == null ? String(row.voucherNo || '').trim() : String(data.voucherNo).trim();
+      row.debit = roundMoney(Math.max(0, toSafeNumber(data.debit, row.debit || 0)));
+      row.credit = roundMoney(Math.max(0, toSafeNumber(data.credit, row.credit || 0)));
+      row.note = data.note == null ? String(row.note || '').trim() : String(data.note).trim();
+      row.updatedAt = new Date().toISOString();
+      writeJsonDb(db);
+      return {
+        id: row.id,
+        employeeId: row.employeeId,
+        date: row.date,
+        particulars: row.particulars,
+        voucherType: row.voucherType,
+        voucherNo: row.voucherNo,
+        debit: row.debit,
+        credit: row.credit,
+        note: row.note,
+        createdAt: row.createdAt || null,
+        updatedAt: row.updatedAt || null
+      };
+    },
+    async deleteSalaryLedgerEntry(id) {
+      const db = readJsonDb();
+      const before = db.salaryLedgerEntries.length;
+      db.salaryLedgerEntries = db.salaryLedgerEntries.filter((entry) => String(entry.id) !== String(id));
+      if (before === db.salaryLedgerEntries.length) return false;
+      writeJsonDb(db);
+      return true;
     },
     async salaryRows(month) {
       const db = readJsonDb();
@@ -1960,6 +2046,22 @@ function postgresStore() {
         ALTER TABLE salary_ledgers ADD COLUMN IF NOT EXISTS paid_for_previous NUMERIC(12,2) NOT NULL DEFAULT 0;
         ALTER TABLE salary_ledgers ADD COLUMN IF NOT EXISTS paid_for_current NUMERIC(12,2) NOT NULL DEFAULT 0;
 
+        CREATE TABLE IF NOT EXISTS salary_ledger_entries (
+          id TEXT PRIMARY KEY,
+          employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+          date DATE NOT NULL,
+          particulars TEXT NOT NULL,
+          voucher_type TEXT,
+          voucher_no TEXT,
+          debit NUMERIC(12,2) NOT NULL DEFAULT 0,
+          credit NUMERIC(12,2) NOT NULL DEFAULT 0,
+          note TEXT,
+          created_at TIMESTAMPTZ NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_salary_ledger_entries_employee_date
+          ON salary_ledger_entries (employee_id, date, created_at);
+
         CREATE TABLE IF NOT EXISTS trucks (
           id TEXT PRIMARY KEY,
           date DATE NOT NULL,
@@ -2682,6 +2784,119 @@ function postgresStore() {
         );
         return row;
       },
+    async listSalaryLedgerEntries(employeeId) {
+      const res = await pool.query(
+        `SELECT *
+         FROM salary_ledger_entries
+         WHERE employee_id = $1
+         ORDER BY date ASC, created_at ASC, id ASC`,
+        [employeeId]
+      );
+      return res.rows.map((r) => ({
+        id: r.id,
+        employeeId: r.employee_id,
+        date: String(r.date).slice(0, 10),
+        particulars: r.particulars,
+        voucherType: r.voucher_type || 'Manual',
+        voucherNo: r.voucher_no || '',
+        debit: Number(r.debit || 0),
+        credit: Number(r.credit || 0),
+        note: r.note || '',
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      }));
+    },
+    async createSalaryLedgerEntry(data) {
+      const row = {
+        id: uid('slde'),
+        employeeId: String(data.employeeId || '').trim(),
+        date: normalizeISODateText(data.date),
+        particulars: String(data.particulars || '').trim(),
+        voucherType: String(data.voucherType || 'Manual').trim() || 'Manual',
+        voucherNo: String(data.voucherNo || '').trim(),
+        debit: roundMoney(Math.max(0, toSafeNumber(data.debit, 0))),
+        credit: roundMoney(Math.max(0, toSafeNumber(data.credit, 0))),
+        note: String(data.note || '').trim(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      await pool.query(
+        `INSERT INTO salary_ledger_entries (
+            id,
+            employee_id,
+            date,
+            particulars,
+            voucher_type,
+            voucher_no,
+            debit,
+            credit,
+            note,
+            created_at,
+            updated_at
+          )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          row.id,
+          row.employeeId,
+          row.date,
+          row.particulars,
+          row.voucherType,
+          row.voucherNo || null,
+          row.debit,
+          row.credit,
+          row.note || null,
+          row.createdAt,
+          row.updatedAt
+        ]
+      );
+      return row;
+    },
+    async updateSalaryLedgerEntry(id, data) {
+      const res = await pool.query(
+        `UPDATE salary_ledger_entries
+         SET employee_id = $2,
+             date = $3,
+             particulars = $4,
+             voucher_type = $5,
+             voucher_no = $6,
+             debit = $7,
+             credit = $8,
+             note = $9,
+             updated_at = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [
+          id,
+          String(data.employeeId || '').trim(),
+          normalizeISODateText(data.date),
+          String(data.particulars || '').trim(),
+          String(data.voucherType || 'Manual').trim() || 'Manual',
+          String(data.voucherNo || '').trim() || null,
+          roundMoney(Math.max(0, toSafeNumber(data.debit, 0))),
+          roundMoney(Math.max(0, toSafeNumber(data.credit, 0))),
+          String(data.note || '').trim() || null
+        ]
+      );
+      if (!res.rows[0]) return null;
+      const r = res.rows[0];
+      return {
+        id: r.id,
+        employeeId: r.employee_id,
+        date: String(r.date).slice(0, 10),
+        particulars: r.particulars,
+        voucherType: r.voucher_type || 'Manual',
+        voucherNo: r.voucher_no || '',
+        debit: Number(r.debit || 0),
+        credit: Number(r.credit || 0),
+        note: r.note || '',
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      };
+    },
+    async deleteSalaryLedgerEntry(id) {
+      const res = await pool.query('DELETE FROM salary_ledger_entries WHERE id = $1', [id]);
+      return res.rowCount > 0;
+    },
     async salaryRows(month) {
       const res = await pool.query(
         `SELECT e.id AS employee_id,
@@ -4264,6 +4479,122 @@ app.get('/api/salary-ledgers', auth, requirePermission('salaryledger:view'), asy
   }
 });
 
+app.get('/api/salary-ledger-entries', auth, requirePermission('salaryledger:view'), async (req, res) => {
+  const employeeId = String(req.query.employeeId || '').trim();
+  if (!employeeId) {
+    return res.status(400).json({ error: 'employeeId is required' });
+  }
+  try {
+    const employee = await store.getEmployeeById(employeeId);
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+    const rows = await store.listSalaryLedgerEntries(employeeId);
+    return res.json(rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to fetch salary ledger entries' });
+  }
+});
+
+app.post('/api/salary-ledger-entries', auth, requirePermission('salaryledger:update'), async (req, res) => {
+  const employeeId = String(req.body.employeeId || '').trim();
+  const date = normalizeISODateText(req.body.date);
+  const particulars = String(req.body.particulars || '').trim();
+  const voucherType = String(req.body.voucherType || 'Manual').trim() || 'Manual';
+  const voucherNo = String(req.body.voucherNo || '').trim();
+  const debit = Number(req.body.debit);
+  const credit = Number(req.body.credit);
+  const note = String(req.body.note || '').trim();
+
+  if (!employeeId) return res.status(400).json({ error: 'employeeId is required' });
+  if (!date || !parseISODate(date)) return res.status(400).json({ error: 'Valid date is required' });
+  if (!particulars) return res.status(400).json({ error: 'particulars is required' });
+  if (Number.isNaN(debit) || Number.isNaN(credit)) {
+    return res.status(400).json({ error: 'debit and credit must be numbers' });
+  }
+  const normalizedDebit = roundMoney(Math.max(0, toSafeNumber(debit, 0)));
+  const normalizedCredit = roundMoney(Math.max(0, toSafeNumber(credit, 0)));
+  if (normalizedDebit <= 0 && normalizedCredit <= 0) {
+    return res.status(400).json({ error: 'Either debit or credit must be greater than 0' });
+  }
+
+  try {
+    const employee = await store.getEmployeeById(employeeId);
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+    const row = await store.createSalaryLedgerEntry({
+      employeeId,
+      date,
+      particulars,
+      voucherType,
+      voucherNo,
+      debit: normalizedDebit,
+      credit: normalizedCredit,
+      note
+    });
+    return res.status(201).json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to create salary ledger entry' });
+  }
+});
+
+app.put('/api/salary-ledger-entries/:id', auth, requirePermission('salaryledger:update'), async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  const employeeId = String(req.body.employeeId || '').trim();
+  const date = normalizeISODateText(req.body.date);
+  const particulars = String(req.body.particulars || '').trim();
+  const voucherType = String(req.body.voucherType || 'Manual').trim() || 'Manual';
+  const voucherNo = String(req.body.voucherNo || '').trim();
+  const debit = Number(req.body.debit);
+  const credit = Number(req.body.credit);
+  const note = String(req.body.note || '').trim();
+
+  if (!id) return res.status(400).json({ error: 'id is required' });
+  if (!employeeId) return res.status(400).json({ error: 'employeeId is required' });
+  if (!date || !parseISODate(date)) return res.status(400).json({ error: 'Valid date is required' });
+  if (!particulars) return res.status(400).json({ error: 'particulars is required' });
+  if (Number.isNaN(debit) || Number.isNaN(credit)) {
+    return res.status(400).json({ error: 'debit and credit must be numbers' });
+  }
+  const normalizedDebit = roundMoney(Math.max(0, toSafeNumber(debit, 0)));
+  const normalizedCredit = roundMoney(Math.max(0, toSafeNumber(credit, 0)));
+  if (normalizedDebit <= 0 && normalizedCredit <= 0) {
+    return res.status(400).json({ error: 'Either debit or credit must be greater than 0' });
+  }
+
+  try {
+    const employee = await store.getEmployeeById(employeeId);
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+    const row = await store.updateSalaryLedgerEntry(id, {
+      employeeId,
+      date,
+      particulars,
+      voucherType,
+      voucherNo,
+      debit: normalizedDebit,
+      credit: normalizedCredit,
+      note
+    });
+    if (!row) return res.status(404).json({ error: 'Salary ledger entry not found' });
+    return res.json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to update salary ledger entry' });
+  }
+});
+
+app.delete('/api/salary-ledger-entries/:id', auth, requirePermission('salaryledger:update'), async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.status(400).json({ error: 'id is required' });
+  try {
+    const ok = await store.deleteSalaryLedgerEntry(id);
+    if (!ok) return res.status(404).json({ error: 'Salary ledger entry not found' });
+    return res.status(204).send();
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to delete salary ledger entry' });
+  }
+});
+
 app.put('/api/salary-ledgers/:employeeId', auth, requirePermission('salaryledger:update'), async (req, res) => {
   const {
     totalSalary,
@@ -4604,6 +4935,220 @@ app.get('/api/salary-ledgers/:employeeId.pdf', auth, requirePermission('salaryle
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to generate salary ledger PDF' });
+  }
+});
+
+app.get('/api/salary-ledgers/:employeeId/statement.pdf', auth, requirePermission('salaryledger:view'), async (req, res) => {
+  try {
+    const employee = await store.getEmployeeById(req.params.employeeId);
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+
+    const ledgers = await store.listSalaryLedgers();
+    const summary =
+      ledgers.find((row) => String(row.employeeId) === String(employee.id)) ||
+      normalizeSalaryLedgerEntry(
+        {
+          id: employee.id,
+          name: employee.name,
+          role: employee.role,
+          monthlySalary: Number(employee.monthlySalary || 0)
+        },
+        {},
+        0,
+        0
+      );
+    const detailEntries = await store.listSalaryLedgerEntries(employee.id);
+    const sortedEntries = [...detailEntries]
+      .map((entry) => ({
+        id: entry.id,
+        employeeId: entry.employeeId,
+        date: normalizeISODateText(entry.date),
+        particulars: String(entry.particulars || '').trim(),
+        voucherType: String(entry.voucherType || 'Manual').trim() || 'Manual',
+        voucherNo: String(entry.voucherNo || '').trim(),
+        debit: roundMoney(Math.max(0, toSafeNumber(entry.debit, 0))),
+        credit: roundMoney(Math.max(0, toSafeNumber(entry.credit, 0))),
+        note: String(entry.note || '').trim(),
+        createdAt: String(entry.createdAt || '')
+      }))
+      .sort((a, b) => {
+        if (a.date !== b.date) return a.date.localeCompare(b.date);
+        if (a.createdAt !== b.createdAt) return a.createdAt.localeCompare(b.createdAt);
+        return String(a.id || '').localeCompare(String(b.id || ''));
+      });
+
+    const openingBalance = roundMoney(Math.max(0, toSafeNumber(summary.openingPending, 0)));
+    let runningBalance = openingBalance;
+    let debitSum = 0;
+    let creditSum = 0;
+    const statementRows = sortedEntries.map((entry) => {
+      debitSum = roundMoney(debitSum + entry.debit);
+      creditSum = roundMoney(creditSum + entry.credit);
+      runningBalance = roundMoney(runningBalance + entry.debit - entry.credit);
+      const particulars = entry.note ? `${entry.particulars} (${entry.note})` : entry.particulars;
+      return {
+        date: entry.date,
+        particulars,
+        voucherType: entry.voucherType,
+        voucherNo: entry.voucherNo || '-',
+        debit: entry.debit,
+        credit: entry.credit,
+        balance: runningBalance
+      };
+    });
+    const closingBalance = runningBalance;
+
+    const periodLabel =
+      summary.durationStart && summary.durationEnd
+        ? `${summary.durationStart} to ${summary.durationEnd}`
+        : summary.durationStart
+          ? `${summary.durationStart} onwards`
+          : '-';
+    const generatedOn = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    const amountText = (n) =>
+      toSafeNumber(n, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="salary-ledger-detailed-${String(employee.name || 'employee').replace(/\s+/g, '-')}.pdf"`
+    );
+
+    const doc = new PDFDocument({ margin: 36, size: 'A4' });
+    doc.pipe(res);
+
+    const margin = 36;
+    const contentWidth = doc.page.width - margin * 2;
+    const columns = [
+      { key: 'date', label: 'Date', width: 62, align: 'left' },
+      { key: 'particulars', label: 'Particulars', width: 150, align: 'left' },
+      { key: 'voucherType', label: 'Vch Type', width: 62, align: 'left' },
+      { key: 'voucherNo', label: 'Vch No.', width: 48, align: 'left' },
+      { key: 'debit', label: 'Debit', width: 62, align: 'right', money: true },
+      { key: 'credit', label: 'Credit', width: 62, align: 'right', money: true },
+      { key: 'balance', label: 'Balance', width: 77, align: 'right', money: true }
+    ];
+    const rowHeight = 22;
+    const bottomLimit = doc.page.height - margin;
+    let y = margin;
+
+    const drawHeaderBlock = () => {
+      doc.font('Helvetica-Bold').fontSize(16).fillColor('#1B2B4B').text(APP_NAME, margin, y, {
+        width: contentWidth,
+        align: 'center'
+      });
+      y += 20;
+      doc.font('Helvetica-Bold').fontSize(11).fillColor('#1B2B4B').text('Salary Ledger Statement', margin, y, {
+        width: contentWidth,
+        align: 'center'
+      });
+      y += 20;
+      doc.font('Helvetica').fontSize(9.5).fillColor('#2D3B53');
+      doc.text(`Employee: ${employee.name || '-'}`, margin, y, { width: contentWidth / 2 });
+      doc.text(`Role: ${employee.role || '-'}`, margin + contentWidth / 2, y, {
+        width: contentWidth / 2,
+        align: 'right'
+      });
+      y += 14;
+      doc.text(`Period: ${periodLabel}`, margin, y, { width: contentWidth / 2 });
+      doc.text(`Generated: ${generatedOn}`, margin + contentWidth / 2, y, {
+        width: contentWidth / 2,
+        align: 'right'
+      });
+      y += 18;
+    };
+
+    const drawTableHeader = () => {
+      let x = margin;
+      doc.rect(margin, y, contentWidth, rowHeight).fillAndStroke('#EEF3FF', '#C9D4EC');
+      columns.forEach((col) => {
+        doc.font('Helvetica-Bold').fontSize(9).fillColor('#1C2F4F').text(col.label, x + 3, y + 7, {
+          width: col.width - 6,
+          align: col.align === 'right' ? 'right' : 'left',
+          lineBreak: false
+        });
+        x += col.width;
+      });
+      y += rowHeight;
+    };
+
+    const ensureSpace = () => {
+      if (y + rowHeight <= bottomLimit) return;
+      doc.addPage();
+      y = margin;
+      doc.font('Helvetica-Bold').fontSize(11).fillColor('#1B2B4B').text(`${APP_NAME} - Salary Ledger`, margin, y, {
+        width: contentWidth,
+        align: 'center'
+      });
+      y += 18;
+      drawTableHeader();
+    };
+
+    const drawRow = (row, options = {}) => {
+      ensureSpace();
+      const fill = options.highlight ? '#F9FBFF' : '#FFFFFF';
+      doc.rect(margin, y, contentWidth, rowHeight).fillAndStroke(fill, '#DFE6F4');
+      let x = margin;
+      columns.forEach((col) => {
+        let value = row[col.key];
+        if (col.money) value = value === '' || value == null ? '-' : amountText(value);
+        value = value == null || value === '' ? '-' : String(value);
+        doc.font(options.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9).fillColor('#24344E').text(value, x + 3, y + 7, {
+          width: col.width - 6,
+          align: col.align === 'right' ? 'right' : 'left',
+          lineBreak: false
+        });
+        x += col.width;
+      });
+      y += rowHeight;
+    };
+
+    drawHeaderBlock();
+    drawTableHeader();
+    drawRow(
+      {
+        date: summary.durationStart || '-',
+        particulars: 'Brought Forward',
+        voucherType: '-',
+        voucherNo: '-',
+        debit: '',
+        credit: '',
+        balance: openingBalance
+      },
+      { highlight: true, bold: true }
+    );
+    for (const row of statementRows) {
+      drawRow(row);
+    }
+    drawRow(
+      {
+        date: '-',
+        particulars: 'Closing Balance',
+        voucherType: '-',
+        voucherNo: '-',
+        debit: debitSum,
+        credit: creditSum,
+        balance: closingBalance
+      },
+      { highlight: true, bold: true }
+    );
+
+    y += 10;
+    if (y + 36 > bottomLimit) {
+      doc.addPage();
+      y = margin;
+    }
+    doc.font('Helvetica').fontSize(9).fillColor('#57657E');
+    doc.text(`Opening Balance: ₹${amountText(openingBalance)}`, margin, y);
+    y += 13;
+    doc.text(`Total Debit: ₹${amountText(debitSum)}   Total Credit: ₹${amountText(creditSum)}`, margin, y);
+    y += 13;
+    doc.font('Helvetica-Bold').fillColor('#163A78').text(`Net Payable (Closing): ₹${amountText(closingBalance)}`, margin, y);
+
+    doc.end();
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to generate detailed salary ledger PDF' });
   }
 });
 
