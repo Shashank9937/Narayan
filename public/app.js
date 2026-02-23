@@ -114,10 +114,15 @@ const salaryLedgerEmployeeSelect = document.getElementById('salaryLedgerEmployee
 const salaryLedgerSearchInput = document.getElementById('salaryLedgerSearchInput');
 const salaryLedgerFromDateInput = document.getElementById('salaryLedgerFromDate');
 const salaryLedgerToDateInput = document.getElementById('salaryLedgerToDate');
+const salaryLedgerSalaryBeforeInput = document.getElementById('salaryLedgerSalaryBeforeInput');
+const salaryLedgerPaidBeforeInput = document.getElementById('salaryLedgerPaidBeforeInput');
 const salaryLedgerOpeningPendingInput = document.getElementById('salaryLedgerOpeningPendingInput');
+const salaryLedgerPaidForPreviousInput = document.getElementById('salaryLedgerPaidForPreviousInput');
+const salaryLedgerPaidForCurrentInput = document.getElementById('salaryLedgerPaidForCurrentInput');
 const salaryLedgerAutoFillBtn = document.getElementById('salaryLedgerAutoFillBtn');
 const salaryLedgerCurrentMonthBtn = document.getElementById('salaryLedgerCurrentMonthBtn');
 const salaryLedgerCarryBtn = document.getElementById('salaryLedgerCarryBtn');
+const salaryLedgerDownloadBtn = document.getElementById('salaryLedgerDownloadBtn');
 const salaryLedgerResetBtn = document.getElementById('salaryLedgerResetBtn');
 const salaryEmployeeSummaryEl = document.getElementById('salaryEmployeeSummary');
 const salaryOverallSummaryEl = document.getElementById('salaryOverallSummary');
@@ -252,17 +257,33 @@ function normalizeLedgerRow(row) {
   const durationMonths = round2(
     Math.max(0, toNumber(row?.durationMonths, durationDays > 0 ? durationDays / 30 : 0))
   );
-  const openingPending = round2(Math.max(0, toNumber(row?.openingPending, 0)));
   const periodFromDays =
     durationDays > 0 && monthlySalaryApplied > 0 ? round2((monthlySalaryApplied / 30) * durationDays) : 0;
   const periodSalary = round2(Math.max(0, toNumber(row?.periodSalary ?? row?.sessionSalary, periodFromDays)));
-  const totalToGive = round2(
-    Math.max(0, toNumber(row?.totalToGive ?? row?.totalSalary, openingPending + periodSalary))
+  const totalToGiveRaw = round2(Math.max(0, toNumber(row?.totalToGive ?? row?.totalSalary, 0)));
+  const paidForPreviousRaw = round2(Math.max(0, toNumber(row?.paidForPrevious, 0)));
+  const paidForCurrentRaw = round2(Math.max(0, toNumber(row?.paidForCurrent, 0)));
+  const paidSplitProvided = row?.paidForPrevious != null || row?.paidForCurrent != null;
+  const totalPaidThisSessionRaw = round2(
+    Math.max(0, toNumber(row?.totalPaidThisSession ?? row?.sessionPaid, paidForPreviousRaw + paidForCurrentRaw))
   );
-  const totalPaidRaw = round2(
-    Math.max(0, toNumber(row?.totalPaid ?? row?.amountGiven ?? row?.sessionPaid, 0))
+  const paidForPrevious = paidSplitProvided ? paidForPreviousRaw : totalPaidThisSessionRaw;
+  const paidForCurrent = paidSplitProvided ? paidForCurrentRaw : 0;
+  const totalPaidThisSession = round2(paidForPrevious + paidForCurrent);
+  const salaryGeneratedBeforeFallback = Math.max(0, totalToGiveRaw - periodSalary);
+  const salaryGeneratedBefore = round2(
+    Math.max(0, toNumber(row?.salaryGeneratedBefore, salaryGeneratedBeforeFallback))
   );
-  const totalPaid = round2(Math.min(totalToGive, totalPaidRaw));
+  const paidBeforeFallback = Math.max(
+    0,
+    toNumber(row?.totalPaid ?? row?.amountGiven ?? 0, 0) - totalPaidThisSession
+  );
+  const paidBefore = round2(Math.max(0, toNumber(row?.paidBefore, paidBeforeFallback)));
+  const openingPendingAuto = round2(Math.max(0, salaryGeneratedBefore - paidBefore));
+  const openingPending = round2(Math.max(0, toNumber(row?.openingPending, openingPendingAuto)));
+  const totalToGive = round2(salaryGeneratedBefore + periodSalary);
+  const totalPaidRaw = round2(Math.max(0, toNumber(row?.totalPaid ?? row?.amountGiven, paidBefore + totalPaidThisSession)));
+  const totalPaid = round2(Math.min(totalToGive, Math.max(totalPaidRaw, paidBefore + totalPaidThisSession)));
   const remaining = round2(Math.max(0, totalToGive - totalPaid));
   const currentMonthSalary = monthlyFromEmployee;
   const currentMonthAdvance = round2(Math.max(0, toNumber(row?.currentMonthAdvance, 0)));
@@ -274,8 +295,13 @@ function normalizeLedgerRow(row) {
     durationEnd,
     durationMonths,
     durationDays,
+    salaryGeneratedBefore,
+    paidBefore,
     openingPending,
-    periodSalary: periodSalary > 0 ? periodSalary : round2(Math.max(0, totalToGive - openingPending)),
+    periodSalary: periodSalary > 0 ? periodSalary : round2(Math.max(0, totalToGive - salaryGeneratedBefore)),
+    paidForPrevious,
+    paidForCurrent,
+    totalPaidThisSession,
     period1ToGive: totalToGive,
     period1Paid: totalPaid,
     period1Remaining: remaining,
@@ -947,8 +973,13 @@ function renderSalaryLedgers(rows) {
         <td>${periodLabel}</td>
         <td>${daysLabel}</td>
         <td>${ledgerDate}</td>
+        <td class="money">${money(r.salaryGeneratedBefore || 0)}</td>
+        <td class="money">${money(r.paidBefore || 0)}</td>
         <td class="money">${money(r.openingPending || 0)}</td>
         <td class="money">${money(r.periodSalary || 0)}</td>
+        <td class="money">${money(r.paidForPrevious || 0)}</td>
+        <td class="money">${money(r.paidForCurrent || 0)}</td>
+        <td class="money">${money(r.totalPaidThisSession || 0)}</td>
         <td class="money">${money(r.totalToGive || 0)}</td>
         <td class="money">${money(r.totalPaid)}</td>
         <td class="money">${money(r.remaining)}</td>
@@ -992,18 +1023,36 @@ function prefillSalaryLedgerForm() {
   const monthlySalaryAppliedEl = salaryLedgerForm.querySelector('input[name="monthlySalaryApplied"]');
   const durationStartEl = salaryLedgerForm.querySelector('input[name="durationStart"]');
   const durationEndEl = salaryLedgerForm.querySelector('input[name="durationEnd"]');
+  const salaryBeforeEl = salaryLedgerForm.querySelector('input[name="salaryGeneratedBefore"]');
+  const paidBeforeEl = salaryLedgerForm.querySelector('input[name="paidBefore"]');
   const openingPendingEl = salaryLedgerForm.querySelector('input[name="openingPending"]');
-  const totalPaidEl = salaryLedgerForm.querySelector('input[name="totalPaid"]');
+  const paidForPreviousEl = salaryLedgerForm.querySelector('input[name="paidForPrevious"]');
+  const paidForCurrentEl = salaryLedgerForm.querySelector('input[name="paidForCurrent"]');
   const noteEl = salaryLedgerForm.querySelector('input[name="note"]');
-  if (!monthlySalaryAppliedEl || !durationStartEl || !durationEndEl || !openingPendingEl || !totalPaidEl || !noteEl) return;
+  if (
+    !monthlySalaryAppliedEl ||
+    !durationStartEl ||
+    !durationEndEl ||
+    !salaryBeforeEl ||
+    !paidBeforeEl ||
+    !openingPendingEl ||
+    !paidForPreviousEl ||
+    !paidForCurrentEl ||
+    !noteEl
+  ) {
+    return;
+  }
 
   const normalized = normalizeLedgerRow(row || { employeeId });
   const defaultMonthly = round2(Math.max(0, toNumber(employee?.monthlySalary, 0)));
   monthlySalaryAppliedEl.value = String(normalized.monthlySalaryApplied || defaultMonthly || 0);
   durationStartEl.value = normalized.durationStart || startOfCurrentMonthISO();
   durationEndEl.value = normalized.durationEnd || todayISO();
+  salaryBeforeEl.value = String(round2(Math.max(0, toNumber(normalized.salaryGeneratedBefore, 0))));
+  paidBeforeEl.value = String(round2(Math.max(0, toNumber(normalized.paidBefore, 0))));
   openingPendingEl.value = String(round2(Math.max(0, toNumber(normalized.openingPending, 0))));
-  totalPaidEl.value = String(Math.max(0, Number(normalized.totalPaid || 0)));
+  paidForPreviousEl.value = String(round2(Math.max(0, toNumber(normalized.paidForPrevious, 0))));
+  paidForCurrentEl.value = String(round2(Math.max(0, toNumber(normalized.paidForCurrent, 0))));
   noteEl.value = String(row?.note || '');
 
   updateSalaryLedgerPreview();
@@ -1014,14 +1063,30 @@ function updateSalaryLedgerPreview() {
   const monthlySalaryAppliedEl = salaryLedgerForm.querySelector('input[name="monthlySalaryApplied"]');
   const durationStartEl = salaryLedgerForm.querySelector('input[name="durationStart"]');
   const durationEndEl = salaryLedgerForm.querySelector('input[name="durationEnd"]');
+  const salaryBeforeEl = salaryLedgerForm.querySelector('input[name="salaryGeneratedBefore"]');
+  const paidBeforeEl = salaryLedgerForm.querySelector('input[name="paidBefore"]');
   const openingPendingEl = salaryLedgerForm.querySelector('input[name="openingPending"]');
-  const totalPaidEl = salaryLedgerForm.querySelector('input[name="totalPaid"]');
+  const paidForPreviousEl = salaryLedgerForm.querySelector('input[name="paidForPrevious"]');
+  const paidForCurrentEl = salaryLedgerForm.querySelector('input[name="paidForCurrent"]');
   const computedDaysEl = document.getElementById('salaryLedgerComputedDays');
   const computedPeriodSalaryEl = document.getElementById('salaryLedgerComputedPeriodSalary');
+  const computedPaidThisSessionEl = document.getElementById('salaryLedgerComputedPaidThisSession');
   const computedPaidEl = document.getElementById('salaryLedgerComputedPaid');
   const computedToGiveEl = document.getElementById('salaryLedgerComputedToGive');
   const previewEl = document.getElementById('salaryLedgerRemainingPreview');
-  if (!monthlySalaryAppliedEl || !durationStartEl || !durationEndEl || !openingPendingEl || !totalPaidEl || !previewEl) return;
+  if (
+    !monthlySalaryAppliedEl ||
+    !durationStartEl ||
+    !durationEndEl ||
+    !salaryBeforeEl ||
+    !paidBeforeEl ||
+    !openingPendingEl ||
+    !paidForPreviousEl ||
+    !paidForCurrentEl ||
+    !previewEl
+  ) {
+    return;
+  }
   const monthlySalaryApplied = Math.max(0, toNumber(monthlySalaryAppliedEl.value, 0));
   const durationStart = normalizeIsoDateValue(durationStartEl.value);
   const durationEnd = normalizeIsoDateValue(durationEndEl.value);
@@ -1029,16 +1094,30 @@ function updateSalaryLedgerPreview() {
   const employeeId = salaryLedgerEmployeeSelect?.value;
   const existing = salaryLedgersCache.find((r) => String(r.employeeId) === String(employeeId));
   const existingNormalized = normalizeLedgerRow(existing || { employeeId });
+  const salaryBeforeRaw = String(salaryBeforeEl.value ?? '').trim();
+  const paidBeforeRaw = String(paidBeforeEl.value ?? '').trim();
   const openingPendingRaw = String(openingPendingEl.value ?? '').trim();
-  const openingPending = round2(
-    Math.max(0, toNumber(openingPendingRaw === '' ? existingNormalized.remaining : openingPendingRaw, 0))
+  const salaryGeneratedBefore = round2(
+    Math.max(0, toNumber(salaryBeforeRaw === '' ? existingNormalized.salaryGeneratedBefore : salaryBeforeRaw, 0))
   );
+  const paidBefore = round2(
+    Math.max(0, toNumber(paidBeforeRaw === '' ? existingNormalized.paidBefore : paidBeforeRaw, 0))
+  );
+  const computedOpeningPending = round2(Math.max(0, salaryGeneratedBefore - paidBefore));
+  const openingPending = round2(
+    Math.max(0, toNumber(openingPendingRaw === '' ? computedOpeningPending : openingPendingRaw, computedOpeningPending))
+  );
+  if (openingPendingRaw === '') openingPendingEl.value = String(openingPending);
+  const paidForPrevious = round2(Math.max(0, toNumber(paidForPreviousEl.value, 0)));
+  const paidForCurrent = round2(Math.max(0, toNumber(paidForCurrentEl.value, 0)));
+  const paidThisSession = round2(paidForPrevious + paidForCurrent);
   const periodSalary = durationDays > 0 ? round2((monthlySalaryApplied / 30) * durationDays) : 0;
-  const totalToGive = round2(openingPending + periodSalary);
-  const totalPaid = round2(Math.max(0, toNumber(totalPaidEl.value, 0)));
+  const totalToGive = round2(salaryGeneratedBefore + periodSalary);
+  const totalPaid = round2(paidBefore + paidThisSession);
   const remaining = Math.max(0, round2(totalToGive - totalPaid));
   if (computedDaysEl) computedDaysEl.textContent = String(durationDays || 0);
   if (computedPeriodSalaryEl) computedPeriodSalaryEl.textContent = money(periodSalary);
+  if (computedPaidThisSessionEl) computedPaidThisSessionEl.textContent = money(paidThisSession);
   if (computedPaidEl) computedPaidEl.textContent = money(totalPaid);
   if (computedToGiveEl) computedToGiveEl.textContent = money(totalToGive);
   previewEl.textContent = money(remaining);
@@ -1053,13 +1132,21 @@ function autoFillSalaryLedgerSections() {
     return;
   }
   const monthlySalaryAppliedEl = salaryLedgerForm.querySelector('input[name="monthlySalaryApplied"]');
+  const salaryBeforeEl = salaryLedgerForm.querySelector('input[name="salaryGeneratedBefore"]');
+  const paidBeforeEl = salaryLedgerForm.querySelector('input[name="paidBefore"]');
   const openingPendingEl = salaryLedgerForm.querySelector('input[name="openingPending"]');
-  if (!monthlySalaryAppliedEl) return;
+  if (!monthlySalaryAppliedEl || !salaryBeforeEl || !paidBeforeEl) return;
   monthlySalaryAppliedEl.value = String(round2(Math.max(0, Number(employee.monthlySalary || 0))));
+  const existing = salaryLedgersCache.find((r) => String(r.employeeId) === String(employeeId));
+  const normalized = normalizeLedgerRow(existing || { employeeId });
+  if (salaryBeforeEl.value == null || salaryBeforeEl.value === '') {
+    salaryBeforeEl.value = String(round2(Math.max(0, toNumber(normalized.salaryGeneratedBefore, 0))));
+  }
+  if (paidBeforeEl.value == null || paidBeforeEl.value === '') {
+    paidBeforeEl.value = String(round2(Math.max(0, toNumber(normalized.paidBefore, 0))));
+  }
   if (openingPendingEl && (openingPendingEl.value == null || openingPendingEl.value === '')) {
-    const existing = salaryLedgersCache.find((r) => String(r.employeeId) === String(employeeId));
-    const normalized = normalizeLedgerRow(existing || { employeeId });
-    openingPendingEl.value = String(round2(Math.max(0, toNumber(normalized.remaining, 0))));
+    openingPendingEl.value = String(round2(Math.max(0, toNumber(normalized.openingPending, 0))));
   }
   updateSalaryLedgerPreview();
   showToast('Monthly salary copied from employee profile');
@@ -1084,11 +1171,13 @@ function carryPreviousRemainingToNewSession() {
   const nextStart = normalized.durationEnd ? shiftIsoDate(normalized.durationEnd, 1) : startOfCurrentMonthISO();
   if (salaryLedgerFromDateInput) salaryLedgerFromDateInput.value = nextStart || startOfCurrentMonthISO();
   if (salaryLedgerToDateInput) salaryLedgerToDateInput.value = todayISO();
+  if (salaryLedgerSalaryBeforeInput) salaryLedgerSalaryBeforeInput.value = String(round2(Math.max(0, toNumber(normalized.totalToGive, 0))));
+  if (salaryLedgerPaidBeforeInput) salaryLedgerPaidBeforeInput.value = String(round2(Math.max(0, toNumber(normalized.totalPaid, 0))));
   if (salaryLedgerOpeningPendingInput) {
     salaryLedgerOpeningPendingInput.value = String(round2(Math.max(0, toNumber(normalized.remaining, 0))));
   }
-  const totalPaidEl = salaryLedgerForm.querySelector('input[name="totalPaid"]');
-  if (totalPaidEl) totalPaidEl.value = '0';
+  if (salaryLedgerPaidForPreviousInput) salaryLedgerPaidForPreviousInput.value = '0';
+  if (salaryLedgerPaidForCurrentInput) salaryLedgerPaidForCurrentInput.value = '0';
   updateSalaryLedgerPreview();
   showToast('Previous remaining carried to new session');
 }
@@ -2946,13 +3035,24 @@ salaryLedgerForm?.addEventListener('submit', async (e) => {
   const durationStart = normalizeIsoDateValue(fd.get('durationStart'));
   const durationEnd = normalizeIsoDateValue(fd.get('durationEnd'));
   const durationDays = isoDaysInclusiveClient(durationStart, durationEnd);
+  const salaryBeforeRaw = String(fd.get('salaryGeneratedBefore') ?? '').trim();
+  const paidBeforeRaw = String(fd.get('paidBefore') ?? '').trim();
   const openingPendingRaw = String(fd.get('openingPending') ?? '').trim();
+  const paidForPrevious = round2(Math.max(0, toNumber(fd.get('paidForPrevious'), 0)));
+  const paidForCurrent = round2(Math.max(0, toNumber(fd.get('paidForCurrent'), 0)));
+  const paidThisSession = round2(paidForPrevious + paidForCurrent);
   const existing = salaryLedgersCache.find((r) => String(r.employeeId) === String(employeeId));
   const existingNormalized = normalizeLedgerRow(existing || { employeeId });
-  const openingPending = round2(
-    Math.max(0, toNumber(openingPendingRaw === '' ? existingNormalized.remaining : openingPendingRaw, 0))
+  const salaryGeneratedBefore = round2(
+    Math.max(0, toNumber(salaryBeforeRaw === '' ? existingNormalized.salaryGeneratedBefore : salaryBeforeRaw, 0))
   );
-  const totalPaid = round2(Math.max(0, toNumber(fd.get('totalPaid'), 0)));
+  const paidBefore = round2(
+    Math.max(0, toNumber(paidBeforeRaw === '' ? existingNormalized.paidBefore : paidBeforeRaw, 0))
+  );
+  const autoOpeningPending = round2(Math.max(0, salaryGeneratedBefore - paidBefore));
+  const openingPending = round2(
+    Math.max(0, toNumber(openingPendingRaw === '' ? autoOpeningPending : openingPendingRaw, autoOpeningPending))
+  );
   if (!employeeId) {
     showToast('Select employee', 'error');
     return;
@@ -2965,10 +3065,15 @@ salaryLedgerForm?.addEventListener('submit', async (e) => {
     showToast('Choose valid from/to dates', 'error');
     return;
   }
+  if (paidBefore > salaryGeneratedBefore) {
+    showToast('Previous paid cannot be greater than previous salary', 'error');
+    return;
+  }
   const periodSalary = round2((monthlySalaryApplied / 30) * durationDays);
-  const totalToGive = round2(openingPending + periodSalary);
+  const totalToGive = round2(salaryGeneratedBefore + periodSalary);
+  const totalPaid = round2(paidBefore + paidThisSession);
   if (totalPaid > totalToGive) {
-    showToast('Total Paid cannot be greater than Total To Give', 'error');
+    showToast('Total paid till date cannot be greater than total salary till date', 'error');
     return;
   }
   try {
@@ -2980,7 +3085,11 @@ salaryLedgerForm?.addEventListener('submit', async (e) => {
       durationStart,
       durationEnd,
       durationDays,
+      salaryGeneratedBefore: salaryBeforeRaw === '' ? undefined : salaryGeneratedBefore,
+      paidBefore: paidBeforeRaw === '' ? undefined : paidBefore,
       openingPending: openingPendingRaw === '' ? undefined : openingPending,
+      paidForPrevious,
+      paidForCurrent,
       periodSalary,
       note: fd.get('note') || ''
     });
@@ -3117,12 +3226,27 @@ salaryLedgerCarryBtn?.addEventListener('click', () => {
   carryPreviousRemainingToNewSession();
 });
 
+salaryLedgerDownloadBtn?.addEventListener('click', () => {
+  const employeeId = salaryLedgerEmployeeSelect?.value;
+  if (!employeeId) {
+    showToast('Select employee first', 'error');
+    return;
+  }
+  window.open(urlWithAuth(`/api/salary-ledgers/${employeeId}.pdf`), '_blank');
+});
+
 salaryLedgerResetBtn?.addEventListener('click', () => {
   if (!salaryLedgerForm) return;
-  const totalPaidInput = salaryLedgerForm.querySelector('input[name="totalPaid"]');
+  const salaryBeforeInput = salaryLedgerForm.querySelector('input[name="salaryGeneratedBefore"]');
+  const paidBeforeInput = salaryLedgerForm.querySelector('input[name="paidBefore"]');
   const openingPendingInput = salaryLedgerForm.querySelector('input[name="openingPending"]');
-  if (totalPaidInput) totalPaidInput.value = '0';
+  const paidForPreviousInput = salaryLedgerForm.querySelector('input[name="paidForPrevious"]');
+  const paidForCurrentInput = salaryLedgerForm.querySelector('input[name="paidForCurrent"]');
+  if (salaryBeforeInput) salaryBeforeInput.value = '0';
+  if (paidBeforeInput) paidBeforeInput.value = '0';
   if (openingPendingInput) openingPendingInput.value = '';
+  if (paidForPreviousInput) paidForPreviousInput.value = '0';
+  if (paidForCurrentInput) paidForCurrentInput.value = '0';
   const startEl = salaryLedgerForm.querySelector('input[name="durationStart"]');
   const endEl = salaryLedgerForm.querySelector('input[name="durationEnd"]');
   if (startEl) startEl.value = startOfCurrentMonthISO();
@@ -3134,7 +3258,9 @@ salaryLedgerResetBtn?.addEventListener('click', () => {
 });
 
 salaryLedgerForm
-  ?.querySelectorAll('input[name="monthlySalaryApplied"], input[name="durationStart"], input[name="durationEnd"], input[name="openingPending"], input[name="totalPaid"]')
+  ?.querySelectorAll(
+    'input[name="monthlySalaryApplied"], input[name="durationStart"], input[name="durationEnd"], input[name="salaryGeneratedBefore"], input[name="paidBefore"], input[name="openingPending"], input[name="paidForPrevious"], input[name="paidForCurrent"]'
+  )
   ?.forEach((input) => {
     input.addEventListener('input', updateSalaryLedgerPreview);
     input.addEventListener('change', updateSalaryLedgerPreview);

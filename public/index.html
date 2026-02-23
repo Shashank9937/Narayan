@@ -219,17 +219,30 @@
             <input id="salaryLedgerMonthlySalaryApplied" name="monthlySalaryApplied" type="number" min="0" step="0.01" placeholder="Monthly Salary" required />
           </div>
           <div class="field-group">
+            <label for="salaryLedgerSalaryBeforeInput">Total Salary Till Previous Session</label>
+            <input id="salaryLedgerSalaryBeforeInput" name="salaryGeneratedBefore" type="number" min="0" step="0.01" placeholder="Previous Salary Total" />
+          </div>
+          <div class="field-group">
+            <label for="salaryLedgerPaidBeforeInput">Total Paid Till Previous Session</label>
+            <input id="salaryLedgerPaidBeforeInput" name="paidBefore" type="number" min="0" step="0.01" placeholder="Previous Paid Total" />
+          </div>
+          <div class="field-group">
             <label for="salaryLedgerOpeningPendingInput">Opening Pending (Previous Session)</label>
             <input id="salaryLedgerOpeningPendingInput" name="openingPending" type="number" min="0" step="0.01" placeholder="Carry Forward Pending" />
           </div>
           <div class="field-group">
-            <label for="salaryLedgerTotalPaidInput">Total Paid</label>
-            <input id="salaryLedgerTotalPaidInput" name="totalPaid" type="number" min="0" step="0.01" placeholder="Amount Given" required />
+            <label for="salaryLedgerPaidForPreviousInput">Paid In This Session (For Previous Due)</label>
+            <input id="salaryLedgerPaidForPreviousInput" name="paidForPrevious" type="number" min="0" step="0.01" placeholder="Paid for Previous" />
+          </div>
+          <div class="field-group">
+            <label for="salaryLedgerPaidForCurrentInput">Paid In This Session (For Current Salary)</label>
+            <input id="salaryLedgerPaidForCurrentInput" name="paidForCurrent" type="number" min="0" step="0.01" placeholder="Paid for Current" />
           </div>
           <div class="row wrap salary-ledger-tools">
             <button id="salaryLedgerAutoFillBtn" type="button" class="small">Use Employee Monthly Salary</button>
             <button id="salaryLedgerCurrentMonthBtn" type="button" class="small">Set Current Month Dates</button>
             <button id="salaryLedgerCarryBtn" type="button" class="small">Carry Previous Remaining</button>
+            <button id="salaryLedgerDownloadBtn" type="button" class="small">Download Employee PDF</button>
             <button id="salaryLedgerResetBtn" type="button" class="small warn">Clear Form</button>
           </div>
           <div class="summary-stat-grid salary-ledger-live-summary">
@@ -244,6 +257,10 @@
             <div class="summary-stat">
               <div class="label">Total To Give</div>
               <div id="salaryLedgerComputedToGive" class="value">₹0</div>
+            </div>
+            <div class="summary-stat">
+              <div class="label">Paid This Session</div>
+              <div id="salaryLedgerComputedPaidThisSession" class="value">₹0</div>
             </div>
             <div class="summary-stat">
               <div class="label">Total Paid</div>
@@ -280,8 +297,13 @@
                   <th>Period</th>
                   <th>Days</th>
                   <th>Updated</th>
+                  <th>Salary Till Previous</th>
+                  <th>Paid Till Previous</th>
                   <th>Opening Pending</th>
                   <th>Period Salary</th>
+                  <th>Paid This Session (Previous)</th>
+                  <th>Paid This Session (Current)</th>
+                  <th>Paid This Session</th>
                   <th>Total To Give</th>
                   <th>Total Paid</th>
                   <th>Remaining</th>
