@@ -141,6 +141,39 @@ function normalizeISODateText(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : '';
 }
 
+function normalizeISODateFlexible(value) {
+  const strict = normalizeISODateText(value);
+  if (strict) return strict;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, '0')}-${String(
+      value.getUTCDate()
+    ).padStart(2, '0')}`;
+  }
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const looseIso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s].*)?$/);
+  if (looseIso) {
+    const year = Number(looseIso[1]);
+    const month = Number(looseIso[2]);
+    const day = Number(looseIso[3]);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (
+      parsed.getUTCFullYear() === year &&
+      parsed.getUTCMonth() === month - 1 &&
+      parsed.getUTCDate() === day
+    ) {
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+  }
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}-${String(
+      parsed.getUTCDate()
+    ).padStart(2, '0')}`;
+  }
+  return '';
+}
+
 function isoDaysInclusive(startDateText, endDateText) {
   const start = parseISODate(normalizeISODateText(startDateText));
   const end = parseISODate(normalizeISODateText(endDateText));
@@ -5173,14 +5206,39 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     const monthStart = `${month}-01`;
     const monthDays = daysInMonth(year, monthNum - 1);
     const monthEnd = `${month}-${String(monthDays).padStart(2, '0')}`;
-    const joiningDate = normalizeISODateText(employee.joiningDate);
+    const monthStartDate = parseISODate(monthStart);
+    const monthEndDate = parseISODate(monthEnd);
+    if (!monthStartDate || !monthEndDate) {
+      return res.status(400).json({ error: 'Invalid month bounds' });
+    }
+    const joiningDate = normalizeISODateFlexible(employee.joiningDate);
+    const joiningDateParsed = parseISODate(joiningDate);
     const attendanceRows = await store.listAttendance();
     const ledgerRows = await store.listSalaryLedgers();
     const ledger = ledgerRows.find((r) => String(r.employeeId) === String(employee.id));
-    const monthAdvances = allAdvances.filter((a) => {
-      const d = normalizeISODateText(a.date);
-      return Boolean(d) && d >= monthStart && d <= monthEnd;
-    });
+    const detailEntries =
+      typeof store.listSalaryLedgerEntries === 'function' ? await store.listSalaryLedgerEntries(employee.id) : [];
+    const monthAdvances = allAdvances
+      .map((a) => ({
+        ...a,
+        date: normalizeISODateFlexible(a.date),
+        amount: roundMoney(Math.max(0, toSafeNumber(a.amount, 0))),
+        note: String(a.note || '').trim()
+      }))
+      .filter((a) => Boolean(a.date) && a.date >= monthStart && a.date <= monthEnd);
+    const monthDetailDebits = (detailEntries || [])
+      .map((entry) => ({
+        ...entry,
+        date: normalizeISODateFlexible(entry.date),
+        debit: roundMoney(Math.max(0, toSafeNumber(entry.debit, 0))),
+        note: String(entry.note || '').trim(),
+        voucherType: String(entry.voucherType || '').trim()
+      }))
+      .filter((entry) => Boolean(entry.date) && entry.date >= monthStart && entry.date <= monthEnd && entry.debit > 0)
+      .sort((a, b) => {
+        if (a.date !== b.date) return a.date.localeCompare(b.date);
+        return String(a.id || '').localeCompare(String(b.id || ''));
+      });
 
     const requestedUpto = req.query.uptoDate ? String(req.query.uptoDate) : null;
     if (requestedUpto && !/^\d{4}-\d{2}-\d{2}$/.test(requestedUpto)) {
@@ -5211,24 +5269,27 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     const attendanceStartPresent =
       attendanceInMonth
         .filter((a) => String(a.status || '').toLowerCase() === 'present')
-        .map((a) => normalizeISODateText(a.date))
+        .map((a) => normalizeISODateFlexible(a.date))
         .filter(Boolean)
         .sort()[0] || '';
     const attendanceStartAny =
       attendanceInMonth
-        .map((a) => normalizeISODateText(a.date))
+        .map((a) => normalizeISODateFlexible(a.date))
         .filter(Boolean)
         .sort()[0] || '';
     const attendanceStart = attendanceStartPresent || attendanceStartAny;
     const advanceStart = monthAdvances
-      .map((a) => normalizeISODateText(a.date))
+      .map((a) => normalizeISODateFlexible(a.date))
       .filter(Boolean)
       .sort()[0] || '';
-    const ledgerStart = normalizeISODateText(ledger?.durationStart);
+    const ledgerStart = normalizeISODateFlexible(ledger?.durationStart);
 
     // Join date takes priority. Attendance/advance is only a fallback when join date is missing/outside month.
     let periodStart = monthStart;
-    if (joiningDate && joiningDate >= monthStart && joiningDate <= monthEnd) {
+    if (joiningDateParsed && joiningDateParsed >= monthStartDate && joiningDateParsed <= monthEndDate) {
+      periodStart = joiningDate;
+    } else if (joiningDateParsed && joiningDateParsed > monthEndDate) {
+      // Not joined in selected month: keep period start after month end so payable days become zero.
       periodStart = joiningDate;
     } else if (ledgerStart && ledgerStart >= monthStart && ledgerStart <= monthEnd) {
       periodStart = ledgerStart;
@@ -5236,29 +5297,44 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
       const fallbackStart = attendanceStartPresent || advanceStart || attendanceStartAny || '';
       if (fallbackStart && fallbackStart > periodStart) periodStart = fallbackStart;
     }
-    if (periodStart > periodEnd) periodStart = periodEnd;
+    if (!parseISODate(periodStart)) periodStart = monthStart;
 
     const startDate = parseISODate(periodStart);
     const endDate = parseISODate(periodEnd);
-    if (!startDate || !endDate) {
+    if (!endDate) {
       return res.status(400).json({ error: 'Invalid period dates' });
     }
 
     const daysCounted =
-      startDate <= endDate
+      startDate && startDate <= endDate
         ? Math.floor((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1
         : 0;
+    const periodDisplayStart = startDate && startDate > endDate ? periodEnd : periodStart;
     // Apply advances for selected month up to the selected slip end-date.
     let advancesInPeriod = monthAdvances.filter((a) => {
-      const d = normalizeISODateText(a.date);
+      const d = normalizeISODateFlexible(a.date);
       if (!d) return false;
-      return d <= periodEnd;
+      return d >= periodStart && d <= periodEnd;
     });
+    if (advancesInPeriod.length === 0) {
+      const detailDebitsInPeriod = monthDetailDebits
+        .filter((entry) => entry.date >= periodStart && entry.date <= periodEnd)
+        .map((entry) => ({
+          id: `slde_${String(entry.id || uid('slde'))}`,
+          employeeId: employee.id,
+          date: entry.date,
+          amount: entry.debit,
+          note: entry.note || `From detailed ledger${entry.voucherType ? ` (${entry.voucherType})` : ''}`
+        }));
+      if (detailDebitsInPeriod.length > 0) {
+        advancesInPeriod = detailDebitsInPeriod;
+      }
+    }
     if (advancesInPeriod.length === 0) {
       const ledgerPaidForCurrent = roundMoney(Math.max(0, toSafeNumber(ledger?.paidForCurrent, 0)));
       if (ledgerPaidForCurrent > 0) {
-        const ledgerStart = normalizeISODateText(ledger?.durationStart);
-        const ledgerEnd = normalizeISODateText(ledger?.durationEnd);
+        const ledgerStart = normalizeISODateFlexible(ledger?.durationStart);
+        const ledgerEnd = normalizeISODateFlexible(ledger?.durationEnd);
         const overlaps =
           ledgerStart && ledgerEnd ? !(ledgerEnd < periodStart || ledgerStart > periodEnd) : true;
         if (overlaps) {
@@ -5274,11 +5350,11 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
         }
       }
     }
-    const totalAdvance = advancesInPeriod.reduce((sum, a) => sum + Number(a.amount), 0);
-    const monthlySalary = Number(employee.monthlySalary);
-    const perDaySalary = monthlySalary / monthDays;
-    const proratedSalary = perDaySalary * daysCounted;
-    const remaining = Math.max(0, proratedSalary - totalAdvance);
+    const totalAdvance = roundMoney(advancesInPeriod.reduce((sum, a) => sum + toSafeNumber(a.amount, 0), 0));
+    const monthlySalary = roundMoney(Math.max(0, toSafeNumber(employee.monthlySalary, 0)));
+    const perDaySalary = roundMoney(monthDays > 0 ? monthlySalary / monthDays : 0);
+    const proratedSalary = roundMoney(perDaySalary * daysCounted);
+    const remaining = roundMoney(Math.max(0, proratedSalary - totalAdvance));
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="salary-slip-${employee.name}-${month}.pdf"`);
@@ -5359,7 +5435,7 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
 
     doc.fillColor(colors.text).font('Helvetica').fontSize(11);
     doc.text(month, pageMargin + 90, y + 12);
-    doc.text(`${periodStart} to ${periodEnd}`, pageMargin + 90, y + 38);
+    doc.text(`${periodDisplayStart} to ${periodEnd}`, pageMargin + 90, y + 38);
     doc.text(generatedAt, pageMargin + 90, y + 64);
 
     doc.text(employee.name, pageMargin + contentWidth / 2 + 76, y + 12);
