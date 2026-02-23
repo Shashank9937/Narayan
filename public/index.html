@@ -197,86 +197,15 @@
 
       <section class="panel" id="salaryLedgerPanel">
         <div class="row wrap">
-          <h2>Salary Ledger Workspace</h2>
-          <input id="salaryLedgerSearchInput" type="text" placeholder="Search employee/role in ledger" />
+          <h2>Salary Ledger (Tally Format)</h2>
         </div>
-        <p class="hint">Select employee, set salary session dates, opening pending and paid amount. Remaining is carried forward automatically into the next session.</p>
-        <form id="salaryLedgerForm" class="salary-ledger-form">
-          <div class="field-group">
-            <label for="salaryLedgerEmployee">Employee</label>
-            <select name="employeeId" id="salaryLedgerEmployee" required></select>
-          </div>
-          <div class="field-group">
-            <label for="salaryLedgerFromDate">From Date</label>
-            <input id="salaryLedgerFromDate" name="durationStart" type="date" required />
-          </div>
-          <div class="field-group">
-            <label for="salaryLedgerToDate">To Date</label>
-            <input id="salaryLedgerToDate" name="durationEnd" type="date" required />
-          </div>
-          <div class="field-group">
-            <label for="salaryLedgerMonthlySalaryApplied">Monthly Salary Used</label>
-            <input id="salaryLedgerMonthlySalaryApplied" name="monthlySalaryApplied" type="number" min="0" step="0.01" placeholder="Monthly Salary" required />
-          </div>
-          <div class="field-group">
-            <label for="salaryLedgerSalaryBeforeInput">Total Salary Till Previous Session</label>
-            <input id="salaryLedgerSalaryBeforeInput" name="salaryGeneratedBefore" type="number" min="0" step="0.01" placeholder="Previous Salary Total" />
-          </div>
-          <div class="field-group">
-            <label for="salaryLedgerPaidBeforeInput">Total Paid Till Previous Session</label>
-            <input id="salaryLedgerPaidBeforeInput" name="paidBefore" type="number" min="0" step="0.01" placeholder="Previous Paid Total" />
-          </div>
-          <div class="field-group">
-            <label for="salaryLedgerOpeningPendingInput">Opening Pending (Previous Session)</label>
-            <input id="salaryLedgerOpeningPendingInput" name="openingPending" type="number" min="0" step="0.01" placeholder="Carry Forward Pending" />
-          </div>
-          <div class="field-group">
-            <label for="salaryLedgerPaidForPreviousInput">Paid In This Session (For Previous Due)</label>
-            <input id="salaryLedgerPaidForPreviousInput" name="paidForPrevious" type="number" min="0" step="0.01" placeholder="Paid for Previous" />
-          </div>
-          <div class="field-group">
-            <label for="salaryLedgerPaidForCurrentInput">Paid In This Session (For Current Salary)</label>
-            <input id="salaryLedgerPaidForCurrentInput" name="paidForCurrent" type="number" min="0" step="0.01" placeholder="Paid for Current" />
-          </div>
-          <div class="row wrap salary-ledger-tools">
-            <button id="salaryLedgerAutoFillBtn" type="button" class="small">Use Employee Monthly Salary</button>
-            <button id="salaryLedgerCurrentMonthBtn" type="button" class="small">Set Current Month Dates</button>
-            <button id="salaryLedgerCarryBtn" type="button" class="small">Carry Previous Remaining</button>
-            <button id="salaryLedgerDownloadBtn" type="button" class="small">Download Summary PDF</button>
-            <button id="salaryLedgerResetBtn" type="button" class="small warn">Clear Form</button>
-          </div>
-          <div class="summary-stat-grid salary-ledger-live-summary">
-            <div class="summary-stat">
-              <div class="label">Days</div>
-              <div id="salaryLedgerComputedDays" class="value">0</div>
-            </div>
-            <div class="summary-stat">
-              <div class="label">Period Salary</div>
-              <div id="salaryLedgerComputedPeriodSalary" class="value">₹0</div>
-            </div>
-            <div class="summary-stat">
-              <div class="label">Total To Give</div>
-              <div id="salaryLedgerComputedToGive" class="value">₹0</div>
-            </div>
-            <div class="summary-stat">
-              <div class="label">Paid This Session</div>
-              <div id="salaryLedgerComputedPaidThisSession" class="value">₹0</div>
-            </div>
-            <div class="summary-stat">
-              <div class="label">Total Paid</div>
-              <div id="salaryLedgerComputedPaid" class="value">₹0</div>
-            </div>
-            <div class="summary-stat">
-              <div class="label">Remaining</div>
-              <div id="salaryLedgerRemainingPreview" class="value">₹0</div>
-            </div>
-          </div>
-          <input name="note" placeholder="Note (optional)" class="full-span" />
-          <button type="submit">Save Salary Ledger</button>
-        </form>
+        <p class="hint">Select employee, enter debit/credit ledger rows, and download printable PDF statement in Tally style.</p>
         <div class="salary-ledger-detail-card">
           <div class="row wrap">
-            <h3>Employee Detailed Ledger (Tally Style)</h3>
+            <div class="field-group salary-ledger-employee-select">
+              <label for="salaryLedgerEmployee">Employee</label>
+              <select name="employeeId" id="salaryLedgerEmployee" required></select>
+            </div>
             <div class="row wrap">
               <button id="salaryLedgerDetailRefreshBtn" type="button" class="small">Load Employee Ledger</button>
               <button id="salaryLedgerDetailPdfBtn" type="button" class="small">Download Detailed PDF</button>
@@ -362,46 +291,6 @@
               <tbody></tbody>
             </table>
           </div>
-        </div>
-        <div class="summary-stat-grid">
-          <div class="summary-stat">
-            <div class="label">Total Paid (All Employees)</div>
-            <div id="salaryLedgerTotalPaidSum" class="value">₹0</div>
-          </div>
-          <div class="summary-stat">
-            <div class="label">Total Salary (All Employees)</div>
-            <div id="salaryLedgerTotalToGiveSum" class="value">₹0</div>
-          </div>
-          <div class="summary-stat">
-            <div class="label">Total Remaining (All Employees)</div>
-            <div id="salaryLedgerTotalRemainingSum" class="value">₹0</div>
-          </div>
-        </div>
-        <div class="table-wrap">
-          <table id="salaryLedgerTable">
-            <thead>
-                <tr>
-                  <th>Employee</th>
-                  <th>Role</th>
-                  <th>Period</th>
-                  <th>Days</th>
-                  <th>Updated</th>
-                  <th>Salary Till Previous</th>
-                  <th>Paid Till Previous</th>
-                  <th>Opening Pending</th>
-                  <th>Period Salary</th>
-                  <th>Paid This Session (Previous)</th>
-                  <th>Paid This Session (Current)</th>
-                  <th>Paid This Session</th>
-                  <th>Total To Give</th>
-                  <th>Total Paid</th>
-                  <th>Remaining</th>
-                  <th>Note</th>
-                  <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
         </div>
       </section>
     </section>

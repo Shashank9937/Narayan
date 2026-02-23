@@ -700,6 +700,18 @@ th.sortable.desc::after {
   padding: 0.9rem;
 }
 
+.salary-ledger-employee-select {
+  min-width: 280px;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.salary-ledger-employee-select label {
+  font-size: 0.76rem;
+  color: var(--text-light);
+  font-weight: 700;
+}
+
 .salary-ledger-detail-form {
   display: grid;
   gap: 0.68rem;

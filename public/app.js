@@ -949,7 +949,17 @@ function renderSalarySummaries(rows) {
 }
 
 function renderSalaryLedgers(rows) {
-  if (!salaryLedgerTbody) return;
+  if (!salaryLedgerTbody) {
+    const selectedEmployeeId = getSelectedSalaryLedgerEmployeeId();
+    if (selectedEmployeeId && selectedEmployeeId !== salaryLedgerDetailEmployeeId) {
+      loadSalaryLedgerDetailEntries({ employeeId: selectedEmployeeId, silent: true }).catch((err) => {
+        console.error('[salary-ledger-detail:load]', err);
+      });
+    } else {
+      renderSalaryLedgerDetail();
+    }
+    return;
+  }
   const safeRows = (rows || []).map((row) => normalizeLedgerRow(row));
   const canEdit = hasPermission('salaryledger:update');
   const totalPaidSum = safeRows.reduce((sum, r) => sum + Number(r.totalPaid || 0), 0);
