@@ -4630,6 +4630,8 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     const monthEnd = `${month}-${String(monthDays).padStart(2, '0')}`;
     const joiningDate = normalizeISODateText(employee.joiningDate);
     const attendanceRows = await store.listAttendance();
+    const ledgerRows = await store.listSalaryLedgers();
+    const ledger = ledgerRows.find((r) => String(r.employeeId) === String(employee.id));
     const monthAdvances = allAdvances.filter((a) => {
       const d = normalizeISODateText(a.date);
       return Boolean(d) && d >= monthStart && d <= monthEnd;
@@ -4658,22 +4660,35 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     if (periodEnd < monthStart) periodEnd = monthStart;
     if (periodEnd > monthEnd) periodEnd = monthEnd;
 
-    const attendanceStart = attendanceRows
-      .filter((a) => String(a.employeeId) === String(employee.id) && monthOf(a.date) === month)
-      .map((a) => normalizeISODateText(a.date))
-      .filter(Boolean)
-      .sort()[0] || '';
+    const attendanceInMonth = attendanceRows.filter(
+      (a) => String(a.employeeId) === String(employee.id) && monthOf(a.date) === month
+    );
+    const attendanceStartPresent =
+      attendanceInMonth
+        .filter((a) => String(a.status || '').toLowerCase() === 'present')
+        .map((a) => normalizeISODateText(a.date))
+        .filter(Boolean)
+        .sort()[0] || '';
+    const attendanceStartAny =
+      attendanceInMonth
+        .map((a) => normalizeISODateText(a.date))
+        .filter(Boolean)
+        .sort()[0] || '';
+    const attendanceStart = attendanceStartPresent || attendanceStartAny;
     const advanceStart = monthAdvances
       .map((a) => normalizeISODateText(a.date))
       .filter(Boolean)
       .sort()[0] || '';
+    const ledgerStart = normalizeISODateText(ledger?.durationStart);
 
     // Join date takes priority. Attendance/advance is only a fallback when join date is missing/outside month.
     let periodStart = monthStart;
     if (joiningDate && joiningDate >= monthStart && joiningDate <= monthEnd) {
       periodStart = joiningDate;
+    } else if (ledgerStart && ledgerStart >= monthStart && ledgerStart <= monthEnd) {
+      periodStart = ledgerStart;
     } else {
-      const fallbackStart = [attendanceStart, advanceStart].filter(Boolean).sort()[0] || '';
+      const fallbackStart = attendanceStartPresent || advanceStart || attendanceStartAny || '';
       if (fallbackStart && fallbackStart > periodStart) periodStart = fallbackStart;
     }
     if (periodStart > periodEnd) periodStart = periodEnd;
@@ -4688,14 +4703,13 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
       startDate <= endDate
         ? Math.floor((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1
         : 0;
+    // Apply advances for selected month up to the selected slip end-date.
     let advancesInPeriod = monthAdvances.filter((a) => {
       const d = normalizeISODateText(a.date);
       if (!d) return false;
-      return d >= periodStart && d <= periodEnd;
+      return d <= periodEnd;
     });
     if (advancesInPeriod.length === 0) {
-      const ledgerRows = await store.listSalaryLedgers();
-      const ledger = ledgerRows.find((r) => String(r.employeeId) === String(employee.id));
       const ledgerPaidForCurrent = roundMoney(Math.max(0, toSafeNumber(ledger?.paidForCurrent, 0)));
       if (ledgerPaidForCurrent > 0) {
         const ledgerStart = normalizeISODateText(ledger?.durationStart);
