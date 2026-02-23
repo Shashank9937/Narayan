@@ -176,6 +176,9 @@ let refreshInFlight = null;
 let lastRefreshErrorToastAt = 0;
 let salaryLedgerDetailEntriesCache = [];
 let salaryLedgerDetailEmployeeId = '';
+const SALARY_LEDGER_CLOSING_ADJUSTMENT_PARTICULARS = 'Closing Balance Adjustment';
+const SALARY_LEDGER_CLOSING_ADJUSTMENT_NOTE_MARKER = '[AUTO_CLOSING_BALANCE]';
+const SALARY_LEDGER_CLOSING_ADJUSTMENT_NOTE = `Closing balance set manually ${SALARY_LEDGER_CLOSING_ADJUSTMENT_NOTE_MARKER}`;
 
 function showToast(message, type = 'ok') {
   toastEl.textContent = message;
@@ -1239,6 +1242,28 @@ function normalizeSalaryLedgerDetailEntry(entry) {
   };
 }
 
+function isSalaryLedgerClosingAdjustmentEntry(entry) {
+  return (
+    String(entry?.particulars || '').trim() === SALARY_LEDGER_CLOSING_ADJUSTMENT_PARTICULARS &&
+    String(entry?.note || '').includes(SALARY_LEDGER_CLOSING_ADJUSTMENT_NOTE_MARKER)
+  );
+}
+
+function salaryLedgerEntryBalanceDelta(entry) {
+  const debit = round2(Math.max(0, toNumber(entry?.debit, 0)));
+  const credit = round2(Math.max(0, toNumber(entry?.credit, 0)));
+  return round2(credit - debit);
+}
+
+function getSalaryLedgerClosingAdjustmentRows(rows) {
+  return (rows || []).filter((entry) => isSalaryLedgerClosingAdjustmentEntry(entry));
+}
+
+function formatSalaryLedgerDetailNote(note) {
+  const clean = String(note || '').replace(SALARY_LEDGER_CLOSING_ADJUSTMENT_NOTE_MARKER, '').trim();
+  return clean ? escapeHtml(clean) : '-';
+}
+
 function sortSalaryLedgerDetailEntries(rows) {
   return [...(rows || [])].sort((a, b) => {
     const aDate = String(a.date || '');
@@ -1340,12 +1365,14 @@ function renderSalaryLedgerDetail() {
 
   const entriesRows = view.rows
     .map((entry) => {
-      const actions = canEdit
-        ? `<div class="actions">
+      const isClosingAdjustment = isSalaryLedgerClosingAdjustmentEntry(entry);
+      const actions =
+        canEdit && !isClosingAdjustment
+          ? `<div class="actions">
              <button type="button" class="small warn sldd-edit" data-id="${entry.id}">Edit</button>
              <button type="button" class="small danger sldd-del" data-id="${entry.id}">Delete</button>
            </div>`
-        : '-';
+          : '-';
       return `<tr>
         <td>${entry.date || '-'}</td>
         <td>${escapeHtml(entry.particulars || '-')}</td>
@@ -1354,7 +1381,7 @@ function renderSalaryLedgerDetail() {
         <td class="money">${money(entry.debit)}</td>
         <td class="money">${money(entry.credit)}</td>
         <td class="money">${money(entry.balance)}</td>
-        <td>${escapeHtml(entry.note || '-')}</td>
+        <td>${formatSalaryLedgerDetailNote(entry.note)}</td>
         <td>${actions}</td>
       </tr>`;
     })
@@ -1363,6 +1390,13 @@ function renderSalaryLedgerDetail() {
   const emptyEntryRow = view.rows.length
     ? ''
     : '<tr><td colspan="9">No detailed entries yet. Add first salary/payment line.</td></tr>';
+
+  const closingActions = canEdit
+    ? `<div class="actions">
+         <button type="button" class="small warn sldd-closing-edit">Edit</button>
+         <button type="button" class="small danger sldd-closing-del">Delete</button>
+       </div>`
+    : '-';
 
   const closingRow = `<tr class="ledger-static ledger-closing">
       <td>-</td>
@@ -1373,7 +1407,7 @@ function renderSalaryLedgerDetail() {
       <td class="money"><strong>${money(view.creditSum)}</strong></td>
       <td class="money"><strong>${money(view.closingBalance)}</strong></td>
       <td>-</td>
-      <td>-</td>
+      <td>${closingActions}</td>
     </tr>`;
 
   salaryLedgerDetailTableTbody.innerHTML = `${openingRow}${entriesRows}${emptyEntryRow}${closingRow}`;
@@ -1413,6 +1447,79 @@ function renderSalaryLedgerDetail() {
         if (editingSalaryLedgerDetailId === id) resetSalaryLedgerDetailForm();
         await loadSalaryLedgerDetailEntries({ employeeId, silent: true });
         showToast('Detailed ledger entry deleted');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  });
+
+  document.querySelectorAll('.sldd-closing-edit').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const promptDefault = String(round2(toNumber(view.closingBalance, 0)));
+      const input = prompt('Enter closing balance value', promptDefault);
+      if (input == null) return;
+      const targetClosing = round2(toNumber(input, Number.NaN));
+      if (!Number.isFinite(targetClosing)) {
+        showToast('Enter a valid closing balance', 'error');
+        return;
+      }
+      try {
+        const adjustmentRows = getSalaryLedgerClosingAdjustmentRows(view.rows);
+        const adjustmentDelta = round2(
+          adjustmentRows.reduce((sum, row) => round2(sum + salaryLedgerEntryBalanceDelta(row)), 0)
+        );
+        const baseClosing = round2(view.closingBalance - adjustmentDelta);
+        const requiredDelta = round2(targetClosing - baseClosing);
+        const primaryAdjustment = adjustmentRows[adjustmentRows.length - 1] || null;
+        const extraAdjustments = adjustmentRows.slice(0, -1);
+        for (const row of extraAdjustments) {
+          await api(`/api/salary-ledger-entries/${row.id}`, 'DELETE');
+        }
+        if (Math.abs(requiredDelta) < 0.005) {
+          if (primaryAdjustment) {
+            await api(`/api/salary-ledger-entries/${primaryAdjustment.id}`, 'DELETE');
+            if (editingSalaryLedgerDetailId === String(primaryAdjustment.id)) resetSalaryLedgerDetailForm();
+          }
+        } else {
+          const payload = {
+            employeeId,
+            date: primaryAdjustment?.date || todayISO(),
+            particulars: SALARY_LEDGER_CLOSING_ADJUSTMENT_PARTICULARS,
+            voucherType: 'Adjustment',
+            voucherNo: 'CLOSE-BAL',
+            debit: requiredDelta < 0 ? round2(Math.abs(requiredDelta)) : 0,
+            credit: requiredDelta > 0 ? round2(requiredDelta) : 0,
+            note: SALARY_LEDGER_CLOSING_ADJUSTMENT_NOTE
+          };
+          if (primaryAdjustment) {
+            await api(`/api/salary-ledger-entries/${primaryAdjustment.id}`, 'PUT', payload);
+          } else {
+            await api('/api/salary-ledger-entries', 'POST', payload);
+          }
+        }
+        await loadSalaryLedgerDetailEntries({ employeeId, silent: true });
+        showToast('Closing balance updated');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  });
+
+  document.querySelectorAll('.sldd-closing-del').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const adjustmentRows = getSalaryLedgerClosingAdjustmentRows(view.rows);
+      if (!adjustmentRows.length) {
+        showToast('No custom closing balance entry found');
+        return;
+      }
+      if (!confirm('Delete custom closing balance entry?')) return;
+      try {
+        for (const row of adjustmentRows) {
+          await api(`/api/salary-ledger-entries/${row.id}`, 'DELETE');
+          if (editingSalaryLedgerDetailId === String(row.id)) resetSalaryLedgerDetailForm();
+        }
+        await loadSalaryLedgerDetailEntries({ employeeId, silent: true });
+        showToast('Closing balance reset');
       } catch (err) {
         showToast(err.message, 'error');
       }
