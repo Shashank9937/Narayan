@@ -145,12 +145,27 @@
         <section class="panel" id="advancePanel">
           <h2>Salary Advance</h2>
           <form id="advanceForm">
+            <input type="hidden" name="advanceId" />
             <select name="employeeId" id="advanceEmployee" required></select>
             <input name="date" type="date" required />
             <input name="amount" type="number" min="1" step="0.01" placeholder="Advance Amount" required />
             <input name="note" placeholder="Note (optional)" />
-            <button type="submit">Add Advance</button>
+            <button id="advanceSubmitBtn" type="submit">Add Advance</button>
+            <button id="advanceCancelEditBtn" type="button" class="small warn hidden">Cancel Edit</button>
           </form>
+          <div class="table-wrap">
+            <table id="advanceTable">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Amount</th>
+                  <th>Note</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </section>
       </div>
 

@@ -174,6 +174,11 @@ function normalizeISODateFlexible(value) {
   return '';
 }
 
+function dbDateToISO(value, fallback = '') {
+  const normalized = normalizeISODateFlexible(value);
+  return normalized || fallback;
+}
+
 function isoDaysInclusive(startDateText, endDateText) {
   const start = parseISODate(normalizeISODateText(startDateText));
   const end = parseISODate(normalizeISODateText(endDateText));
@@ -1041,6 +1046,26 @@ function jsonStore() {
       return db.salaryAdvances.filter(
         (a) => String(a.employeeId) === String(employeeId) && monthOf(a.date) === month
       );
+    },
+    async updateAdvance(id, data) {
+      const db = readJsonDb();
+      const row = db.salaryAdvances.find((a) => String(a.id) === String(id));
+      if (!row) return null;
+      row.employeeId = String(data.employeeId || row.employeeId || '').trim();
+      row.date = normalizeISODateText(data.date || row.date);
+      row.amount = roundMoney(toSafeNumber(data.amount, row.amount || 0));
+      row.note = data.note == null ? String(row.note || '').trim() : String(data.note).trim();
+      row.updatedAt = new Date().toISOString();
+      writeJsonDb(db);
+      return row;
+    },
+    async deleteAdvance(id) {
+      const db = readJsonDb();
+      const before = db.salaryAdvances.length;
+      db.salaryAdvances = db.salaryAdvances.filter((a) => String(a.id) !== String(id));
+      if (before === db.salaryAdvances.length) return false;
+      writeJsonDb(db);
+      return true;
     },
     async setAdvancesForMonth(employeeId, month, totalAdvances) {
       const db = readJsonDb();
@@ -2338,7 +2363,7 @@ function postgresStore() {
         name: r.name,
         role: r.role,
         monthlySalary: Number(r.monthly_salary),
-        joiningDate: r.joining_date ? String(r.joining_date).slice(0, 10) : String(r.created_at).slice(0, 10),
+        joiningDate: dbDateToISO(r.joining_date, dbDateToISO(r.created_at)),
         active: r.active,
         createdAt: r.created_at
       }));
@@ -2352,7 +2377,7 @@ function postgresStore() {
         name: r.name,
         role: r.role,
         monthlySalary: Number(r.monthly_salary),
-        joiningDate: r.joining_date ? String(r.joining_date).slice(0, 10) : String(r.created_at).slice(0, 10),
+        joiningDate: dbDateToISO(r.joining_date, dbDateToISO(r.created_at)),
         active: r.active,
         createdAt: r.created_at
       };
@@ -2390,7 +2415,7 @@ function postgresStore() {
         name: r.name,
         role: r.role,
         monthlySalary: Number(r.monthly_salary),
-        joiningDate: r.joining_date ? String(r.joining_date).slice(0, 10) : String(r.created_at).slice(0, 10),
+        joiningDate: dbDateToISO(r.joining_date, dbDateToISO(r.created_at)),
         active: r.active,
         createdAt: r.created_at
       };
@@ -2435,7 +2460,7 @@ function postgresStore() {
       return res.rows.map((r) => ({
         id: r.id,
         employeeId: r.employee_id,
-        date: String(r.date).slice(0, 10),
+        date: dbDateToISO(r.date),
         status: r.status,
         createdAt: r.created_at
       }));
@@ -2492,7 +2517,7 @@ function postgresStore() {
       return res.rows.map((r) => ({
         id: r.id,
         employeeId: r.employee_id,
-        date: String(r.date).slice(0, 10),
+        date: dbDateToISO(r.date),
         amount: Number(r.amount),
         note: r.note || ''
       }));
@@ -2508,10 +2533,41 @@ function postgresStore() {
       return res.rows.map((r) => ({
         id: r.id,
         employeeId: r.employee_id,
-        date: String(r.date).slice(0, 10),
+        date: dbDateToISO(r.date),
         amount: Number(r.amount),
         note: r.note || ''
       }));
+    },
+    async updateAdvance(id, data) {
+      const res = await pool.query(
+        `UPDATE salary_advances
+         SET employee_id = $2,
+             date = $3,
+             amount = $4,
+             note = $5
+         WHERE id = $1
+         RETURNING *`,
+        [
+          id,
+          String(data.employeeId || '').trim(),
+          normalizeISODateText(data.date),
+          roundMoney(toSafeNumber(data.amount, 0)),
+          String(data.note || '').trim() || null
+        ]
+      );
+      if (!res.rows[0]) return null;
+      const r = res.rows[0];
+      return {
+        id: r.id,
+        employeeId: r.employee_id,
+        date: dbDateToISO(r.date),
+        amount: Number(r.amount),
+        note: r.note || ''
+      };
+    },
+    async deleteAdvance(id) {
+      const res = await pool.query('DELETE FROM salary_advances WHERE id = $1', [id]);
+      return res.rowCount > 0;
     },
     async setAdvancesForMonth(employeeId, month, totalAdvances) {
       const sumRes = await pool.query(
@@ -2828,7 +2884,7 @@ function postgresStore() {
       return res.rows.map((r) => ({
         id: r.id,
         employeeId: r.employee_id,
-        date: String(r.date).slice(0, 10),
+        date: dbDateToISO(r.date),
         particulars: r.particulars,
         voucherType: r.voucher_type || 'Manual',
         voucherNo: r.voucher_no || '',
@@ -2915,7 +2971,7 @@ function postgresStore() {
       return {
         id: r.id,
         employeeId: r.employee_id,
-        date: String(r.date).slice(0, 10),
+        date: dbDateToISO(r.date),
         particulars: r.particulars,
         voucherType: r.voucher_type || 'Manual',
         voucherNo: r.voucher_no || '',
@@ -2948,7 +3004,8 @@ function postgresStore() {
       );
 
       return res.rows.map((r) => {
-        const startMonth = String(r.joining_date || r.created_at).slice(0, 7);
+        const joiningDateIso = dbDateToISO(r.joining_date, dbDateToISO(r.created_at));
+        const startMonth = String(joiningDateIso || '').slice(0, 7);
         const [startY, startM] = startMonth.split('-').map(Number);
         const [endY, endM] = month.split('-').map(Number);
         const monthsWorked = Math.max(0, (endY - startY) * 12 + (endM - startM) + 1);
@@ -2960,7 +3017,7 @@ function postgresStore() {
           name: r.name,
           role: r.role,
           monthlySalary: Number(r.monthly_salary),
-          joiningDate: r.joining_date ? String(r.joining_date).slice(0, 10) : String(r.created_at).slice(0, 10),
+          joiningDate: joiningDateIso,
           advances: Number(r.advances),
           remaining: Math.max(0, Number(r.monthly_salary) - Number(r.advances)),
           monthsWorked,
@@ -4443,6 +4500,27 @@ app.get('/api/attendance-report', auth, requirePermission('attendance:report'), 
   }
 });
 
+app.get('/api/advances', auth, requirePermission('advances:create'), async (req, res) => {
+  const employeeId = String(req.query.employeeId || '').trim();
+  if (!employeeId) return res.status(400).json({ error: 'employeeId is required' });
+  const month = String(req.query.month || '').trim();
+  if (month && !/^\d{4}-\d{2}$/.test(month)) {
+    return res.status(400).json({ error: 'month must be in YYYY-MM format' });
+  }
+  try {
+    const employee = await store.getEmployeeById(employeeId);
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+    const rows =
+      month && typeof store.getEmployeeAdvances === 'function'
+        ? await store.getEmployeeAdvances(employeeId, month)
+        : await store.listEmployeeAdvances(employeeId);
+    return res.json(Array.isArray(rows) ? rows : []);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to fetch advances' });
+  }
+});
+
 app.put('/api/advances/set', auth, requirePermission('advances:create'), async (req, res) => {
   const { employeeId, month, totalAdvances } = req.body;
   if (!employeeId || !month) {
@@ -4488,6 +4566,57 @@ app.post('/api/advances', auth, requirePermission('advances:create'), async (req
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to create advance' });
+  }
+});
+
+app.put('/api/advances/:id', auth, requirePermission('advances:create'), async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  const { employeeId, date, amount, note } = req.body;
+  if (!id) return res.status(400).json({ error: 'id is required' });
+  if (!employeeId || !date || amount == null) {
+    return res.status(400).json({ error: 'employeeId, date, amount are required' });
+  }
+  const normalizedDate = normalizeISODateText(date);
+  if (!normalizedDate || !parseISODate(normalizedDate)) {
+    return res.status(400).json({ error: 'Valid date is required' });
+  }
+  const numericAmount = Number(amount);
+  if (Number.isNaN(numericAmount) || numericAmount <= 0) {
+    return res.status(400).json({ error: 'amount must be a positive number' });
+  }
+  try {
+    const employee = await store.getEmployeeById(employeeId);
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+    if (typeof store.updateAdvance !== 'function') {
+      return res.status(500).json({ error: 'Advance update is not supported' });
+    }
+    const updated = await store.updateAdvance(id, {
+      employeeId,
+      date: normalizedDate,
+      amount: numericAmount,
+      note
+    });
+    if (!updated) return res.status(404).json({ error: 'Advance not found' });
+    return res.json(updated);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to update advance' });
+  }
+});
+
+app.delete('/api/advances/:id', auth, requirePermission('advances:create'), async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.status(400).json({ error: 'id is required' });
+  try {
+    if (typeof store.deleteAdvance !== 'function') {
+      return res.status(500).json({ error: 'Advance delete is not supported' });
+    }
+    const deleted = await store.deleteAdvance(id);
+    if (!deleted) return res.status(404).json({ error: 'Advance not found' });
+    return res.status(204).send();
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to delete advance' });
   }
 });
 

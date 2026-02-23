@@ -83,6 +83,9 @@ const employeeSubmitBtn = document.getElementById('employeeSubmitBtn');
 const employeeCancelEditBtn = document.getElementById('employeeCancelEditBtn');
 const attendanceForm = document.getElementById('attendanceForm');
 const advanceForm = document.getElementById('advanceForm');
+const advanceTableTbody = document.querySelector('#advanceTable tbody');
+const advanceSubmitBtn = document.getElementById('advanceSubmitBtn');
+const advanceCancelEditBtn = document.getElementById('advanceCancelEditBtn');
 const salaryLedgerForm = document.getElementById('salaryLedgerForm');
 const truckForm = document.getElementById('truckForm');
 const truckCancelEditBtn = document.getElementById('truckCancelEditBtn');
@@ -168,6 +171,7 @@ let editingTruckId = null;
 let editingExpenseId = null;
 let editingLandId = null;
 let editingEmployeeId = null;
+let editingAdvanceId = null;
 let editingSalaryLedgerDetailId = null;
 let activeSalaryMonth = monthISO();
 let billItemsState = [];
@@ -176,6 +180,7 @@ let refreshInFlight = null;
 let lastRefreshErrorToastAt = 0;
 let salaryLedgerDetailEntriesCache = [];
 let salaryLedgerDetailEmployeeId = '';
+let advanceRowsCache = [];
 const SALARY_LEDGER_CLOSING_ADJUSTMENT_PARTICULARS = 'Closing Balance Adjustment';
 const SALARY_LEDGER_CLOSING_ADJUSTMENT_NOTE_MARKER = '[AUTO_CLOSING_BALANCE]';
 const SALARY_LEDGER_CLOSING_ADJUSTMENT_NOTE = `Closing balance set manually ${SALARY_LEDGER_CLOSING_ADJUSTMENT_NOTE_MARKER}`;
@@ -645,6 +650,120 @@ function renderEmployeeOptions(employees) {
     } else if (employees.length > 0) {
       salaryLedgerEmployeeSelect.value = employees[0].id;
     }
+  }
+}
+
+function normalizeAdvanceRow(row) {
+  return {
+    id: String(row?.id || ''),
+    employeeId: String(row?.employeeId || ''),
+    date: normalizeIsoDateValue(row?.date),
+    amount: round2(toNumber(row?.amount, 0)),
+    note: String(row?.note || '').trim()
+  };
+}
+
+function resetAdvanceFormMode() {
+  if (!advanceForm) return;
+  editingAdvanceId = null;
+  const hiddenId = advanceForm.querySelector('input[name="advanceId"]');
+  if (hiddenId) hiddenId.value = '';
+  if (advanceSubmitBtn) advanceSubmitBtn.textContent = 'Add Advance';
+  if (advanceCancelEditBtn) advanceCancelEditBtn.classList.add('hidden');
+}
+
+function renderAdvanceRows(rows) {
+  if (!advanceTableTbody) return;
+  const employeeId = String(advanceEmployeeEl?.value || '').trim();
+  const safeRows = (rows || [])
+    .map((row) => normalizeAdvanceRow(row))
+    .filter((row) => (employeeId ? String(row.employeeId) === employeeId : true))
+    .sort((a, b) => {
+      if (a.date !== b.date) return b.date.localeCompare(a.date);
+      return String(b.id || '').localeCompare(String(a.id || ''));
+    });
+  advanceRowsCache = safeRows;
+  if (!safeRows.length) {
+    advanceTableTbody.innerHTML = '<tr><td colspan="4">No advances found for selected employee.</td></tr>';
+    return;
+  }
+  const canEdit = hasPermission('advances:create');
+  advanceTableTbody.innerHTML = safeRows
+    .map((row) => {
+      const actions = canEdit
+        ? `<div class="actions">
+             <button type="button" class="small warn adv-edit" data-id="${row.id}">Edit</button>
+             <button type="button" class="small danger adv-del" data-id="${row.id}">Delete</button>
+           </div>`
+        : '-';
+      return `<tr>
+        <td>${row.date || '-'}</td>
+        <td class="money">${money(row.amount)}</td>
+        <td>${escapeHtml(row.note || '-')}</td>
+        <td>${actions}</td>
+      </tr>`;
+    })
+    .join('');
+
+  if (!canEdit) return;
+  advanceTableTbody.querySelectorAll('.adv-edit').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = String(btn.getAttribute('data-id') || '');
+      const row = advanceRowsCache.find((item) => String(item.id) === id);
+      if (!row || !advanceForm) return;
+      editingAdvanceId = id;
+      const setValue = (name, value) => {
+        const input = advanceForm.querySelector(`[name="${name}"]`);
+        if (input) input.value = value;
+      };
+      setValue('advanceId', row.id);
+      setValue('employeeId', row.employeeId || employeeId);
+      setValue('date', row.date || todayISO());
+      setValue('amount', String(round2(Math.abs(toNumber(row.amount, 0)))));
+      setValue('note', row.note || '');
+      if (advanceSubmitBtn) advanceSubmitBtn.textContent = 'Update Advance';
+      if (advanceCancelEditBtn) advanceCancelEditBtn.classList.remove('hidden');
+      advanceForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  });
+  advanceTableTbody.querySelectorAll('.adv-del').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = String(btn.getAttribute('data-id') || '');
+      if (!id) return;
+      if (!confirm('Delete this advance entry?')) return;
+      try {
+        await api(`/api/advances/${id}`, 'DELETE');
+        if (editingAdvanceId === id) {
+          advanceForm?.reset();
+          setDefaultDates();
+          resetAdvanceFormMode();
+        }
+        await loadAdvancesForSelectedEmployee({ silent: true });
+        await refresh();
+        showToast('Advance deleted');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  });
+}
+
+async function loadAdvancesForSelectedEmployee({ silent = false } = {}) {
+  const employeeId = String(advanceEmployeeEl?.value || '').trim();
+  if (!employeeId) {
+    advanceRowsCache = [];
+    renderAdvanceRows([]);
+    return [];
+  }
+  try {
+    const rows = await api(`/api/advances?employeeId=${encodeURIComponent(employeeId)}`);
+    renderAdvanceRows(Array.isArray(rows) ? rows : []);
+    if (!silent) showToast('Advances loaded');
+    return rows;
+  } catch (err) {
+    renderAdvanceRows([]);
+    if (!silent) showToast(err.message, 'error');
+    return [];
   }
 }
 
@@ -2650,6 +2769,7 @@ async function refresh() {
       : attendanceReportCache;
 
     renderEmployeeOptions(employeesCache);
+    await loadAdvancesForSelectedEmployee({ silent: true });
     renderEmployeeRows(filterEmployees(employeesCache));
     renderSalaryRows(salaryRowsCache);
     renderSalarySummaries(salaryRowsCache);
@@ -2705,6 +2825,7 @@ async function bootstrapSession() {
     applyRoleUI();
     resetEmployeeFormMode();
     resetTruckFormMode();
+    resetAdvanceFormMode();
     setDefaultDates();
     resetSalaryLedgerDetailForm();
     await refresh();
@@ -3386,21 +3507,54 @@ attendanceForm.addEventListener('submit', async (e) => {
 advanceForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(advanceForm);
+  const advanceId = String(fd.get('advanceId') || '').trim();
+  const employeeId = String(fd.get('employeeId') || '').trim();
+  const date = normalizeIsoDateValue(fd.get('date'));
+  const amount = round2(Math.max(0, toNumber(fd.get('amount'), 0)));
+  const note = String(fd.get('note') || '').trim();
+
+  if (!employeeId || !date || amount <= 0) {
+    showToast('Employee, valid date and amount are required', 'error');
+    return;
+  }
 
   try {
-    await api('/api/advances', 'POST', {
-      employeeId: fd.get('employeeId'),
-      date: fd.get('date'),
-      amount: fd.get('amount'),
-      note: fd.get('note')
+    const endpoint = advanceId ? `/api/advances/${advanceId}` : '/api/advances';
+    const method = advanceId ? 'PUT' : 'POST';
+    await api(endpoint, method, {
+      employeeId,
+      date,
+      amount,
+      note
     });
+    const selectedEmployeeId = employeeId;
     advanceForm.reset();
+    if (advanceEmployeeEl) advanceEmployeeEl.value = selectedEmployeeId;
     setDefaultDates();
+    resetAdvanceFormMode();
+    await loadAdvancesForSelectedEmployee({ silent: true });
     await refresh();
-    showToast('Advance recorded');
+    showToast(advanceId ? 'Advance updated' : 'Advance recorded');
   } catch (err) {
     showToast(err.message, 'error');
   }
+});
+
+advanceEmployeeEl?.addEventListener('change', () => {
+  if (editingAdvanceId) {
+    advanceForm?.reset();
+    setDefaultDates();
+    resetAdvanceFormMode();
+  }
+  loadAdvancesForSelectedEmployee({ silent: true }).catch((err) => {
+    console.error('[advances:load]', err);
+  });
+});
+
+advanceCancelEditBtn?.addEventListener('click', () => {
+  advanceForm?.reset();
+  setDefaultDates();
+  resetAdvanceFormMode();
 });
 
 salaryLedgerForm?.addEventListener('submit', async (e) => {
