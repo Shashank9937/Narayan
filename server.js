@@ -5055,11 +5055,10 @@ app.get('/api/salary-ledgers/:employeeId.pdf', auth, requirePermission('salaryle
         .lineWidth(1)
         .stroke()
         .restore();
-      doc.fillColor(colors.muted).font('Helvetica-Bold').fontSize(9).text(item[0], x + 8, y + 5);
-      doc.fillColor(colors.text).font('Helvetica').fontSize(9.5).text(String(item[1] || '-'), x + 102, y + 5, {
-        width: colWidth - 118,
-        ellipsis: true
-      });
+      doc.fillColor(colors.muted).font('Helvetica-Bold').fontSize(9);
+      drawPdfCellText(doc, item[0], x + 8, y + 5, 88, 'left');
+      doc.fillColor(colors.text).font('Helvetica').fontSize(9.5);
+      drawPdfCellText(doc, String(item[1] || '-'), x + 102, y + 5, colWidth - 118, 'left');
     });
 
     y += 34;
@@ -5077,9 +5076,8 @@ app.get('/api/salary-ledgers/:employeeId.pdf', auth, requirePermission('salaryle
       .lineWidth(1)
       .stroke()
       .restore();
-    doc.fillColor(colors.text).font('Helvetica').fontSize(10).text(row.note || '-', pageMargin + 10, y + 10, {
-      width: contentWidth - 20
-    });
+    doc.fillColor(colors.text).font('Helvetica').fontSize(10);
+    drawPdfCellText(doc, row.note || '-', pageMargin + 10, y + 10, contentWidth - 20, 'left');
 
     const footerY = doc.page.height - 44;
     doc.save().moveTo(pageMargin, footerY - 8).lineTo(pageMargin + contentWidth, footerY - 8).strokeColor(colors.border).stroke().restore();
@@ -5224,11 +5222,8 @@ app.get('/api/salary-ledgers/:employeeId/statement.pdf', auth, requirePermission
       let x = margin;
       doc.rect(margin, y, contentWidth, rowHeight).fillAndStroke('#EEF3FF', '#C9D4EC');
       columns.forEach((col) => {
-        doc.font('Helvetica-Bold').fontSize(9).fillColor('#1C2F4F').text(col.label, x + 3, y + 7, {
-          width: col.width - 6,
-          align: col.align === 'right' ? 'right' : 'left',
-          lineBreak: false
-        });
+        doc.font('Helvetica-Bold').fontSize(9).fillColor('#1C2F4F');
+        drawPdfCellText(doc, col.label, x + 3, y + 7, col.width - 6, col.align);
         x += col.width;
       });
       y += rowHeight;
@@ -5255,11 +5250,8 @@ app.get('/api/salary-ledgers/:employeeId/statement.pdf', auth, requirePermission
         let value = row[col.key];
         if (col.money) value = value === '' || value == null ? '-' : amountText(value);
         value = value == null || value === '' ? '-' : String(value);
-        doc.font(options.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9).fillColor('#24344E').text(value, x + 3, y + 7, {
-          width: col.width - 6,
-          align: col.align === 'right' ? 'right' : 'left',
-          lineBreak: false
-        });
+        doc.font(options.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9).fillColor('#24344E');
+        drawPdfCellText(doc, value, x + 3, y + 7, col.width - 6, col.align);
         x += col.width;
       });
       y += rowHeight;
@@ -6465,47 +6457,48 @@ app.get('/api/supplier-transactions/:id/receipt.pdf', auth, requirePermission('s
     doc.save().roundedRect(left, y, width, 84, 8).fill(colors.panel).restore();
     doc.save().roundedRect(left, y, width, 84, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
     doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(17).text('SUPPLIER RECEIPT', left + 12, y + 14);
-    doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(12).text(APP_NAME, left + 12, y + 42);
-    doc.font('Helvetica').fontSize(9).fillColor(colors.muted).text('Printable copy for supplier acknowledgement', left + 12, y + 60);
+    doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(12);
+    drawPdfCellText(doc, APP_NAME, left + 12, y + 42, width - 280, 'left');
     doc.font('Helvetica').fontSize(9).fillColor(colors.muted);
-    doc.text(`Receipt ID: ${tx.id}`, left + width - 260, y + 14, { width: 248, align: 'right' });
-    doc.text(`Date: ${tx.date}`, left + width - 260, y + 30, { width: 248, align: 'right' });
-    doc.text(`Type: ${tx.type === 'truck' ? 'Material Delivery' : 'Payment'}`, left + width - 260, y + 46, {
-      width: 248,
-      align: 'right'
-    });
-    doc.text(`Supplier: ${supplier.name || '-'}`, left + width - 260, y + 62, { width: 248, align: 'right' });
+    drawPdfCellText(doc, 'Printable copy for supplier acknowledgement', left + 12, y + 60, width - 280, 'left');
+    doc.font('Helvetica').fontSize(9).fillColor(colors.muted);
+    drawPdfCellText(doc, `Receipt ID: ${tx.id}`, left + width - 260, y + 14, 248, 'right');
+    drawPdfCellText(doc, `Date: ${tx.date}`, left + width - 260, y + 30, 248, 'right');
+    drawPdfCellText(doc, `Type: ${tx.type === 'truck' ? 'Material Delivery' : 'Payment'}`, left + width - 260, y + 46, 248, 'right');
+    drawPdfCellText(doc, `Supplier: ${supplier.name || '-'}`, left + width - 260, y + 62, 248, 'right');
     y += 98;
 
     const topBoxHeight = 170;
     doc.save().roundedRect(left, y, width, topBoxHeight, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
     doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(10).text('Supplier Details', left + 10, y + 10);
     doc.fillColor(colors.text).font('Helvetica').fontSize(10);
-    doc.text(`Name: ${supplier.name || '-'}`, left + 10, y + 28);
-    doc.text(`Phone: ${supplier.phone || '-'}`, left + 10, y + 44);
-    doc.text(`Email: ${supplier.email || '-'}`, left + 10, y + 60);
-    doc.text(`GST No: ${supplier.gstNo || '-'}`, left + 10, y + 76);
-    doc.text(`Address: ${supplier.address || '-'}`, left + 10, y + 92, { width: width - 20 });
+    drawPdfCellText(doc, `Name: ${supplier.name || '-'}`, left + 10, y + 28, width / 2 - 20, 'left');
+    drawPdfCellText(doc, `Phone: ${supplier.phone || '-'}`, left + 10, y + 44, width / 2 - 20, 'left');
+    drawPdfCellText(doc, `Email: ${supplier.email || '-'}`, left + 10, y + 60, width / 2 - 20, 'left');
+    drawPdfCellText(doc, `GST No: ${supplier.gstNo || '-'}`, left + 10, y + 76, width / 2 - 20, 'left');
+    drawPdfCellText(doc, `Address: ${supplier.address || '-'}`, left + 10, y + 92, width / 2 - 20, 'left');
     doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(10).text('Transaction Details', left + width / 2 + 8, y + 10);
     doc.fillColor(colors.text).font('Helvetica').fontSize(10);
-    doc.text(`Entry Amount: ${moneyInr(thisEntryAmount)}`, left + width / 2 + 8, y + 28);
-    doc.text(`Entry Paid: ${moneyInr(thisEntryPaid)}`, left + width / 2 + 8, y + 44);
-    doc.text(`Entry Remaining: ${moneyInr(thisEntryRemaining)}`, left + width / 2 + 8, y + 60);
-    doc.text(`Balance After Entry: ${moneyInr(enrichedTx.balanceAfter)}`, left + width / 2 + 8, y + 76);
+    drawPdfCellText(doc, `Entry Amount: ${moneyInr(thisEntryAmount)}`, left + width / 2 + 8, y + 28, width / 2 - 16, 'left');
+    drawPdfCellText(doc, `Entry Paid: ${moneyInr(thisEntryPaid)}`, left + width / 2 + 8, y + 44, width / 2 - 16, 'left');
+    drawPdfCellText(doc, `Entry Remaining: ${moneyInr(thisEntryRemaining)}`, left + width / 2 + 8, y + 60, width / 2 - 16, 'left');
+    drawPdfCellText(doc, `Balance After Entry: ${moneyInr(enrichedTx.balanceAfter)}`, left + width / 2 + 8, y + 76, width / 2 - 16, 'left');
     if (tx.type === 'truck') {
-      doc.text(`Truck No: ${tx.truckNumber || '-'}`, left + width / 2 + 8, y + 92);
-      doc.text(`Challan No: ${tx.challanNo || '-'}`, left + width / 2 + 8, y + 108);
-      doc.text(`Material: ${tx.material || '-'}`, left + width / 2 + 8, y + 124);
-      doc.text(`Trolleys: ${tx.trolleyCount == null ? '-' : tx.trolleyCount}`, left + width / 2 + 8, y + 140);
-      doc.text(
+      drawPdfCellText(doc, `Truck No: ${tx.truckNumber || '-'}`, left + width / 2 + 8, y + 92, width / 2 - 16, 'left');
+      drawPdfCellText(doc, `Challan No: ${tx.challanNo || '-'}`, left + width / 2 + 8, y + 108, width / 2 - 16, 'left');
+      drawPdfCellText(doc, `Material: ${tx.material || '-'}`, left + width / 2 + 8, y + 124, width / 2 - 16, 'left');
+      drawPdfCellText(doc, `Trolleys: ${tx.trolleyCount == null ? '-' : tx.trolleyCount}`, left + width / 2 + 8, y + 140, width / 2 - 16, 'left');
+      drawPdfCellText(
+        doc,
         `Quantity: ${tx.quantity == null ? '-' : tx.quantity} | Rate: ${tx.rate == null ? '-' : moneyInr(tx.rate)}`,
         left + width / 2 + 8,
         y + 156,
-        { width: width / 2 - 16 }
+        width / 2 - 16,
+        'left'
       );
     } else {
-      doc.text(`Payment Mode: ${tx.paymentMode || '-'}`, left + width / 2 + 8, y + 92);
-      doc.text(`Reference: ${tx.paymentRef || '-'}`, left + width / 2 + 8, y + 108);
+      drawPdfCellText(doc, `Payment Mode: ${tx.paymentMode || '-'}`, left + width / 2 + 8, y + 92, width / 2 - 16, 'left');
+      drawPdfCellText(doc, `Reference: ${tx.paymentRef || '-'}`, left + width / 2 + 8, y + 108, width / 2 - 16, 'left');
     }
     y += topBoxHeight + 12;
 
@@ -6526,18 +6519,24 @@ app.get('/api/supplier-transactions/:id/receipt.pdf', auth, requirePermission('s
         doc.save().rect(left + 8, sy - 3, width - 16, 20).fill('#F8FBFF').restore();
       }
       doc.fillColor(colors.text).font('Helvetica').fontSize(10);
-      doc.text(label, left + 14, sy);
-      doc.font('Helvetica-Bold').text(value, left + 14, sy, { width: width - 28, align: 'right' });
+      drawPdfCellText(doc, label, left + 14, sy, width - 200, 'left');
+      doc.font('Helvetica-Bold');
+      drawPdfCellText(doc, value, left + 14, sy, width - 28, 'right');
       sy += 22;
     });
     y += summaryHeight + 14;
 
     doc.save().roundedRect(left, y, width, 56, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
     doc.fillColor(colors.text).font('Helvetica').fontSize(9.5);
-    doc.text(`Note: ${tx.note || '-'}`, left + 10, y + 10, { width: width - 20 });
-    doc.text('This receipt can be printed and signed by supplier and company representative.', left + 10, y + 32, {
-      width: width - 20
-    });
+    drawPdfCellText(doc, `Note: ${tx.note || '-'}`, left + 10, y + 10, width - 20, 'left');
+    drawPdfCellText(
+      doc,
+      'This receipt can be printed and signed by supplier and company representative.',
+      left + 10,
+      y + 32,
+      width - 20,
+      'left'
+    );
 
     const footerY = doc.page.height - 74;
     doc.save().moveTo(left, footerY).lineTo(left + width, footerY).lineWidth(1).strokeColor(colors.border).stroke().restore();
@@ -6739,11 +6738,12 @@ app.get('/api/bills/:id.pdf', auth, requirePermission('billing:view'), async (re
     doc.save().roundedRect(left, y, usableWidth, 70, 8).fill(colors.panel).restore();
     doc.save().roundedRect(left, y, usableWidth, 70, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
     doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(19).text('TAX INVOICE', left + 12, y + 10);
-    doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(13).text(seller.name, left + 12, y + 35, { width: usableWidth - 24 });
+    doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(13);
+    drawPdfCellText(doc, seller.name, left + 12, y + 35, usableWidth - 24, 'left');
     doc.font('Helvetica').fontSize(9).fillColor(colors.muted);
-    doc.text(`Invoice No: ${bill.invoiceNo}`, left + usableWidth - 220, y + 12, { width: 205, align: 'right' });
-    doc.text(`Invoice Date: ${bill.billDate}`, left + usableWidth - 220, y + 28, { width: 205, align: 'right' });
-    doc.text(`Due Date: ${bill.dueDate || '-'}`, left + usableWidth - 220, y + 44, { width: 205, align: 'right' });
+    drawPdfCellText(doc, `Invoice No: ${bill.invoiceNo}`, left + usableWidth - 220, y + 12, 205, 'right');
+    drawPdfCellText(doc, `Invoice Date: ${bill.billDate}`, left + usableWidth - 220, y + 28, 205, 'right');
+    drawPdfCellText(doc, `Due Date: ${bill.dueDate || '-'}`, left + usableWidth - 220, y + 44, 205, 'right');
     y += 82;
 
     // Seller / buyer blocks
@@ -6754,21 +6754,28 @@ app.get('/api/bills/:id.pdf', auth, requirePermission('billing:view'), async (re
 
     doc.font('Helvetica-Bold').fontSize(10).fillColor(colors.heading).text('Supplier Details', left + 10, y + 10);
     doc.font('Helvetica').fontSize(9.2).fillColor(colors.text);
-    doc.text(seller.name, left + 10, y + 28);
-    doc.text(seller.address, left + 10, y + 42, { width: boxW - 20 });
-    doc.text(`GSTIN: ${seller.gstNo}`, left + 10, y + 72);
-    doc.text(`State: ${seller.state} (${seller.stateCode})`, left + 10, y + 86);
-    if (seller.phone) doc.text(`Phone: ${seller.phone}`, left + 10, y + 100);
-    if (seller.email) doc.text(`Email: ${seller.email}`, left + 10, y + 112);
+    drawPdfCellText(doc, seller.name, left + 10, y + 28, boxW - 20, 'left');
+    drawPdfCellText(doc, seller.address, left + 10, y + 42, boxW - 20, 'left');
+    drawPdfCellText(doc, `GSTIN: ${seller.gstNo}`, left + 10, y + 58, boxW - 20, 'left');
+    drawPdfCellText(doc, `State: ${seller.state} (${seller.stateCode})`, left + 10, y + 74, boxW - 20, 'left');
+    if (seller.phone) drawPdfCellText(doc, `Phone: ${seller.phone}`, left + 10, y + 90, boxW - 20, 'left');
+    if (seller.email) drawPdfCellText(doc, `Email: ${seller.email}`, left + 10, y + 106, boxW - 20, 'left');
 
     doc.font('Helvetica-Bold').fontSize(10).fillColor(colors.heading).text('Bill To (Buyer)', left + boxW + 22, y + 10);
     doc.font('Helvetica').fontSize(9.2).fillColor(colors.text);
-    doc.text(bill.company.companyName, left + boxW + 22, y + 28);
-    doc.text(bill.company.address, left + boxW + 22, y + 42, { width: boxW - 20 });
-    doc.text(`GSTIN: ${bill.company.gstNo}`, left + boxW + 22, y + 72);
-    doc.text(`State: ${bill.company.state || '-'} (${bill.company.stateCode || '-'})`, left + boxW + 22, y + 86);
-    if (bill.company.phone) doc.text(`Phone: ${bill.company.phone}`, left + boxW + 22, y + 100);
-    if (bill.company.email) doc.text(`Email: ${bill.company.email}`, left + boxW + 22, y + 112);
+    drawPdfCellText(doc, bill.company.companyName, left + boxW + 22, y + 28, boxW - 20, 'left');
+    drawPdfCellText(doc, bill.company.address, left + boxW + 22, y + 42, boxW - 20, 'left');
+    drawPdfCellText(doc, `GSTIN: ${bill.company.gstNo}`, left + boxW + 22, y + 58, boxW - 20, 'left');
+    drawPdfCellText(
+      doc,
+      `State: ${bill.company.state || '-'} (${bill.company.stateCode || '-'})`,
+      left + boxW + 22,
+      y + 74,
+      boxW - 20,
+      'left'
+    );
+    if (bill.company.phone) drawPdfCellText(doc, `Phone: ${bill.company.phone}`, left + boxW + 22, y + 90, boxW - 20, 'left');
+    if (bill.company.email) drawPdfCellText(doc, `Email: ${bill.company.email}`, left + boxW + 22, y + 106, boxW - 20, 'left');
     y += boxH + 12;
 
     // Extra bill meta
@@ -6788,16 +6795,16 @@ app.get('/api/bills/:id.pdf', auth, requirePermission('billing:view'), async (re
       tax: left + 430,
       total: left + 482
     };
-    const rowH = 22;
+    const rowH = 24;
     doc.save().roundedRect(left, y, usableWidth, rowH, 4).fill(colors.panel).restore();
     doc.font('Helvetica-Bold').fontSize(9).fillColor(colors.heading);
-    doc.text('#', col.idx + 6, y + 7);
-    doc.text('Description', col.desc, y + 7, { width: 200 });
-    doc.text('HSN/SAC', col.hsn, y + 7, { width: 58 });
-    doc.text('Qty', col.qty, y + 7, { width: 40, align: 'right' });
-    doc.text('Rate', col.rate, y + 7, { width: 65, align: 'right' });
-    doc.text('GST %', col.tax, y + 7, { width: 45, align: 'right' });
-    doc.text('Amount', col.total, y + 7, { width: 78, align: 'right' });
+    drawPdfCellText(doc, '#', col.idx + 6, y + 7, 18, 'left');
+    drawPdfCellText(doc, 'Description', col.desc, y + 7, 200, 'left');
+    drawPdfCellText(doc, 'HSN/SAC', col.hsn, y + 7, 58, 'left');
+    drawPdfCellText(doc, 'Qty', col.qty, y + 7, 40, 'right');
+    drawPdfCellText(doc, 'Rate', col.rate, y + 7, 65, 'right');
+    drawPdfCellText(doc, 'GST %', col.tax, y + 7, 45, 'right');
+    drawPdfCellText(doc, 'Amount', col.total, y + 7, 78, 'right');
     y += rowH;
 
     bill.items.forEach((item, index) => {
@@ -6805,13 +6812,13 @@ app.get('/api/bills/:id.pdf', auth, requirePermission('billing:view'), async (re
       const rowTotal = Number(item.lineTotal || taxableValue + Number(item.gstAmount || 0));
       doc.save().rect(left, y, usableWidth, rowH).strokeColor(colors.border).lineWidth(0.5).stroke().restore();
       doc.font('Helvetica').fontSize(8.8).fillColor(colors.text);
-      doc.text(String(index + 1), col.idx + 6, y + 6);
-      doc.text(item.description || '-', col.desc, y + 6, { width: 194, ellipsis: true });
-      doc.text(item.hsnSac || '-', col.hsn, y + 6, { width: 56, ellipsis: true });
-      doc.text(String(item.quantity || 0), col.qty, y + 6, { width: 40, align: 'right' });
-      doc.text(moneyValue(item.rate || 0), col.rate, y + 6, { width: 65, align: 'right' });
-      doc.text(`${Number(item.gstPercent || 0).toFixed(2)}`, col.tax, y + 6, { width: 45, align: 'right' });
-      doc.text(moneyValue(rowTotal), col.total, y + 6, { width: 78, align: 'right' });
+      drawPdfCellText(doc, String(index + 1), col.idx + 6, y + 7, 18, 'left');
+      drawPdfCellText(doc, item.description || '-', col.desc, y + 7, 194, 'left');
+      drawPdfCellText(doc, item.hsnSac || '-', col.hsn, y + 7, 56, 'left');
+      drawPdfCellText(doc, String(item.quantity || 0), col.qty, y + 7, 40, 'right');
+      drawPdfCellText(doc, moneyValue(item.rate || 0), col.rate, y + 7, 65, 'right');
+      drawPdfCellText(doc, `${Number(item.gstPercent || 0).toFixed(2)}`, col.tax, y + 7, 45, 'right');
+      drawPdfCellText(doc, moneyValue(rowTotal), col.total, y + 7, 78, 'right');
       y += rowH;
       if (y > doc.page.height - 160) {
         doc.addPage();
@@ -6866,6 +6873,17 @@ function fitPdfCellText(doc, value, maxWidth) {
   return `${clipped}${ellipsis}`;
 }
 
+function drawPdfCellText(doc, value, x, y, width, align = 'left') {
+  const safeWidth = Math.max(8, Number(width || 0));
+  const text = fitPdfCellText(doc, value, safeWidth);
+  doc.text(text, x, y, {
+    width: safeWidth,
+    align: align === 'right' ? 'right' : 'left',
+    lineBreak: false,
+    ellipsis: true
+  });
+}
+
 function sendTabularPdfReport(res, { fileName, title, filters = [], summary = [], columns = [], rows = [] }) {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
@@ -6914,15 +6932,13 @@ function sendTabularPdfReport(res, { fileName, title, filters = [], summary = []
   const totalWidth = Math.max(1, normalizedCols.reduce((sum, c) => sum + c.width, 0));
   const scale = usableWidth / totalWidth;
   const widths = normalizedCols.map((c) => c.width * scale);
-  const rowHeight = 14;
+  const rowHeight = 17;
   const renderHeader = () => {
     doc.save().roundedRect(left, y - 2, usableWidth, 20, 4).fill('#e6efff').restore();
     let x = left + 2;
     normalizedCols.forEach((col, idx) => {
-      doc.font('Helvetica-Bold').fontSize(9).fillColor('#13315a').text(col.label, x, y + 3, {
-        width: widths[idx] - 4,
-        align: col.align
-      });
+      doc.font('Helvetica-Bold').fontSize(9).fillColor('#13315a');
+      drawPdfCellText(doc, col.label, x, y + 4, widths[idx] - 4, col.align);
       x += widths[idx];
     });
     y += 22;
@@ -6946,17 +6962,13 @@ function sendTabularPdfReport(res, { fileName, title, filters = [], summary = []
     let x = left + 2;
     normalizedCols.forEach((col, idx) => {
       doc.font('Helvetica').fontSize(9).fillColor('#111827');
-      const text = fitPdfCellText(doc, row[col.key], widths[idx] - 6);
-      doc.text(text, x, y, {
-        width: widths[idx] - 4,
-        align: col.align
-      });
+      drawPdfCellText(doc, row[col.key], x, y + 1, widths[idx] - 4, col.align);
       x += widths[idx];
     });
     doc
       .save()
-      .moveTo(left, y + 12)
-      .lineTo(left + usableWidth, y + 12)
+      .moveTo(left, y + rowHeight - 2)
+      .lineTo(left + usableWidth, y + rowHeight - 2)
       .strokeColor('#e5e7eb')
       .lineWidth(0.8)
       .stroke()
@@ -7112,22 +7124,6 @@ app.get('/api/export/trucks.pdf', auth, requirePermission('export:view'), async 
       })
       .sort((a, b) => (a.date < b.date ? 1 : -1));
 
-    const fileSuffix = [partyFilter || 'all', materialFilter || 'all'].join('-');
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="truck-report-${fileSuffix}.pdf"`);
-    const doc = new PDFDocument({ margin: 28, size: 'A4' });
-    doc.pipe(res);
-
-    const pageWidth = doc.page.width - 56;
-    const left = 28;
-    const heading = `${APP_NAME} - Truck Report`;
-    const generatedAt = new Date().toLocaleString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
     const partyLabel = partyFilter ? (partyFilter === 'narayan' ? 'Narayan' : 'Maa Vaishno') : 'All';
     const materialLabel = materialFilter
       ? materialFilter === 'pellet'
@@ -7136,89 +7132,42 @@ app.get('/api/export/trucks.pdf', auth, requirePermission('export:view'), async 
       : 'All';
     const totalQty = rows.reduce((sum, r) => sum + Number(r.quantity || 0), 0);
     const totalAmount = rows.reduce((sum, r) => sum + Number(r.totalAmount || 0), 0);
-
-    doc.font('Helvetica-Bold').fontSize(17).fillColor('#0f3b74').text(heading, left, 26, { width: pageWidth });
-    doc
-      .font('Helvetica')
-      .fontSize(10)
-      .fillColor('#26364a')
-      .text(`Generated: ${generatedAt}`, left, 50, { width: pageWidth });
-    doc
-      .font('Helvetica')
-      .fontSize(10)
-      .fillColor('#26364a')
-      .text(`Filters: Party=${partyLabel} | Material=${materialLabel}`, left, 65, { width: pageWidth });
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(10)
-      .fillColor('#111827')
-      .text(`Records: ${rows.length} | Total Qty: ${totalQty.toFixed(2)} | Total Amount: ${moneyInr(totalAmount)}`, left, 80, {
-        width: pageWidth
-      });
-
-    let y = 106;
-    const headerTop = y;
-    const widths = [66, 58, 72, 76, 52, 52, 68];
-    const cols = ['Date', 'Party', 'Material', 'Truck', 'Qty', 'Rate', 'Amount'];
-    doc.save().roundedRect(left, headerTop - 2, pageWidth, 20, 4).fill('#e6efff').restore();
-    let x = left + 2;
-    cols.forEach((col, idx) => {
-      doc.font('Helvetica-Bold').fontSize(9).fillColor('#13315a').text(col, x, headerTop + 3, { width: widths[idx] });
-      x += widths[idx];
-    });
-    y = headerTop + 22;
-
-    const renderHeader = () => {
-      doc.save().roundedRect(left, 26, pageWidth, 20, 4).fill('#e6efff').restore();
-      let hx = left + 2;
-      cols.forEach((col, idx) => {
-        doc.font('Helvetica-Bold').fontSize(9).fillColor('#13315a').text(col, hx, 31, { width: widths[idx] });
-        hx += widths[idx];
-      });
-      y = 50;
-    };
-
-    if (!rows.length) {
-      doc.font('Helvetica').fontSize(11).fillColor('#374151').text('No truck entries found for selected filters.', left, y + 8, {
-        width: pageWidth
-      });
-      doc.end();
-      return;
+    const filters = [`Party: ${partyLabel}`, `Material: ${materialLabel}`];
+    if (req.query.dateFrom || req.query.dateTo) {
+      filters.push(`Date: ${req.query.dateFrom || '-'} to ${req.query.dateTo || '-'}`);
     }
+    const summary = [
+      `Records: ${rows.length}`,
+      `Total Qty: ${totalQty.toFixed(2)}`,
+      `Total Amount: ${moneyInr(totalAmount)}`
+    ];
+    const reportRows = rows.map((r) => ({
+      date: r.date || '-',
+      party: truckPartyKey(r.party || 'narayan') === 'maa_vaishno' ? 'Maa Vaishno' : 'Narayan',
+      material: truckMaterialKey(r.rawMaterial) === 'briquettes' ? 'Briquettes' : 'Pellet',
+      truckNumber: r.truckNumber || '-',
+      quantity: Number(r.quantity || 0).toFixed(2),
+      rate: r.pricePerQuintal != null ? moneyInr(r.pricePerQuintal) : '-',
+      amount: r.totalAmount != null ? moneyInr(r.totalAmount) : '-'
+    }));
 
-    rows.forEach((r) => {
-      if (y > doc.page.height - 48) {
-        doc.addPage();
-        renderHeader();
-      }
-      const party = truckPartyKey(r.party || 'narayan') === 'maa_vaishno' ? 'Maa Vaishno' : 'Narayan';
-      const material = truckMaterialKey(r.rawMaterial) === 'briquettes' ? 'Briquettes' : 'Pellet';
-      const values = [
-        r.date || '-',
-        party,
-        material,
-        r.truckNumber || '-',
-        Number(r.quantity || 0).toFixed(2),
-        r.pricePerQuintal != null ? moneyInr(r.pricePerQuintal) : '-',
-        r.totalAmount != null ? moneyInr(r.totalAmount) : '-'
-      ];
-      let rowX = left + 2;
-      values.forEach((val, idx) => {
-        doc.font('Helvetica').fontSize(9).fillColor('#111827').text(String(val), rowX, y, { width: widths[idx] });
-        rowX += widths[idx];
-      });
-      doc
-        .save()
-        .moveTo(left, y + 13)
-        .lineTo(left + pageWidth, y + 13)
-        .strokeColor('#e5e7eb')
-        .lineWidth(0.8)
-        .stroke()
-        .restore();
-      y += 14;
+    const fileSuffix = [partyFilter || 'all', materialFilter || 'all'].join('-');
+    sendTabularPdfReport(res, {
+      fileName: `truck-report-${fileSuffix}.pdf`,
+      title: 'Truck Report',
+      filters,
+      summary,
+      columns: [
+        { key: 'date', label: 'Date', width: 74 },
+        { key: 'party', label: 'Party', width: 88 },
+        { key: 'material', label: 'Material', width: 92 },
+        { key: 'truckNumber', label: 'Truck', width: 100 },
+        { key: 'quantity', label: 'Qty', width: 70, align: 'right' },
+        { key: 'rate', label: 'Rate', width: 96, align: 'right' },
+        { key: 'amount', label: 'Amount', width: 96, align: 'right' }
+      ],
+      rows: reportRows
     });
-
-    doc.end();
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to export truck PDF' });
