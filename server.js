@@ -9,8 +9,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DB_PATH = path.join(__dirname, 'data', 'db.json');
 const DB_BACKUP_PATH = path.join(__dirname, 'data', 'db.backup.json');
-let STORAGE_MODE = 'sqlite';
 const DATABASE_URL = process.env.DATABASE_URL;
+let STORAGE_MODE = DATABASE_URL ? 'postgres' : 'sqlite';
 const APP_NAME = 'Narayan Enterprises';
 const STARTED_AT = new Date();
 
