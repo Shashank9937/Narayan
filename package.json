@@ -8,8 +8,9 @@
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^12.6.2",
     "express": "^4.21.2",
-    "pg": "^8.13.3",
-    "pdfkit": "^0.15.2"
+    "pdfkit": "^0.15.2",
+    "pg": "^8.13.3"
   }
 }

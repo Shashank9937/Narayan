@@ -9,7 +9,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DB_PATH = path.join(__dirname, 'data', 'db.json');
 const DB_BACKUP_PATH = path.join(__dirname, 'data', 'db.backup.json');
-const STORAGE_MODE = process.env.STORAGE_MODE === 'postgres' ? 'postgres' : 'json';
+let STORAGE_MODE = process.env.STORAGE_MODE;
+if (STORAGE_MODE !== 'postgres' && STORAGE_MODE !== 'json' && STORAGE_MODE !== 'sqlite') {
+  STORAGE_MODE = 'sqlite'; // Default to an in-app db (better-sqlite3) since data < 10k
+}
 const DATABASE_URL = process.env.DATABASE_URL;
 const APP_NAME = 'Narayan Enterprises';
 const STARTED_AT = new Date();
@@ -579,22 +582,22 @@ function mapExternalCompanyFromPayload(gstNo, payload) {
   const normalizedGst = normalizeGstNo(gstNo);
   const companyName = String(
     payload.companyName ||
-      payload.legalName ||
-      payload.legal_name ||
-      payload.tradeNam ||
-      payload.tradeName ||
-      payload.lgnm ||
-      payload.name ||
-      ''
+    payload.legalName ||
+    payload.legal_name ||
+    payload.tradeNam ||
+    payload.tradeName ||
+    payload.lgnm ||
+    payload.name ||
+    ''
   ).trim();
   const address = String(buildAddressFromPayload(payload) || '').trim();
   const stateCode = String(
     payload.stateCode ||
-      payload.state_code ||
-      payload.pradr?.addr?.stcd ||
-      payload.address?.stateCode ||
-      normalizedGst.slice(0, 2) ||
-      ''
+    payload.state_code ||
+    payload.pradr?.addr?.stcd ||
+    payload.address?.stateCode ||
+    normalizedGst.slice(0, 2) ||
+    ''
   ).trim();
   const state = String(payload.state || payload.address?.state || '').trim();
   const contactPerson = String(payload.contactPerson || payload.contact_person || '').trim();
@@ -809,7 +812,44 @@ function writeFileAtomic(filePath, content) {
   }
 }
 
+let sqliteDbInstance = null;
+function getSqlite() {
+  if (!sqliteDbInstance) {
+    const Database = require('better-sqlite3');
+    const sqlitePath = path.join(__dirname, 'data', 'app.sqlite');
+    sqliteDbInstance = new Database(sqlitePath);
+    sqliteDbInstance.pragma('journal_mode = WAL');
+    sqliteDbInstance.exec('CREATE TABLE IF NOT EXISTS store (id INTEGER PRIMARY KEY, state TEXT)');
+  }
+  return sqliteDbInstance;
+}
+
 function readJsonDb() {
+  if (STORAGE_MODE === 'sqlite') {
+    const db = getSqlite();
+    const row = db.prepare('SELECT state FROM store WHERE id = 1').get();
+    if (!row) {
+      // Try to migrate from db.json if exists
+      if (fs.existsSync(DB_PATH)) {
+        const raw = readJsonFileSafe(DB_PATH);
+        if (raw) {
+          const ensured = ensureDbShape(raw);
+          db.prepare('INSERT INTO store (id, state) VALUES (1, ?)').run(JSON.stringify(ensured.db));
+          return ensured.db;
+        }
+      }
+      const ensuredEmpty = ensureDbShape({});
+      db.prepare('INSERT INTO store (id, state) VALUES (1, ?)').run(JSON.stringify(ensuredEmpty.db));
+      return ensuredEmpty.db;
+    }
+    const raw = JSON.parse(row.state);
+    const ensured = ensureDbShape(raw);
+    if (ensured.changed) {
+      db.prepare('UPDATE store SET state = ? WHERE id = 1').run(JSON.stringify(ensured.db));
+    }
+    return ensured.db;
+  }
+
   if (!fs.existsSync(DB_PATH)) {
     if (fs.existsSync(DB_BACKUP_PATH)) {
       const fromBackup = readJsonFileSafe(DB_BACKUP_PATH);
@@ -853,9 +893,49 @@ function readJsonDb() {
 }
 
 function writeJsonDb(db, options = {}) {
-  const skipBackupRefresh = Boolean(options.skipBackupRefresh);
   const ensured = ensureDbShape(db);
   const payload = JSON.stringify(ensured.db, null, 2);
+
+  if (STORAGE_MODE === 'sqlite') {
+    const sqlDb = getSqlite();
+    sqlDb.prepare('UPDATE store SET state = ? WHERE id = 1').run(payload);
+
+    // Asynchronous dual-backup for absolute safety
+    setTimeout(() => {
+      try {
+        const backupsDir = path.join(__dirname, 'data', 'backups');
+        if (!fs.existsSync(backupsDir)) fs.mkdirSync(backupsDir, { recursive: true });
+
+        // Refresh the db.json and db.backup.json quietly
+        fs.writeFileSync(DB_PATH, payload, 'utf8');
+        fs.writeFileSync(DB_BACKUP_PATH, payload, 'utf8');
+
+        // Snapshot daily backups (keeping the latest 7 days)
+        const dateStr = new Date().toISOString().slice(0, 10);
+        const dailyBackupPath = path.join(backupsDir, `db-${dateStr}.json`);
+
+        if (!fs.existsSync(dailyBackupPath)) {
+          fs.writeFileSync(dailyBackupPath, payload, 'utf8');
+          // Cleanup old backups older than 7 days
+          const files = fs.readdirSync(backupsDir);
+          const now = Date.now();
+          for (const file of files) {
+            const filePath = path.join(backupsDir, file);
+            const stat = fs.statSync(filePath);
+            if (now - stat.mtimeMs > 7 * 24 * 60 * 60 * 1000) {
+              fs.unlinkSync(filePath);
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`[db-backup] Background snapshot failed: ${err.message}`);
+      }
+    }, 0);
+
+    return;
+  }
+
+  const skipBackupRefresh = Boolean(options.skipBackupRefresh);
   if (!skipBackupRefresh && fs.existsSync(DB_PATH)) {
     try {
       fs.copyFileSync(DB_PATH, DB_BACKUP_PATH);
@@ -875,7 +955,7 @@ function writeJsonDb(db, options = {}) {
 
 function jsonStore() {
   return {
-    mode: 'json',
+    mode: STORAGE_MODE,
     async init() {
       readJsonDb();
     },
@@ -884,7 +964,7 @@ function jsonStore() {
       return {
         ok: true,
         details: {
-          storage: 'json',
+          storage: STORAGE_MODE,
           employees: db.employees.length,
           sessions: db.sessions.length
         }
@@ -1112,10 +1192,10 @@ function jsonStore() {
         );
       });
     },
-      async upsertSalaryLedger(
-        employeeId,
-        totalSalary,
-        amountGiven,
+    async upsertSalaryLedger(
+      employeeId,
+      totalSalary,
+      amountGiven,
       note,
       totalToGive,
       period1ToGive,
@@ -2686,45 +2766,45 @@ function postgresStore() {
       period2Paid,
       extra = {}
     ) {
-        const paidRaw = roundMoney(Math.max(0, toSafeNumber(amountGiven, 0)));
-        const monthlySalaryApplied = roundMoney(Math.max(0, toSafeNumber(extra.monthlySalaryApplied, 0)));
-        const durationStart = normalizeISODateText(extra.durationStart || extra.sessionFrom);
-        const durationEnd = normalizeISODateText(extra.durationEnd || extra.sessionTo);
-        const durationDaysFromPayload = Math.max(0, Math.trunc(toSafeNumber(extra.durationDays, 0)));
-        const durationDays = durationDaysFromPayload > 0 ? durationDaysFromPayload : isoDaysInclusive(durationStart, durationEnd);
-        const durationMonths = roundMoney(
-          Math.max(0, toSafeNumber(extra.durationMonths, durationDays > 0 ? durationDays / 30 : 0))
-        );
-        const periodFromDays =
-          durationDays > 0 && monthlySalaryApplied > 0 ? roundMoney((monthlySalaryApplied / 30) * durationDays) : 0;
-        const periodFromMonths =
-          durationMonths > 0 && monthlySalaryApplied > 0 ? roundMoney(monthlySalaryApplied * durationMonths) : 0;
-        const periodSalary = roundMoney(Math.max(0, toSafeNumber(extra.periodSalary, periodFromDays || periodFromMonths)));
-        const salaryGeneratedBefore = roundMoney(Math.max(0, toSafeNumber(extra.salaryGeneratedBefore, 0)));
-        const paidBefore = roundMoney(Math.max(0, toSafeNumber(extra.paidBefore, 0)));
-        const openingPendingAuto = roundMoney(Math.max(0, salaryGeneratedBefore - paidBefore));
-        const openingPending = roundMoney(Math.max(0, toSafeNumber(extra.openingPending, openingPendingAuto)));
-        const paidForPrevious = roundMoney(Math.max(0, toSafeNumber(extra.paidForPrevious, 0)));
-        const paidForCurrent = roundMoney(Math.max(0, toSafeNumber(extra.paidForCurrent, 0)));
-        const totalPaidThisSession = roundMoney(Math.max(0, paidForPrevious + paidForCurrent));
-        const computedTotalSeed = roundMoney(salaryGeneratedBefore + periodSalary);
-        const computedTotal = roundMoney(
-          Math.max(0, toSafeNumber(totalToGive != null && totalToGive !== '' ? totalToGive : totalSalary, computedTotalSeed))
-        );
-        const paid = roundMoney(
-          Math.max(0, Math.min(computedTotal, Math.max(paidRaw, paidBefore + totalPaidThisSession)))
-        );
-        const section1ToGive = roundMoney(Math.max(0, toSafeNumber(period1ToGive, computedTotal)));
-        const section1Paid = roundMoney(Math.max(0, toSafeNumber(period1Paid, paid)));
-        const section2ToGive = roundMoney(Math.max(0, toSafeNumber(period2ToGive, 0)));
-        const section2Paid = roundMoney(Math.max(0, toSafeNumber(period2Paid, 0)));
-        const resolvedPeriodSalary =
-          periodSalary > 0 ? periodSalary : roundMoney(Math.max(0, computedTotal - salaryGeneratedBefore));
-        const existing = await pool.query('SELECT id FROM salary_ledgers WHERE employee_id = $1', [employeeId]);
-        if (existing.rows[0]) {
-          const id = existing.rows[0].id;
-          await pool.query(
-            `UPDATE salary_ledgers
+      const paidRaw = roundMoney(Math.max(0, toSafeNumber(amountGiven, 0)));
+      const monthlySalaryApplied = roundMoney(Math.max(0, toSafeNumber(extra.monthlySalaryApplied, 0)));
+      const durationStart = normalizeISODateText(extra.durationStart || extra.sessionFrom);
+      const durationEnd = normalizeISODateText(extra.durationEnd || extra.sessionTo);
+      const durationDaysFromPayload = Math.max(0, Math.trunc(toSafeNumber(extra.durationDays, 0)));
+      const durationDays = durationDaysFromPayload > 0 ? durationDaysFromPayload : isoDaysInclusive(durationStart, durationEnd);
+      const durationMonths = roundMoney(
+        Math.max(0, toSafeNumber(extra.durationMonths, durationDays > 0 ? durationDays / 30 : 0))
+      );
+      const periodFromDays =
+        durationDays > 0 && monthlySalaryApplied > 0 ? roundMoney((monthlySalaryApplied / 30) * durationDays) : 0;
+      const periodFromMonths =
+        durationMonths > 0 && monthlySalaryApplied > 0 ? roundMoney(monthlySalaryApplied * durationMonths) : 0;
+      const periodSalary = roundMoney(Math.max(0, toSafeNumber(extra.periodSalary, periodFromDays || periodFromMonths)));
+      const salaryGeneratedBefore = roundMoney(Math.max(0, toSafeNumber(extra.salaryGeneratedBefore, 0)));
+      const paidBefore = roundMoney(Math.max(0, toSafeNumber(extra.paidBefore, 0)));
+      const openingPendingAuto = roundMoney(Math.max(0, salaryGeneratedBefore - paidBefore));
+      const openingPending = roundMoney(Math.max(0, toSafeNumber(extra.openingPending, openingPendingAuto)));
+      const paidForPrevious = roundMoney(Math.max(0, toSafeNumber(extra.paidForPrevious, 0)));
+      const paidForCurrent = roundMoney(Math.max(0, toSafeNumber(extra.paidForCurrent, 0)));
+      const totalPaidThisSession = roundMoney(Math.max(0, paidForPrevious + paidForCurrent));
+      const computedTotalSeed = roundMoney(salaryGeneratedBefore + periodSalary);
+      const computedTotal = roundMoney(
+        Math.max(0, toSafeNumber(totalToGive != null && totalToGive !== '' ? totalToGive : totalSalary, computedTotalSeed))
+      );
+      const paid = roundMoney(
+        Math.max(0, Math.min(computedTotal, Math.max(paidRaw, paidBefore + totalPaidThisSession)))
+      );
+      const section1ToGive = roundMoney(Math.max(0, toSafeNumber(period1ToGive, computedTotal)));
+      const section1Paid = roundMoney(Math.max(0, toSafeNumber(period1Paid, paid)));
+      const section2ToGive = roundMoney(Math.max(0, toSafeNumber(period2ToGive, 0)));
+      const section2Paid = roundMoney(Math.max(0, toSafeNumber(period2Paid, 0)));
+      const resolvedPeriodSalary =
+        periodSalary > 0 ? periodSalary : roundMoney(Math.max(0, computedTotal - salaryGeneratedBefore));
+      const existing = await pool.query('SELECT id FROM salary_ledgers WHERE employee_id = $1', [employeeId]);
+      if (existing.rows[0]) {
+        const id = existing.rows[0].id;
+        await pool.query(
+          `UPDATE salary_ledgers
                 SET total_salary = $2,
                     amount_given = $3,
                     note = $4,
@@ -2745,56 +2825,30 @@ function postgresStore() {
                     paid_for_current = $19,
                     updated_at = NOW()
               WHERE id = $1`,
-            [
-              id,
-              computedTotal,
-              paid,
-              String(note || '').trim(),
-              section1ToGive,
-              section1Paid,
-              section2ToGive,
-              section2Paid,
-              monthlySalaryApplied || null,
-              durationStart || null,
-              durationEnd || null,
-              durationDays || null,
-              durationMonths || null,
-              openingPending,
-              resolvedPeriodSalary,
-              salaryGeneratedBefore,
-              paidBefore,
-              paidForPrevious,
-              paidForCurrent
-            ]
-          );
-          return {
+          [
             id,
-            employeeId,
-            totalSalary: computedTotal,
-            totalToGive: computedTotal,
-            amountGiven: paid,
-            sessionPaid: totalPaidThisSession,
+            computedTotal,
+            paid,
+            String(note || '').trim(),
+            section1ToGive,
+            section1Paid,
+            section2ToGive,
+            section2Paid,
+            monthlySalaryApplied || null,
+            durationStart || null,
+            durationEnd || null,
+            durationDays || null,
+            durationMonths || null,
+            openingPending,
+            resolvedPeriodSalary,
             salaryGeneratedBefore,
             paidBefore,
-            openingPending,
-            periodSalary: resolvedPeriodSalary,
             paidForPrevious,
-            paidForCurrent,
-            totalPaidThisSession,
-            period1ToGive: section1ToGive,
-            period1Paid: section1Paid,
-            period2ToGive: section2ToGive,
-            period2Paid: section2Paid,
-            monthlySalaryApplied,
-            durationMonths,
-            durationStart,
-            durationEnd,
-            durationDays,
-            note: String(note || '').trim()
-          };
-        }
-        const row = {
-          id: uid('sld'),
+            paidForCurrent
+          ]
+        );
+        return {
+          id,
           employeeId,
           totalSalary: computedTotal,
           totalToGive: computedTotal,
@@ -2816,12 +2870,38 @@ function postgresStore() {
           durationStart,
           durationEnd,
           durationDays,
-          note: String(note || '').trim(),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+          note: String(note || '').trim()
         };
-        await pool.query(
-          `INSERT INTO salary_ledgers (
+      }
+      const row = {
+        id: uid('sld'),
+        employeeId,
+        totalSalary: computedTotal,
+        totalToGive: computedTotal,
+        amountGiven: paid,
+        sessionPaid: totalPaidThisSession,
+        salaryGeneratedBefore,
+        paidBefore,
+        openingPending,
+        periodSalary: resolvedPeriodSalary,
+        paidForPrevious,
+        paidForCurrent,
+        totalPaidThisSession,
+        period1ToGive: section1ToGive,
+        period1Paid: section1Paid,
+        period2ToGive: section2ToGive,
+        period2Paid: section2Paid,
+        monthlySalaryApplied,
+        durationMonths,
+        durationStart,
+        durationEnd,
+        durationDays,
+        note: String(note || '').trim(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      await pool.query(
+        `INSERT INTO salary_ledgers (
               id,
               employee_id,
               total_salary,
@@ -2846,33 +2926,33 @@ function postgresStore() {
               updated_at
             )
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`,
-          [
-            row.id,
-            row.employeeId,
-            row.totalSalary,
-            row.amountGiven,
-            row.note,
-            row.period1ToGive,
-            row.period1Paid,
-            row.period2ToGive,
-            row.period2Paid,
-            row.monthlySalaryApplied || null,
-            row.durationStart || null,
-            row.durationEnd || null,
-            row.durationDays || null,
-            row.durationMonths || null,
-            row.openingPending,
-            row.periodSalary,
-            row.salaryGeneratedBefore,
-            row.paidBefore,
-            row.paidForPrevious,
-            row.paidForCurrent,
-            row.createdAt,
-            row.updatedAt
-          ]
-        );
-        return row;
-      },
+        [
+          row.id,
+          row.employeeId,
+          row.totalSalary,
+          row.amountGiven,
+          row.note,
+          row.period1ToGive,
+          row.period1Paid,
+          row.period2ToGive,
+          row.period2Paid,
+          row.monthlySalaryApplied || null,
+          row.durationStart || null,
+          row.durationEnd || null,
+          row.durationDays || null,
+          row.durationMonths || null,
+          row.openingPending,
+          row.periodSalary,
+          row.salaryGeneratedBefore,
+          row.paidBefore,
+          row.paidForPrevious,
+          row.paidForCurrent,
+          row.createdAt,
+          row.updatedAt
+        ]
+      );
+      return row;
+    },
     async listSalaryLedgerEntries(employeeId) {
       const res = await pool.query(
         `SELECT *
