@@ -9,8 +9,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DB_PATH = path.join(__dirname, 'data', 'db.json');
 const DB_BACKUP_PATH = path.join(__dirname, 'data', 'db.backup.json');
+const STORAGE_MODE = process.env.STORAGE_MODE === 'postgres' ? 'postgres' : 'json';
 const DATABASE_URL = process.env.DATABASE_URL;
-let STORAGE_MODE = DATABASE_URL ? 'postgres' : 'sqlite';
 const APP_NAME = 'Narayan Enterprises';
 const STARTED_AT = new Date();
 
@@ -139,44 +139,6 @@ function parseISODate(dateStr) {
 function normalizeISODateText(value) {
   const text = String(value || '').slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : '';
-}
-
-function normalizeISODateFlexible(value) {
-  const strict = normalizeISODateText(value);
-  if (strict) return strict;
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, '0')}-${String(
-      value.getUTCDate()
-    ).padStart(2, '0')}`;
-  }
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  const looseIso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s].*)?$/);
-  if (looseIso) {
-    const year = Number(looseIso[1]);
-    const month = Number(looseIso[2]);
-    const day = Number(looseIso[3]);
-    const parsed = new Date(Date.UTC(year, month - 1, day));
-    if (
-      parsed.getUTCFullYear() === year &&
-      parsed.getUTCMonth() === month - 1 &&
-      parsed.getUTCDate() === day
-    ) {
-      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    }
-  }
-  const parsed = new Date(raw);
-  if (!Number.isNaN(parsed.getTime())) {
-    return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}-${String(
-      parsed.getUTCDate()
-    ).padStart(2, '0')}`;
-  }
-  return '';
-}
-
-function dbDateToISO(value, fallback = '') {
-  const normalized = normalizeISODateFlexible(value);
-  return normalized || fallback;
 }
 
 function isoDaysInclusive(startDateText, endDateText) {
@@ -579,22 +541,22 @@ function mapExternalCompanyFromPayload(gstNo, payload) {
   const normalizedGst = normalizeGstNo(gstNo);
   const companyName = String(
     payload.companyName ||
-    payload.legalName ||
-    payload.legal_name ||
-    payload.tradeNam ||
-    payload.tradeName ||
-    payload.lgnm ||
-    payload.name ||
-    ''
+      payload.legalName ||
+      payload.legal_name ||
+      payload.tradeNam ||
+      payload.tradeName ||
+      payload.lgnm ||
+      payload.name ||
+      ''
   ).trim();
   const address = String(buildAddressFromPayload(payload) || '').trim();
   const stateCode = String(
     payload.stateCode ||
-    payload.state_code ||
-    payload.pradr?.addr?.stcd ||
-    payload.address?.stateCode ||
-    normalizedGst.slice(0, 2) ||
-    ''
+      payload.state_code ||
+      payload.pradr?.addr?.stcd ||
+      payload.address?.stateCode ||
+      normalizedGst.slice(0, 2) ||
+      ''
   ).trim();
   const state = String(payload.state || payload.address?.state || '').trim();
   const contactPerson = String(payload.contactPerson || payload.contact_person || '').trim();
@@ -809,44 +771,7 @@ function writeFileAtomic(filePath, content) {
   }
 }
 
-let sqliteDbInstance = null;
-function getSqlite() {
-  if (!sqliteDbInstance) {
-    const Database = require('better-sqlite3');
-    const sqlitePath = path.join(__dirname, 'data', 'app.sqlite');
-    sqliteDbInstance = new Database(sqlitePath);
-    sqliteDbInstance.pragma('journal_mode = WAL');
-    sqliteDbInstance.exec('CREATE TABLE IF NOT EXISTS store (id INTEGER PRIMARY KEY, state TEXT)');
-  }
-  return sqliteDbInstance;
-}
-
 function readJsonDb() {
-  if (STORAGE_MODE === 'sqlite') {
-    const db = getSqlite();
-    const row = db.prepare('SELECT state FROM store WHERE id = 1').get();
-    if (!row) {
-      // Try to migrate from db.json if exists
-      if (fs.existsSync(DB_PATH)) {
-        const raw = readJsonFileSafe(DB_PATH);
-        if (raw) {
-          const ensured = ensureDbShape(raw);
-          db.prepare('INSERT INTO store (id, state) VALUES (1, ?)').run(JSON.stringify(ensured.db));
-          return ensured.db;
-        }
-      }
-      const ensuredEmpty = ensureDbShape({});
-      db.prepare('INSERT INTO store (id, state) VALUES (1, ?)').run(JSON.stringify(ensuredEmpty.db));
-      return ensuredEmpty.db;
-    }
-    const raw = JSON.parse(row.state);
-    const ensured = ensureDbShape(raw);
-    if (ensured.changed) {
-      db.prepare('UPDATE store SET state = ? WHERE id = 1').run(JSON.stringify(ensured.db));
-    }
-    return ensured.db;
-  }
-
   if (!fs.existsSync(DB_PATH)) {
     if (fs.existsSync(DB_BACKUP_PATH)) {
       const fromBackup = readJsonFileSafe(DB_BACKUP_PATH);
@@ -890,49 +815,9 @@ function readJsonDb() {
 }
 
 function writeJsonDb(db, options = {}) {
+  const skipBackupRefresh = Boolean(options.skipBackupRefresh);
   const ensured = ensureDbShape(db);
   const payload = JSON.stringify(ensured.db, null, 2);
-
-  if (STORAGE_MODE === 'sqlite') {
-    const sqlDb = getSqlite();
-    sqlDb.prepare('UPDATE store SET state = ? WHERE id = 1').run(payload);
-
-    // Asynchronous dual-backup for absolute safety
-    setTimeout(() => {
-      try {
-        const backupsDir = path.join(__dirname, 'data', 'backups');
-        if (!fs.existsSync(backupsDir)) fs.mkdirSync(backupsDir, { recursive: true });
-
-        // Refresh the db.json and db.backup.json quietly
-        fs.writeFileSync(DB_PATH, payload, 'utf8');
-        fs.writeFileSync(DB_BACKUP_PATH, payload, 'utf8');
-
-        // Snapshot daily backups (keeping the latest 7 days)
-        const dateStr = new Date().toISOString().slice(0, 10);
-        const dailyBackupPath = path.join(backupsDir, `db-${dateStr}.json`);
-
-        if (!fs.existsSync(dailyBackupPath)) {
-          fs.writeFileSync(dailyBackupPath, payload, 'utf8');
-          // Cleanup old backups older than 7 days
-          const files = fs.readdirSync(backupsDir);
-          const now = Date.now();
-          for (const file of files) {
-            const filePath = path.join(backupsDir, file);
-            const stat = fs.statSync(filePath);
-            if (now - stat.mtimeMs > 7 * 24 * 60 * 60 * 1000) {
-              fs.unlinkSync(filePath);
-            }
-          }
-        }
-      } catch (err) {
-        console.error(`[db-backup] Background snapshot failed: ${err.message}`);
-      }
-    }, 0);
-
-    return;
-  }
-
-  const skipBackupRefresh = Boolean(options.skipBackupRefresh);
   if (!skipBackupRefresh && fs.existsSync(DB_PATH)) {
     try {
       fs.copyFileSync(DB_PATH, DB_BACKUP_PATH);
@@ -952,7 +837,7 @@ function writeJsonDb(db, options = {}) {
 
 function jsonStore() {
   return {
-    mode: STORAGE_MODE,
+    mode: 'json',
     async init() {
       readJsonDb();
     },
@@ -961,7 +846,7 @@ function jsonStore() {
       return {
         ok: true,
         details: {
-          storage: STORAGE_MODE,
+          storage: 'json',
           employees: db.employees.length,
           sessions: db.sessions.length
         }
@@ -1124,26 +1009,6 @@ function jsonStore() {
         (a) => String(a.employeeId) === String(employeeId) && monthOf(a.date) === month
       );
     },
-    async updateAdvance(id, data) {
-      const db = readJsonDb();
-      const row = db.salaryAdvances.find((a) => String(a.id) === String(id));
-      if (!row) return null;
-      row.employeeId = String(data.employeeId || row.employeeId || '').trim();
-      row.date = normalizeISODateText(data.date || row.date);
-      row.amount = roundMoney(toSafeNumber(data.amount, row.amount || 0));
-      row.note = data.note == null ? String(row.note || '').trim() : String(data.note).trim();
-      row.updatedAt = new Date().toISOString();
-      writeJsonDb(db);
-      return row;
-    },
-    async deleteAdvance(id) {
-      const db = readJsonDb();
-      const before = db.salaryAdvances.length;
-      db.salaryAdvances = db.salaryAdvances.filter((a) => String(a.id) !== String(id));
-      if (before === db.salaryAdvances.length) return false;
-      writeJsonDb(db);
-      return true;
-    },
     async setAdvancesForMonth(employeeId, month, totalAdvances) {
       const db = readJsonDb();
       const currentSum = db.salaryAdvances
@@ -1189,10 +1054,10 @@ function jsonStore() {
         );
       });
     },
-    async upsertSalaryLedger(
-      employeeId,
-      totalSalary,
-      amountGiven,
+      async upsertSalaryLedger(
+        employeeId,
+        totalSalary,
+        amountGiven,
       note,
       totalToGive,
       period1ToGive,
@@ -2440,7 +2305,7 @@ function postgresStore() {
         name: r.name,
         role: r.role,
         monthlySalary: Number(r.monthly_salary),
-        joiningDate: dbDateToISO(r.joining_date, dbDateToISO(r.created_at)),
+        joiningDate: r.joining_date ? String(r.joining_date).slice(0, 10) : String(r.created_at).slice(0, 10),
         active: r.active,
         createdAt: r.created_at
       }));
@@ -2454,7 +2319,7 @@ function postgresStore() {
         name: r.name,
         role: r.role,
         monthlySalary: Number(r.monthly_salary),
-        joiningDate: dbDateToISO(r.joining_date, dbDateToISO(r.created_at)),
+        joiningDate: r.joining_date ? String(r.joining_date).slice(0, 10) : String(r.created_at).slice(0, 10),
         active: r.active,
         createdAt: r.created_at
       };
@@ -2492,7 +2357,7 @@ function postgresStore() {
         name: r.name,
         role: r.role,
         monthlySalary: Number(r.monthly_salary),
-        joiningDate: dbDateToISO(r.joining_date, dbDateToISO(r.created_at)),
+        joiningDate: r.joining_date ? String(r.joining_date).slice(0, 10) : String(r.created_at).slice(0, 10),
         active: r.active,
         createdAt: r.created_at
       };
@@ -2537,7 +2402,7 @@ function postgresStore() {
       return res.rows.map((r) => ({
         id: r.id,
         employeeId: r.employee_id,
-        date: dbDateToISO(r.date),
+        date: String(r.date).slice(0, 10),
         status: r.status,
         createdAt: r.created_at
       }));
@@ -2594,7 +2459,7 @@ function postgresStore() {
       return res.rows.map((r) => ({
         id: r.id,
         employeeId: r.employee_id,
-        date: dbDateToISO(r.date),
+        date: String(r.date).slice(0, 10),
         amount: Number(r.amount),
         note: r.note || ''
       }));
@@ -2610,41 +2475,10 @@ function postgresStore() {
       return res.rows.map((r) => ({
         id: r.id,
         employeeId: r.employee_id,
-        date: dbDateToISO(r.date),
+        date: String(r.date).slice(0, 10),
         amount: Number(r.amount),
         note: r.note || ''
       }));
-    },
-    async updateAdvance(id, data) {
-      const res = await pool.query(
-        `UPDATE salary_advances
-         SET employee_id = $2,
-             date = $3,
-             amount = $4,
-             note = $5
-         WHERE id = $1
-         RETURNING *`,
-        [
-          id,
-          String(data.employeeId || '').trim(),
-          normalizeISODateText(data.date),
-          roundMoney(toSafeNumber(data.amount, 0)),
-          String(data.note || '').trim() || null
-        ]
-      );
-      if (!res.rows[0]) return null;
-      const r = res.rows[0];
-      return {
-        id: r.id,
-        employeeId: r.employee_id,
-        date: dbDateToISO(r.date),
-        amount: Number(r.amount),
-        note: r.note || ''
-      };
-    },
-    async deleteAdvance(id) {
-      const res = await pool.query('DELETE FROM salary_advances WHERE id = $1', [id]);
-      return res.rowCount > 0;
     },
     async setAdvancesForMonth(employeeId, month, totalAdvances) {
       const sumRes = await pool.query(
@@ -2763,45 +2597,45 @@ function postgresStore() {
       period2Paid,
       extra = {}
     ) {
-      const paidRaw = roundMoney(Math.max(0, toSafeNumber(amountGiven, 0)));
-      const monthlySalaryApplied = roundMoney(Math.max(0, toSafeNumber(extra.monthlySalaryApplied, 0)));
-      const durationStart = normalizeISODateText(extra.durationStart || extra.sessionFrom);
-      const durationEnd = normalizeISODateText(extra.durationEnd || extra.sessionTo);
-      const durationDaysFromPayload = Math.max(0, Math.trunc(toSafeNumber(extra.durationDays, 0)));
-      const durationDays = durationDaysFromPayload > 0 ? durationDaysFromPayload : isoDaysInclusive(durationStart, durationEnd);
-      const durationMonths = roundMoney(
-        Math.max(0, toSafeNumber(extra.durationMonths, durationDays > 0 ? durationDays / 30 : 0))
-      );
-      const periodFromDays =
-        durationDays > 0 && monthlySalaryApplied > 0 ? roundMoney((monthlySalaryApplied / 30) * durationDays) : 0;
-      const periodFromMonths =
-        durationMonths > 0 && monthlySalaryApplied > 0 ? roundMoney(monthlySalaryApplied * durationMonths) : 0;
-      const periodSalary = roundMoney(Math.max(0, toSafeNumber(extra.periodSalary, periodFromDays || periodFromMonths)));
-      const salaryGeneratedBefore = roundMoney(Math.max(0, toSafeNumber(extra.salaryGeneratedBefore, 0)));
-      const paidBefore = roundMoney(Math.max(0, toSafeNumber(extra.paidBefore, 0)));
-      const openingPendingAuto = roundMoney(Math.max(0, salaryGeneratedBefore - paidBefore));
-      const openingPending = roundMoney(Math.max(0, toSafeNumber(extra.openingPending, openingPendingAuto)));
-      const paidForPrevious = roundMoney(Math.max(0, toSafeNumber(extra.paidForPrevious, 0)));
-      const paidForCurrent = roundMoney(Math.max(0, toSafeNumber(extra.paidForCurrent, 0)));
-      const totalPaidThisSession = roundMoney(Math.max(0, paidForPrevious + paidForCurrent));
-      const computedTotalSeed = roundMoney(salaryGeneratedBefore + periodSalary);
-      const computedTotal = roundMoney(
-        Math.max(0, toSafeNumber(totalToGive != null && totalToGive !== '' ? totalToGive : totalSalary, computedTotalSeed))
-      );
-      const paid = roundMoney(
-        Math.max(0, Math.min(computedTotal, Math.max(paidRaw, paidBefore + totalPaidThisSession)))
-      );
-      const section1ToGive = roundMoney(Math.max(0, toSafeNumber(period1ToGive, computedTotal)));
-      const section1Paid = roundMoney(Math.max(0, toSafeNumber(period1Paid, paid)));
-      const section2ToGive = roundMoney(Math.max(0, toSafeNumber(period2ToGive, 0)));
-      const section2Paid = roundMoney(Math.max(0, toSafeNumber(period2Paid, 0)));
-      const resolvedPeriodSalary =
-        periodSalary > 0 ? periodSalary : roundMoney(Math.max(0, computedTotal - salaryGeneratedBefore));
-      const existing = await pool.query('SELECT id FROM salary_ledgers WHERE employee_id = $1', [employeeId]);
-      if (existing.rows[0]) {
-        const id = existing.rows[0].id;
-        await pool.query(
-          `UPDATE salary_ledgers
+        const paidRaw = roundMoney(Math.max(0, toSafeNumber(amountGiven, 0)));
+        const monthlySalaryApplied = roundMoney(Math.max(0, toSafeNumber(extra.monthlySalaryApplied, 0)));
+        const durationStart = normalizeISODateText(extra.durationStart || extra.sessionFrom);
+        const durationEnd = normalizeISODateText(extra.durationEnd || extra.sessionTo);
+        const durationDaysFromPayload = Math.max(0, Math.trunc(toSafeNumber(extra.durationDays, 0)));
+        const durationDays = durationDaysFromPayload > 0 ? durationDaysFromPayload : isoDaysInclusive(durationStart, durationEnd);
+        const durationMonths = roundMoney(
+          Math.max(0, toSafeNumber(extra.durationMonths, durationDays > 0 ? durationDays / 30 : 0))
+        );
+        const periodFromDays =
+          durationDays > 0 && monthlySalaryApplied > 0 ? roundMoney((monthlySalaryApplied / 30) * durationDays) : 0;
+        const periodFromMonths =
+          durationMonths > 0 && monthlySalaryApplied > 0 ? roundMoney(monthlySalaryApplied * durationMonths) : 0;
+        const periodSalary = roundMoney(Math.max(0, toSafeNumber(extra.periodSalary, periodFromDays || periodFromMonths)));
+        const salaryGeneratedBefore = roundMoney(Math.max(0, toSafeNumber(extra.salaryGeneratedBefore, 0)));
+        const paidBefore = roundMoney(Math.max(0, toSafeNumber(extra.paidBefore, 0)));
+        const openingPendingAuto = roundMoney(Math.max(0, salaryGeneratedBefore - paidBefore));
+        const openingPending = roundMoney(Math.max(0, toSafeNumber(extra.openingPending, openingPendingAuto)));
+        const paidForPrevious = roundMoney(Math.max(0, toSafeNumber(extra.paidForPrevious, 0)));
+        const paidForCurrent = roundMoney(Math.max(0, toSafeNumber(extra.paidForCurrent, 0)));
+        const totalPaidThisSession = roundMoney(Math.max(0, paidForPrevious + paidForCurrent));
+        const computedTotalSeed = roundMoney(salaryGeneratedBefore + periodSalary);
+        const computedTotal = roundMoney(
+          Math.max(0, toSafeNumber(totalToGive != null && totalToGive !== '' ? totalToGive : totalSalary, computedTotalSeed))
+        );
+        const paid = roundMoney(
+          Math.max(0, Math.min(computedTotal, Math.max(paidRaw, paidBefore + totalPaidThisSession)))
+        );
+        const section1ToGive = roundMoney(Math.max(0, toSafeNumber(period1ToGive, computedTotal)));
+        const section1Paid = roundMoney(Math.max(0, toSafeNumber(period1Paid, paid)));
+        const section2ToGive = roundMoney(Math.max(0, toSafeNumber(period2ToGive, 0)));
+        const section2Paid = roundMoney(Math.max(0, toSafeNumber(period2Paid, 0)));
+        const resolvedPeriodSalary =
+          periodSalary > 0 ? periodSalary : roundMoney(Math.max(0, computedTotal - salaryGeneratedBefore));
+        const existing = await pool.query('SELECT id FROM salary_ledgers WHERE employee_id = $1', [employeeId]);
+        if (existing.rows[0]) {
+          const id = existing.rows[0].id;
+          await pool.query(
+            `UPDATE salary_ledgers
                 SET total_salary = $2,
                     amount_given = $3,
                     note = $4,
@@ -2822,30 +2656,56 @@ function postgresStore() {
                     paid_for_current = $19,
                     updated_at = NOW()
               WHERE id = $1`,
-          [
+            [
+              id,
+              computedTotal,
+              paid,
+              String(note || '').trim(),
+              section1ToGive,
+              section1Paid,
+              section2ToGive,
+              section2Paid,
+              monthlySalaryApplied || null,
+              durationStart || null,
+              durationEnd || null,
+              durationDays || null,
+              durationMonths || null,
+              openingPending,
+              resolvedPeriodSalary,
+              salaryGeneratedBefore,
+              paidBefore,
+              paidForPrevious,
+              paidForCurrent
+            ]
+          );
+          return {
             id,
-            computedTotal,
-            paid,
-            String(note || '').trim(),
-            section1ToGive,
-            section1Paid,
-            section2ToGive,
-            section2Paid,
-            monthlySalaryApplied || null,
-            durationStart || null,
-            durationEnd || null,
-            durationDays || null,
-            durationMonths || null,
-            openingPending,
-            resolvedPeriodSalary,
+            employeeId,
+            totalSalary: computedTotal,
+            totalToGive: computedTotal,
+            amountGiven: paid,
+            sessionPaid: totalPaidThisSession,
             salaryGeneratedBefore,
             paidBefore,
+            openingPending,
+            periodSalary: resolvedPeriodSalary,
             paidForPrevious,
-            paidForCurrent
-          ]
-        );
-        return {
-          id,
+            paidForCurrent,
+            totalPaidThisSession,
+            period1ToGive: section1ToGive,
+            period1Paid: section1Paid,
+            period2ToGive: section2ToGive,
+            period2Paid: section2Paid,
+            monthlySalaryApplied,
+            durationMonths,
+            durationStart,
+            durationEnd,
+            durationDays,
+            note: String(note || '').trim()
+          };
+        }
+        const row = {
+          id: uid('sld'),
           employeeId,
           totalSalary: computedTotal,
           totalToGive: computedTotal,
@@ -2867,38 +2727,12 @@ function postgresStore() {
           durationStart,
           durationEnd,
           durationDays,
-          note: String(note || '').trim()
+          note: String(note || '').trim(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         };
-      }
-      const row = {
-        id: uid('sld'),
-        employeeId,
-        totalSalary: computedTotal,
-        totalToGive: computedTotal,
-        amountGiven: paid,
-        sessionPaid: totalPaidThisSession,
-        salaryGeneratedBefore,
-        paidBefore,
-        openingPending,
-        periodSalary: resolvedPeriodSalary,
-        paidForPrevious,
-        paidForCurrent,
-        totalPaidThisSession,
-        period1ToGive: section1ToGive,
-        period1Paid: section1Paid,
-        period2ToGive: section2ToGive,
-        period2Paid: section2Paid,
-        monthlySalaryApplied,
-        durationMonths,
-        durationStart,
-        durationEnd,
-        durationDays,
-        note: String(note || '').trim(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      await pool.query(
-        `INSERT INTO salary_ledgers (
+        await pool.query(
+          `INSERT INTO salary_ledgers (
               id,
               employee_id,
               total_salary,
@@ -2923,33 +2757,33 @@ function postgresStore() {
               updated_at
             )
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`,
-        [
-          row.id,
-          row.employeeId,
-          row.totalSalary,
-          row.amountGiven,
-          row.note,
-          row.period1ToGive,
-          row.period1Paid,
-          row.period2ToGive,
-          row.period2Paid,
-          row.monthlySalaryApplied || null,
-          row.durationStart || null,
-          row.durationEnd || null,
-          row.durationDays || null,
-          row.durationMonths || null,
-          row.openingPending,
-          row.periodSalary,
-          row.salaryGeneratedBefore,
-          row.paidBefore,
-          row.paidForPrevious,
-          row.paidForCurrent,
-          row.createdAt,
-          row.updatedAt
-        ]
-      );
-      return row;
-    },
+          [
+            row.id,
+            row.employeeId,
+            row.totalSalary,
+            row.amountGiven,
+            row.note,
+            row.period1ToGive,
+            row.period1Paid,
+            row.period2ToGive,
+            row.period2Paid,
+            row.monthlySalaryApplied || null,
+            row.durationStart || null,
+            row.durationEnd || null,
+            row.durationDays || null,
+            row.durationMonths || null,
+            row.openingPending,
+            row.periodSalary,
+            row.salaryGeneratedBefore,
+            row.paidBefore,
+            row.paidForPrevious,
+            row.paidForCurrent,
+            row.createdAt,
+            row.updatedAt
+          ]
+        );
+        return row;
+      },
     async listSalaryLedgerEntries(employeeId) {
       const res = await pool.query(
         `SELECT *
@@ -2961,7 +2795,7 @@ function postgresStore() {
       return res.rows.map((r) => ({
         id: r.id,
         employeeId: r.employee_id,
-        date: dbDateToISO(r.date),
+        date: String(r.date).slice(0, 10),
         particulars: r.particulars,
         voucherType: r.voucher_type || 'Manual',
         voucherNo: r.voucher_no || '',
@@ -3048,7 +2882,7 @@ function postgresStore() {
       return {
         id: r.id,
         employeeId: r.employee_id,
-        date: dbDateToISO(r.date),
+        date: String(r.date).slice(0, 10),
         particulars: r.particulars,
         voucherType: r.voucher_type || 'Manual',
         voucherNo: r.voucher_no || '',
@@ -3081,8 +2915,7 @@ function postgresStore() {
       );
 
       return res.rows.map((r) => {
-        const joiningDateIso = dbDateToISO(r.joining_date, dbDateToISO(r.created_at));
-        const startMonth = String(joiningDateIso || '').slice(0, 7);
+        const startMonth = String(r.joining_date || r.created_at).slice(0, 7);
         const [startY, startM] = startMonth.split('-').map(Number);
         const [endY, endM] = month.split('-').map(Number);
         const monthsWorked = Math.max(0, (endY - startY) * 12 + (endM - startM) + 1);
@@ -3094,7 +2927,7 @@ function postgresStore() {
           name: r.name,
           role: r.role,
           monthlySalary: Number(r.monthly_salary),
-          joiningDate: joiningDateIso,
+          joiningDate: r.joining_date ? String(r.joining_date).slice(0, 10) : String(r.created_at).slice(0, 10),
           advances: Number(r.advances),
           remaining: Math.max(0, Number(r.monthly_salary) - Number(r.advances)),
           monthsWorked,
@@ -4374,44 +4207,6 @@ function requirePermission(permission) {
   };
 }
 
-app.get('/api/restore-lost-data', async (req, res) => {
-  if (STORAGE_MODE !== 'postgres') return res.json({ message: 'Only applies to Postgres mode' });
-  try {
-    const raw = readJsonFileSafe(DB_PATH);
-    if (!raw) return res.status(500).json({ error: 'No db.json found locally to restore' });
-    const ensured = ensureDbShape(raw);
-    const db = ensured.db;
-    const pool = new (require('pg').Pool)({ connectionString: DATABASE_URL });
-
-    // Migrate Employees
-    for (const e of db.employees) {
-      await pool.query(
-        'INSERT INTO employees (id, name, role, monthly_salary, joining_date, active, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (id) DO NOTHING',
-        [e.id, e.name, e.role, e.monthlySalary, e.joiningDate || new Date().toISOString().slice(0, 10), e.active !== false, e.createdAt || new Date().toISOString(), e.updatedAt || new Date().toISOString()]
-      );
-    }
-    // Migrate Attendance
-    for (const a of db.attendance) {
-      await pool.query(
-        'INSERT INTO attendance (id, employee_id, date, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING',
-        [a.id, a.employeeId, a.date, a.status, a.createdAt || new Date().toISOString(), a.updatedAt || new Date().toISOString()]
-      );
-    }
-    // Migrate Salary Advances
-    for (const a of db.salaryAdvances) {
-      await pool.query(
-        'INSERT INTO salary_advances (id, employee_id, date, amount, note, created_at) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING',
-        [a.id, a.employeeId, a.date, a.amount, a.note || '', a.createdAt || new Date().toISOString()]
-      );
-    }
-    await pool.end();
-    return res.json({ message: 'Data restored successfully! Please go back to the app and refresh.' });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: String(err) });
-  }
-});
-
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
@@ -4615,27 +4410,6 @@ app.get('/api/attendance-report', auth, requirePermission('attendance:report'), 
   }
 });
 
-app.get('/api/advances', auth, requirePermission('advances:create'), async (req, res) => {
-  const employeeId = String(req.query.employeeId || '').trim();
-  if (!employeeId) return res.status(400).json({ error: 'employeeId is required' });
-  const month = String(req.query.month || '').trim();
-  if (month && !/^\d{4}-\d{2}$/.test(month)) {
-    return res.status(400).json({ error: 'month must be in YYYY-MM format' });
-  }
-  try {
-    const employee = await store.getEmployeeById(employeeId);
-    if (!employee) return res.status(404).json({ error: 'Employee not found' });
-    const rows =
-      month && typeof store.getEmployeeAdvances === 'function'
-        ? await store.getEmployeeAdvances(employeeId, month)
-        : await store.listEmployeeAdvances(employeeId);
-    return res.json(Array.isArray(rows) ? rows : []);
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: 'Unable to fetch advances' });
-  }
-});
-
 app.put('/api/advances/set', auth, requirePermission('advances:create'), async (req, res) => {
   const { employeeId, month, totalAdvances } = req.body;
   if (!employeeId || !month) {
@@ -4681,57 +4455,6 @@ app.post('/api/advances', auth, requirePermission('advances:create'), async (req
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to create advance' });
-  }
-});
-
-app.put('/api/advances/:id', auth, requirePermission('advances:create'), async (req, res) => {
-  const id = String(req.params.id || '').trim();
-  const { employeeId, date, amount, note } = req.body;
-  if (!id) return res.status(400).json({ error: 'id is required' });
-  if (!employeeId || !date || amount == null) {
-    return res.status(400).json({ error: 'employeeId, date, amount are required' });
-  }
-  const normalizedDate = normalizeISODateText(date);
-  if (!normalizedDate || !parseISODate(normalizedDate)) {
-    return res.status(400).json({ error: 'Valid date is required' });
-  }
-  const numericAmount = Number(amount);
-  if (Number.isNaN(numericAmount) || numericAmount <= 0) {
-    return res.status(400).json({ error: 'amount must be a positive number' });
-  }
-  try {
-    const employee = await store.getEmployeeById(employeeId);
-    if (!employee) return res.status(404).json({ error: 'Employee not found' });
-    if (typeof store.updateAdvance !== 'function') {
-      return res.status(500).json({ error: 'Advance update is not supported' });
-    }
-    const updated = await store.updateAdvance(id, {
-      employeeId,
-      date: normalizedDate,
-      amount: numericAmount,
-      note
-    });
-    if (!updated) return res.status(404).json({ error: 'Advance not found' });
-    return res.json(updated);
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: 'Unable to update advance' });
-  }
-});
-
-app.delete('/api/advances/:id', auth, requirePermission('advances:create'), async (req, res) => {
-  const id = String(req.params.id || '').trim();
-  if (!id) return res.status(400).json({ error: 'id is required' });
-  try {
-    if (typeof store.deleteAdvance !== 'function') {
-      return res.status(500).json({ error: 'Advance delete is not supported' });
-    }
-    const deleted = await store.deleteAdvance(id);
-    if (!deleted) return res.status(404).json({ error: 'Advance not found' });
-    return res.status(204).send();
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: 'Unable to delete advance' });
   }
 });
 
@@ -5170,10 +4893,11 @@ app.get('/api/salary-ledgers/:employeeId.pdf', auth, requirePermission('salaryle
         .lineWidth(1)
         .stroke()
         .restore();
-      doc.fillColor(colors.muted).font('Helvetica-Bold').fontSize(9);
-      drawPdfCellText(doc, item[0], x + 8, y + 5, 88, 'left');
-      doc.fillColor(colors.text).font('Helvetica').fontSize(9.5);
-      drawPdfCellText(doc, String(item[1] || '-'), x + 102, y + 5, colWidth - 118, 'left');
+      doc.fillColor(colors.muted).font('Helvetica-Bold').fontSize(9).text(item[0], x + 8, y + 5);
+      doc.fillColor(colors.text).font('Helvetica').fontSize(9.5).text(String(item[1] || '-'), x + 102, y + 5, {
+        width: colWidth - 118,
+        ellipsis: true
+      });
     });
 
     y += 34;
@@ -5191,8 +4915,9 @@ app.get('/api/salary-ledgers/:employeeId.pdf', auth, requirePermission('salaryle
       .lineWidth(1)
       .stroke()
       .restore();
-    doc.fillColor(colors.text).font('Helvetica').fontSize(10);
-    drawPdfCellText(doc, row.note || '-', pageMargin + 10, y + 10, contentWidth - 20, 'left');
+    doc.fillColor(colors.text).font('Helvetica').fontSize(10).text(row.note || '-', pageMargin + 10, y + 10, {
+      width: contentWidth - 20
+    });
 
     const footerY = doc.page.height - 44;
     doc.save().moveTo(pageMargin, footerY - 8).lineTo(pageMargin + contentWidth, footerY - 8).strokeColor(colors.border).stroke().restore();
@@ -5337,8 +5062,11 @@ app.get('/api/salary-ledgers/:employeeId/statement.pdf', auth, requirePermission
       let x = margin;
       doc.rect(margin, y, contentWidth, rowHeight).fillAndStroke('#EEF3FF', '#C9D4EC');
       columns.forEach((col) => {
-        doc.font('Helvetica-Bold').fontSize(9).fillColor('#1C2F4F');
-        drawPdfCellText(doc, col.label, x + 3, y + 7, col.width - 6, col.align);
+        doc.font('Helvetica-Bold').fontSize(9).fillColor('#1C2F4F').text(col.label, x + 3, y + 7, {
+          width: col.width - 6,
+          align: col.align === 'right' ? 'right' : 'left',
+          lineBreak: false
+        });
         x += col.width;
       });
       y += rowHeight;
@@ -5365,8 +5093,11 @@ app.get('/api/salary-ledgers/:employeeId/statement.pdf', auth, requirePermission
         let value = row[col.key];
         if (col.money) value = value === '' || value == null ? '-' : amountText(value);
         value = value == null || value === '' ? '-' : String(value);
-        doc.font(options.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9).fillColor('#24344E');
-        drawPdfCellText(doc, value, x + 3, y + 7, col.width - 6, col.align);
+        doc.font(options.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9).fillColor('#24344E').text(value, x + 3, y + 7, {
+          width: col.width - 6,
+          align: col.align === 'right' ? 'right' : 'left',
+          lineBreak: false
+        });
         x += col.width;
       });
       y += rowHeight;
@@ -5442,52 +5173,14 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     const monthStart = `${month}-01`;
     const monthDays = daysInMonth(year, monthNum - 1);
     const monthEnd = `${month}-${String(monthDays).padStart(2, '0')}`;
-    const monthStartDate = parseISODate(monthStart);
-    const monthEndDate = parseISODate(monthEnd);
-    if (!monthStartDate || !monthEndDate) {
-      return res.status(400).json({ error: 'Invalid month bounds' });
-    }
-    const joiningDate = normalizeISODateFlexible(employee.joiningDate);
-    const joiningDateParsed = parseISODate(joiningDate);
-    const employeeCreatedDate = normalizeISODateFlexible(employee.createdAt);
-    const employeeCreatedDateParsed = parseISODate(employeeCreatedDate);
-    const legacyJoinCutoff = parseISODate('2010-01-01');
-    const hasSuspiciousLegacyJoiningDate =
-      Boolean(joiningDateParsed) && Boolean(legacyJoinCutoff) && joiningDateParsed < legacyJoinCutoff;
-    let inferredJoiningDateForMonth = '';
-    if (hasSuspiciousLegacyJoiningDate && joiningDateParsed && joiningDateParsed.getUTCMonth() + 1 === monthNum) {
-      const inferred = `${month}-${String(joiningDateParsed.getUTCDate()).padStart(2, '0')}`;
-      if (parseISODate(inferred)) inferredJoiningDateForMonth = inferred;
-    }
-    const effectiveJoiningDate = inferredJoiningDateForMonth || joiningDate;
-    const effectiveJoiningDateParsed = parseISODate(effectiveJoiningDate);
+    const joiningDate = normalizeISODateText(employee.joiningDate);
     const attendanceRows = await store.listAttendance();
     const ledgerRows = await store.listSalaryLedgers();
     const ledger = ledgerRows.find((r) => String(r.employeeId) === String(employee.id));
-    const detailEntries =
-      typeof store.listSalaryLedgerEntries === 'function' ? await store.listSalaryLedgerEntries(employee.id) : [];
-    const normalizedAllAdvances = allAdvances
-      .map((a) => ({
-        ...a,
-        date: normalizeISODateFlexible(a.date),
-        amount: roundMoney(toSafeNumber(a.amount, 0)),
-        note: String(a.note || '').trim()
-      }))
-      .filter((a) => Boolean(a.date));
-    const monthAdvances = normalizedAllAdvances.filter((a) => a.date >= monthStart && a.date <= monthEnd);
-    const monthDetailDebits = (detailEntries || [])
-      .map((entry) => ({
-        ...entry,
-        date: normalizeISODateFlexible(entry.date),
-        debit: roundMoney(Math.max(0, toSafeNumber(entry.debit, 0))),
-        note: String(entry.note || '').trim(),
-        voucherType: String(entry.voucherType || '').trim()
-      }))
-      .filter((entry) => Boolean(entry.date) && entry.date >= monthStart && entry.date <= monthEnd && entry.debit > 0)
-      .sort((a, b) => {
-        if (a.date !== b.date) return a.date.localeCompare(b.date);
-        return String(a.id || '').localeCompare(String(b.id || ''));
-      });
+    const monthAdvances = allAdvances.filter((a) => {
+      const d = normalizeISODateText(a.date);
+      return Boolean(d) && d >= monthStart && d <= monthEnd;
+    });
 
     const requestedUpto = req.query.uptoDate ? String(req.query.uptoDate) : null;
     if (requestedUpto && !/^\d{4}-\d{2}-\d{2}$/.test(requestedUpto)) {
@@ -5518,88 +5211,54 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     const attendanceStartPresent =
       attendanceInMonth
         .filter((a) => String(a.status || '').toLowerCase() === 'present')
-        .map((a) => normalizeISODateFlexible(a.date))
+        .map((a) => normalizeISODateText(a.date))
         .filter(Boolean)
         .sort()[0] || '';
     const attendanceStartAny =
       attendanceInMonth
-        .map((a) => normalizeISODateFlexible(a.date))
+        .map((a) => normalizeISODateText(a.date))
         .filter(Boolean)
         .sort()[0] || '';
     const attendanceStart = attendanceStartPresent || attendanceStartAny;
     const advanceStart = monthAdvances
-      .map((a) => normalizeISODateFlexible(a.date))
+      .map((a) => normalizeISODateText(a.date))
       .filter(Boolean)
       .sort()[0] || '';
-    const ledgerStart = normalizeISODateFlexible(ledger?.durationStart);
+    const ledgerStart = normalizeISODateText(ledger?.durationStart);
 
     // Join date takes priority. Attendance/advance is only a fallback when join date is missing/outside month.
     let periodStart = monthStart;
-    if (effectiveJoiningDateParsed && effectiveJoiningDateParsed >= monthStartDate && effectiveJoiningDateParsed <= monthEndDate) {
-      periodStart = effectiveJoiningDate;
-    } else if (effectiveJoiningDateParsed && effectiveJoiningDateParsed > monthEndDate) {
-      // Not joined in selected month: keep period start after month end so payable days become zero.
-      periodStart = effectiveJoiningDate;
+    if (joiningDate && joiningDate >= monthStart && joiningDate <= monthEnd) {
+      periodStart = joiningDate;
     } else if (ledgerStart && ledgerStart >= monthStart && ledgerStart <= monthEnd) {
       periodStart = ledgerStart;
     } else {
       const fallbackStart = attendanceStartPresent || advanceStart || attendanceStartAny || '';
-      if (fallbackStart && fallbackStart > periodStart) {
-        periodStart = fallbackStart;
-      } else if (
-        hasSuspiciousLegacyJoiningDate &&
-        employeeCreatedDateParsed &&
-        employeeCreatedDateParsed >= monthStartDate &&
-        employeeCreatedDateParsed <= monthEndDate
-      ) {
-        periodStart = employeeCreatedDate;
-      }
+      if (fallbackStart && fallbackStart > periodStart) periodStart = fallbackStart;
     }
-    if (!parseISODate(periodStart)) periodStart = monthStart;
+    if (periodStart > periodEnd) periodStart = periodEnd;
 
     const startDate = parseISODate(periodStart);
     const endDate = parseISODate(periodEnd);
-    if (!endDate) {
+    if (!startDate || !endDate) {
       return res.status(400).json({ error: 'Invalid period dates' });
     }
 
     const daysCounted =
-      startDate && startDate <= endDate
+      startDate <= endDate
         ? Math.floor((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1
         : 0;
-    const periodDisplayStart = startDate && startDate > endDate ? periodEnd : periodStart;
     // Apply advances for selected month up to the selected slip end-date.
-    let advancesInPeriod = normalizedAllAdvances.filter((a) => {
-      const d = normalizeISODateFlexible(a.date);
+    let advancesInPeriod = monthAdvances.filter((a) => {
+      const d = normalizeISODateText(a.date);
       if (!d) return false;
       return d <= periodEnd;
     });
     if (advancesInPeriod.length === 0) {
-      const detailDebitsInPeriod = monthDetailDebits
-        .filter((entry) => entry.date <= periodEnd)
-        .map((entry) => ({
-          id: `slde_${String(entry.id || uid('slde'))}`,
-          employeeId: employee.id,
-          date: entry.date,
-          amount: entry.debit,
-          note: entry.note || `From detailed ledger${entry.voucherType ? ` (${entry.voucherType})` : ''}`
-        }));
-      if (detailDebitsInPeriod.length > 0) {
-        advancesInPeriod = detailDebitsInPeriod;
-      }
-    }
-    if (advancesInPeriod.length === 0) {
       const ledgerPaidForCurrent = roundMoney(Math.max(0, toSafeNumber(ledger?.paidForCurrent, 0)));
-      const ledgerPaidForPrevious = roundMoney(Math.max(0, toSafeNumber(ledger?.paidForPrevious, 0)));
-      const ledgerTotalPaidSession = roundMoney(Math.max(0, toSafeNumber(ledger?.totalPaidThisSession, 0)));
-      const ledgerAmountGiven = roundMoney(Math.max(0, toSafeNumber(ledger?.amountGiven, 0)));
-      const ledgerTotalPaid = roundMoney(Math.max(0, toSafeNumber(ledger?.totalPaid, 0)));
-      const ledgerPaidFallback = roundMoney(
-        Math.max(ledgerPaidForCurrent, ledgerTotalPaidSession, ledgerPaidForPrevious, ledgerAmountGiven, ledgerTotalPaid, 0)
-      );
-      if (ledgerPaidFallback > 0) {
-        const ledgerStart = normalizeISODateFlexible(ledger?.durationStart);
-        const ledgerEnd = normalizeISODateFlexible(ledger?.durationEnd);
+      if (ledgerPaidForCurrent > 0) {
+        const ledgerStart = normalizeISODateText(ledger?.durationStart);
+        const ledgerEnd = normalizeISODateText(ledger?.durationEnd);
         const overlaps =
           ledgerStart && ledgerEnd ? !(ledgerEnd < periodStart || ledgerStart > periodEnd) : true;
         if (overlaps) {
@@ -5608,18 +5267,18 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
               id: `ledger_${String(employee.id)}`,
               employeeId: employee.id,
               date: periodEnd,
-              amount: ledgerPaidFallback,
+              amount: ledgerPaidForCurrent,
               note: 'From salary ledger'
             }
           ];
         }
       }
     }
-    const totalAdvance = roundMoney(advancesInPeriod.reduce((sum, a) => sum + toSafeNumber(a.amount, 0), 0));
-    const monthlySalary = roundMoney(Math.max(0, toSafeNumber(employee.monthlySalary, 0)));
-    const perDaySalary = roundMoney(monthDays > 0 ? monthlySalary / monthDays : 0);
-    const proratedSalary = roundMoney(perDaySalary * daysCounted);
-    const remaining = roundMoney(Math.max(0, proratedSalary - totalAdvance));
+    const totalAdvance = advancesInPeriod.reduce((sum, a) => sum + Number(a.amount), 0);
+    const monthlySalary = Number(employee.monthlySalary);
+    const perDaySalary = monthlySalary / monthDays;
+    const proratedSalary = perDaySalary * daysCounted;
+    const remaining = Math.max(0, proratedSalary - totalAdvance);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="salary-slip-${employee.name}-${month}.pdf"`);
@@ -5700,11 +5359,11 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
 
     doc.fillColor(colors.text).font('Helvetica').fontSize(11);
     doc.text(month, pageMargin + 90, y + 12);
-    doc.text(`${periodDisplayStart} to ${periodEnd}`, pageMargin + 90, y + 38);
+    doc.text(`${periodStart} to ${periodEnd}`, pageMargin + 90, y + 38);
     doc.text(generatedAt, pageMargin + 90, y + 64);
 
     doc.text(employee.name, pageMargin + contentWidth / 2 + 76, y + 12);
-    doc.text(`${employee.role} | Joined: ${effectiveJoiningDate || joiningDate || '-'}`, pageMargin + contentWidth / 2 + 76, y + 38, {
+    doc.text(`${employee.role} | Joined: ${joiningDate || '-'}`, pageMargin + contentWidth / 2 + 76, y + 38, {
       width: contentWidth / 2 - 84,
       ellipsis: true
     });
@@ -6572,48 +6231,47 @@ app.get('/api/supplier-transactions/:id/receipt.pdf', auth, requirePermission('s
     doc.save().roundedRect(left, y, width, 84, 8).fill(colors.panel).restore();
     doc.save().roundedRect(left, y, width, 84, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
     doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(17).text('SUPPLIER RECEIPT', left + 12, y + 14);
-    doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(12);
-    drawPdfCellText(doc, APP_NAME, left + 12, y + 42, width - 280, 'left');
+    doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(12).text(APP_NAME, left + 12, y + 42);
+    doc.font('Helvetica').fontSize(9).fillColor(colors.muted).text('Printable copy for supplier acknowledgement', left + 12, y + 60);
     doc.font('Helvetica').fontSize(9).fillColor(colors.muted);
-    drawPdfCellText(doc, 'Printable copy for supplier acknowledgement', left + 12, y + 60, width - 280, 'left');
-    doc.font('Helvetica').fontSize(9).fillColor(colors.muted);
-    drawPdfCellText(doc, `Receipt ID: ${tx.id}`, left + width - 260, y + 14, 248, 'right');
-    drawPdfCellText(doc, `Date: ${tx.date}`, left + width - 260, y + 30, 248, 'right');
-    drawPdfCellText(doc, `Type: ${tx.type === 'truck' ? 'Material Delivery' : 'Payment'}`, left + width - 260, y + 46, 248, 'right');
-    drawPdfCellText(doc, `Supplier: ${supplier.name || '-'}`, left + width - 260, y + 62, 248, 'right');
+    doc.text(`Receipt ID: ${tx.id}`, left + width - 260, y + 14, { width: 248, align: 'right' });
+    doc.text(`Date: ${tx.date}`, left + width - 260, y + 30, { width: 248, align: 'right' });
+    doc.text(`Type: ${tx.type === 'truck' ? 'Material Delivery' : 'Payment'}`, left + width - 260, y + 46, {
+      width: 248,
+      align: 'right'
+    });
+    doc.text(`Supplier: ${supplier.name || '-'}`, left + width - 260, y + 62, { width: 248, align: 'right' });
     y += 98;
 
     const topBoxHeight = 170;
     doc.save().roundedRect(left, y, width, topBoxHeight, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
     doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(10).text('Supplier Details', left + 10, y + 10);
     doc.fillColor(colors.text).font('Helvetica').fontSize(10);
-    drawPdfCellText(doc, `Name: ${supplier.name || '-'}`, left + 10, y + 28, width / 2 - 20, 'left');
-    drawPdfCellText(doc, `Phone: ${supplier.phone || '-'}`, left + 10, y + 44, width / 2 - 20, 'left');
-    drawPdfCellText(doc, `Email: ${supplier.email || '-'}`, left + 10, y + 60, width / 2 - 20, 'left');
-    drawPdfCellText(doc, `GST No: ${supplier.gstNo || '-'}`, left + 10, y + 76, width / 2 - 20, 'left');
-    drawPdfCellText(doc, `Address: ${supplier.address || '-'}`, left + 10, y + 92, width / 2 - 20, 'left');
+    doc.text(`Name: ${supplier.name || '-'}`, left + 10, y + 28);
+    doc.text(`Phone: ${supplier.phone || '-'}`, left + 10, y + 44);
+    doc.text(`Email: ${supplier.email || '-'}`, left + 10, y + 60);
+    doc.text(`GST No: ${supplier.gstNo || '-'}`, left + 10, y + 76);
+    doc.text(`Address: ${supplier.address || '-'}`, left + 10, y + 92, { width: width - 20 });
     doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(10).text('Transaction Details', left + width / 2 + 8, y + 10);
     doc.fillColor(colors.text).font('Helvetica').fontSize(10);
-    drawPdfCellText(doc, `Entry Amount: ${moneyInr(thisEntryAmount)}`, left + width / 2 + 8, y + 28, width / 2 - 16, 'left');
-    drawPdfCellText(doc, `Entry Paid: ${moneyInr(thisEntryPaid)}`, left + width / 2 + 8, y + 44, width / 2 - 16, 'left');
-    drawPdfCellText(doc, `Entry Remaining: ${moneyInr(thisEntryRemaining)}`, left + width / 2 + 8, y + 60, width / 2 - 16, 'left');
-    drawPdfCellText(doc, `Balance After Entry: ${moneyInr(enrichedTx.balanceAfter)}`, left + width / 2 + 8, y + 76, width / 2 - 16, 'left');
+    doc.text(`Entry Amount: ${moneyInr(thisEntryAmount)}`, left + width / 2 + 8, y + 28);
+    doc.text(`Entry Paid: ${moneyInr(thisEntryPaid)}`, left + width / 2 + 8, y + 44);
+    doc.text(`Entry Remaining: ${moneyInr(thisEntryRemaining)}`, left + width / 2 + 8, y + 60);
+    doc.text(`Balance After Entry: ${moneyInr(enrichedTx.balanceAfter)}`, left + width / 2 + 8, y + 76);
     if (tx.type === 'truck') {
-      drawPdfCellText(doc, `Truck No: ${tx.truckNumber || '-'}`, left + width / 2 + 8, y + 92, width / 2 - 16, 'left');
-      drawPdfCellText(doc, `Challan No: ${tx.challanNo || '-'}`, left + width / 2 + 8, y + 108, width / 2 - 16, 'left');
-      drawPdfCellText(doc, `Material: ${tx.material || '-'}`, left + width / 2 + 8, y + 124, width / 2 - 16, 'left');
-      drawPdfCellText(doc, `Trolleys: ${tx.trolleyCount == null ? '-' : tx.trolleyCount}`, left + width / 2 + 8, y + 140, width / 2 - 16, 'left');
-      drawPdfCellText(
-        doc,
+      doc.text(`Truck No: ${tx.truckNumber || '-'}`, left + width / 2 + 8, y + 92);
+      doc.text(`Challan No: ${tx.challanNo || '-'}`, left + width / 2 + 8, y + 108);
+      doc.text(`Material: ${tx.material || '-'}`, left + width / 2 + 8, y + 124);
+      doc.text(`Trolleys: ${tx.trolleyCount == null ? '-' : tx.trolleyCount}`, left + width / 2 + 8, y + 140);
+      doc.text(
         `Quantity: ${tx.quantity == null ? '-' : tx.quantity} | Rate: ${tx.rate == null ? '-' : moneyInr(tx.rate)}`,
         left + width / 2 + 8,
         y + 156,
-        width / 2 - 16,
-        'left'
+        { width: width / 2 - 16 }
       );
     } else {
-      drawPdfCellText(doc, `Payment Mode: ${tx.paymentMode || '-'}`, left + width / 2 + 8, y + 92, width / 2 - 16, 'left');
-      drawPdfCellText(doc, `Reference: ${tx.paymentRef || '-'}`, left + width / 2 + 8, y + 108, width / 2 - 16, 'left');
+      doc.text(`Payment Mode: ${tx.paymentMode || '-'}`, left + width / 2 + 8, y + 92);
+      doc.text(`Reference: ${tx.paymentRef || '-'}`, left + width / 2 + 8, y + 108);
     }
     y += topBoxHeight + 12;
 
@@ -6634,24 +6292,18 @@ app.get('/api/supplier-transactions/:id/receipt.pdf', auth, requirePermission('s
         doc.save().rect(left + 8, sy - 3, width - 16, 20).fill('#F8FBFF').restore();
       }
       doc.fillColor(colors.text).font('Helvetica').fontSize(10);
-      drawPdfCellText(doc, label, left + 14, sy, width - 200, 'left');
-      doc.font('Helvetica-Bold');
-      drawPdfCellText(doc, value, left + 14, sy, width - 28, 'right');
+      doc.text(label, left + 14, sy);
+      doc.font('Helvetica-Bold').text(value, left + 14, sy, { width: width - 28, align: 'right' });
       sy += 22;
     });
     y += summaryHeight + 14;
 
     doc.save().roundedRect(left, y, width, 56, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
     doc.fillColor(colors.text).font('Helvetica').fontSize(9.5);
-    drawPdfCellText(doc, `Note: ${tx.note || '-'}`, left + 10, y + 10, width - 20, 'left');
-    drawPdfCellText(
-      doc,
-      'This receipt can be printed and signed by supplier and company representative.',
-      left + 10,
-      y + 32,
-      width - 20,
-      'left'
-    );
+    doc.text(`Note: ${tx.note || '-'}`, left + 10, y + 10, { width: width - 20 });
+    doc.text('This receipt can be printed and signed by supplier and company representative.', left + 10, y + 32, {
+      width: width - 20
+    });
 
     const footerY = doc.page.height - 74;
     doc.save().moveTo(left, footerY).lineTo(left + width, footerY).lineWidth(1).strokeColor(colors.border).stroke().restore();
@@ -6853,12 +6505,11 @@ app.get('/api/bills/:id.pdf', auth, requirePermission('billing:view'), async (re
     doc.save().roundedRect(left, y, usableWidth, 70, 8).fill(colors.panel).restore();
     doc.save().roundedRect(left, y, usableWidth, 70, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
     doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(19).text('TAX INVOICE', left + 12, y + 10);
-    doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(13);
-    drawPdfCellText(doc, seller.name, left + 12, y + 35, usableWidth - 24, 'left');
+    doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(13).text(seller.name, left + 12, y + 35, { width: usableWidth - 24 });
     doc.font('Helvetica').fontSize(9).fillColor(colors.muted);
-    drawPdfCellText(doc, `Invoice No: ${bill.invoiceNo}`, left + usableWidth - 220, y + 12, 205, 'right');
-    drawPdfCellText(doc, `Invoice Date: ${bill.billDate}`, left + usableWidth - 220, y + 28, 205, 'right');
-    drawPdfCellText(doc, `Due Date: ${bill.dueDate || '-'}`, left + usableWidth - 220, y + 44, 205, 'right');
+    doc.text(`Invoice No: ${bill.invoiceNo}`, left + usableWidth - 220, y + 12, { width: 205, align: 'right' });
+    doc.text(`Invoice Date: ${bill.billDate}`, left + usableWidth - 220, y + 28, { width: 205, align: 'right' });
+    doc.text(`Due Date: ${bill.dueDate || '-'}`, left + usableWidth - 220, y + 44, { width: 205, align: 'right' });
     y += 82;
 
     // Seller / buyer blocks
@@ -6869,28 +6520,21 @@ app.get('/api/bills/:id.pdf', auth, requirePermission('billing:view'), async (re
 
     doc.font('Helvetica-Bold').fontSize(10).fillColor(colors.heading).text('Supplier Details', left + 10, y + 10);
     doc.font('Helvetica').fontSize(9.2).fillColor(colors.text);
-    drawPdfCellText(doc, seller.name, left + 10, y + 28, boxW - 20, 'left');
-    drawPdfCellText(doc, seller.address, left + 10, y + 42, boxW - 20, 'left');
-    drawPdfCellText(doc, `GSTIN: ${seller.gstNo}`, left + 10, y + 58, boxW - 20, 'left');
-    drawPdfCellText(doc, `State: ${seller.state} (${seller.stateCode})`, left + 10, y + 74, boxW - 20, 'left');
-    if (seller.phone) drawPdfCellText(doc, `Phone: ${seller.phone}`, left + 10, y + 90, boxW - 20, 'left');
-    if (seller.email) drawPdfCellText(doc, `Email: ${seller.email}`, left + 10, y + 106, boxW - 20, 'left');
+    doc.text(seller.name, left + 10, y + 28);
+    doc.text(seller.address, left + 10, y + 42, { width: boxW - 20 });
+    doc.text(`GSTIN: ${seller.gstNo}`, left + 10, y + 72);
+    doc.text(`State: ${seller.state} (${seller.stateCode})`, left + 10, y + 86);
+    if (seller.phone) doc.text(`Phone: ${seller.phone}`, left + 10, y + 100);
+    if (seller.email) doc.text(`Email: ${seller.email}`, left + 10, y + 112);
 
     doc.font('Helvetica-Bold').fontSize(10).fillColor(colors.heading).text('Bill To (Buyer)', left + boxW + 22, y + 10);
     doc.font('Helvetica').fontSize(9.2).fillColor(colors.text);
-    drawPdfCellText(doc, bill.company.companyName, left + boxW + 22, y + 28, boxW - 20, 'left');
-    drawPdfCellText(doc, bill.company.address, left + boxW + 22, y + 42, boxW - 20, 'left');
-    drawPdfCellText(doc, `GSTIN: ${bill.company.gstNo}`, left + boxW + 22, y + 58, boxW - 20, 'left');
-    drawPdfCellText(
-      doc,
-      `State: ${bill.company.state || '-'} (${bill.company.stateCode || '-'})`,
-      left + boxW + 22,
-      y + 74,
-      boxW - 20,
-      'left'
-    );
-    if (bill.company.phone) drawPdfCellText(doc, `Phone: ${bill.company.phone}`, left + boxW + 22, y + 90, boxW - 20, 'left');
-    if (bill.company.email) drawPdfCellText(doc, `Email: ${bill.company.email}`, left + boxW + 22, y + 106, boxW - 20, 'left');
+    doc.text(bill.company.companyName, left + boxW + 22, y + 28);
+    doc.text(bill.company.address, left + boxW + 22, y + 42, { width: boxW - 20 });
+    doc.text(`GSTIN: ${bill.company.gstNo}`, left + boxW + 22, y + 72);
+    doc.text(`State: ${bill.company.state || '-'} (${bill.company.stateCode || '-'})`, left + boxW + 22, y + 86);
+    if (bill.company.phone) doc.text(`Phone: ${bill.company.phone}`, left + boxW + 22, y + 100);
+    if (bill.company.email) doc.text(`Email: ${bill.company.email}`, left + boxW + 22, y + 112);
     y += boxH + 12;
 
     // Extra bill meta
@@ -6910,16 +6554,16 @@ app.get('/api/bills/:id.pdf', auth, requirePermission('billing:view'), async (re
       tax: left + 430,
       total: left + 482
     };
-    const rowH = 24;
+    const rowH = 22;
     doc.save().roundedRect(left, y, usableWidth, rowH, 4).fill(colors.panel).restore();
     doc.font('Helvetica-Bold').fontSize(9).fillColor(colors.heading);
-    drawPdfCellText(doc, '#', col.idx + 6, y + 7, 18, 'left');
-    drawPdfCellText(doc, 'Description', col.desc, y + 7, 200, 'left');
-    drawPdfCellText(doc, 'HSN/SAC', col.hsn, y + 7, 58, 'left');
-    drawPdfCellText(doc, 'Qty', col.qty, y + 7, 40, 'right');
-    drawPdfCellText(doc, 'Rate', col.rate, y + 7, 65, 'right');
-    drawPdfCellText(doc, 'GST %', col.tax, y + 7, 45, 'right');
-    drawPdfCellText(doc, 'Amount', col.total, y + 7, 78, 'right');
+    doc.text('#', col.idx + 6, y + 7);
+    doc.text('Description', col.desc, y + 7, { width: 200 });
+    doc.text('HSN/SAC', col.hsn, y + 7, { width: 58 });
+    doc.text('Qty', col.qty, y + 7, { width: 40, align: 'right' });
+    doc.text('Rate', col.rate, y + 7, { width: 65, align: 'right' });
+    doc.text('GST %', col.tax, y + 7, { width: 45, align: 'right' });
+    doc.text('Amount', col.total, y + 7, { width: 78, align: 'right' });
     y += rowH;
 
     bill.items.forEach((item, index) => {
@@ -6927,13 +6571,13 @@ app.get('/api/bills/:id.pdf', auth, requirePermission('billing:view'), async (re
       const rowTotal = Number(item.lineTotal || taxableValue + Number(item.gstAmount || 0));
       doc.save().rect(left, y, usableWidth, rowH).strokeColor(colors.border).lineWidth(0.5).stroke().restore();
       doc.font('Helvetica').fontSize(8.8).fillColor(colors.text);
-      drawPdfCellText(doc, String(index + 1), col.idx + 6, y + 7, 18, 'left');
-      drawPdfCellText(doc, item.description || '-', col.desc, y + 7, 194, 'left');
-      drawPdfCellText(doc, item.hsnSac || '-', col.hsn, y + 7, 56, 'left');
-      drawPdfCellText(doc, String(item.quantity || 0), col.qty, y + 7, 40, 'right');
-      drawPdfCellText(doc, moneyValue(item.rate || 0), col.rate, y + 7, 65, 'right');
-      drawPdfCellText(doc, `${Number(item.gstPercent || 0).toFixed(2)}`, col.tax, y + 7, 45, 'right');
-      drawPdfCellText(doc, moneyValue(rowTotal), col.total, y + 7, 78, 'right');
+      doc.text(String(index + 1), col.idx + 6, y + 6);
+      doc.text(item.description || '-', col.desc, y + 6, { width: 194, ellipsis: true });
+      doc.text(item.hsnSac || '-', col.hsn, y + 6, { width: 56, ellipsis: true });
+      doc.text(String(item.quantity || 0), col.qty, y + 6, { width: 40, align: 'right' });
+      doc.text(moneyValue(item.rate || 0), col.rate, y + 6, { width: 65, align: 'right' });
+      doc.text(`${Number(item.gstPercent || 0).toFixed(2)}`, col.tax, y + 6, { width: 45, align: 'right' });
+      doc.text(moneyValue(rowTotal), col.total, y + 6, { width: 78, align: 'right' });
       y += rowH;
       if (y > doc.page.height - 160) {
         doc.addPage();
@@ -6988,17 +6632,6 @@ function fitPdfCellText(doc, value, maxWidth) {
   return `${clipped}${ellipsis}`;
 }
 
-function drawPdfCellText(doc, value, x, y, width, align = 'left') {
-  const safeWidth = Math.max(8, Number(width || 0));
-  const text = fitPdfCellText(doc, value, safeWidth);
-  doc.text(text, x, y, {
-    width: safeWidth,
-    align: align === 'right' ? 'right' : 'left',
-    lineBreak: false,
-    ellipsis: true
-  });
-}
-
 function sendTabularPdfReport(res, { fileName, title, filters = [], summary = [], columns = [], rows = [] }) {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
@@ -7047,13 +6680,15 @@ function sendTabularPdfReport(res, { fileName, title, filters = [], summary = []
   const totalWidth = Math.max(1, normalizedCols.reduce((sum, c) => sum + c.width, 0));
   const scale = usableWidth / totalWidth;
   const widths = normalizedCols.map((c) => c.width * scale);
-  const rowHeight = 17;
+  const rowHeight = 14;
   const renderHeader = () => {
     doc.save().roundedRect(left, y - 2, usableWidth, 20, 4).fill('#e6efff').restore();
     let x = left + 2;
     normalizedCols.forEach((col, idx) => {
-      doc.font('Helvetica-Bold').fontSize(9).fillColor('#13315a');
-      drawPdfCellText(doc, col.label, x, y + 4, widths[idx] - 4, col.align);
+      doc.font('Helvetica-Bold').fontSize(9).fillColor('#13315a').text(col.label, x, y + 3, {
+        width: widths[idx] - 4,
+        align: col.align
+      });
       x += widths[idx];
     });
     y += 22;
@@ -7077,13 +6712,17 @@ function sendTabularPdfReport(res, { fileName, title, filters = [], summary = []
     let x = left + 2;
     normalizedCols.forEach((col, idx) => {
       doc.font('Helvetica').fontSize(9).fillColor('#111827');
-      drawPdfCellText(doc, row[col.key], x, y + 1, widths[idx] - 4, col.align);
+      const text = fitPdfCellText(doc, row[col.key], widths[idx] - 6);
+      doc.text(text, x, y, {
+        width: widths[idx] - 4,
+        align: col.align
+      });
       x += widths[idx];
     });
     doc
       .save()
-      .moveTo(left, y + rowHeight - 2)
-      .lineTo(left + usableWidth, y + rowHeight - 2)
+      .moveTo(left, y + 12)
+      .lineTo(left + usableWidth, y + 12)
       .strokeColor('#e5e7eb')
       .lineWidth(0.8)
       .stroke()
@@ -7239,6 +6878,22 @@ app.get('/api/export/trucks.pdf', auth, requirePermission('export:view'), async 
       })
       .sort((a, b) => (a.date < b.date ? 1 : -1));
 
+    const fileSuffix = [partyFilter || 'all', materialFilter || 'all'].join('-');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="truck-report-${fileSuffix}.pdf"`);
+    const doc = new PDFDocument({ margin: 28, size: 'A4' });
+    doc.pipe(res);
+
+    const pageWidth = doc.page.width - 56;
+    const left = 28;
+    const heading = `${APP_NAME} - Truck Report`;
+    const generatedAt = new Date().toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
     const partyLabel = partyFilter ? (partyFilter === 'narayan' ? 'Narayan' : 'Maa Vaishno') : 'All';
     const materialLabel = materialFilter
       ? materialFilter === 'pellet'
@@ -7247,42 +6902,89 @@ app.get('/api/export/trucks.pdf', auth, requirePermission('export:view'), async 
       : 'All';
     const totalQty = rows.reduce((sum, r) => sum + Number(r.quantity || 0), 0);
     const totalAmount = rows.reduce((sum, r) => sum + Number(r.totalAmount || 0), 0);
-    const filters = [`Party: ${partyLabel}`, `Material: ${materialLabel}`];
-    if (req.query.dateFrom || req.query.dateTo) {
-      filters.push(`Date: ${req.query.dateFrom || '-'} to ${req.query.dateTo || '-'}`);
-    }
-    const summary = [
-      `Records: ${rows.length}`,
-      `Total Qty: ${totalQty.toFixed(2)}`,
-      `Total Amount: ${moneyInr(totalAmount)}`
-    ];
-    const reportRows = rows.map((r) => ({
-      date: r.date || '-',
-      party: truckPartyKey(r.party || 'narayan') === 'maa_vaishno' ? 'Maa Vaishno' : 'Narayan',
-      material: truckMaterialKey(r.rawMaterial) === 'briquettes' ? 'Briquettes' : 'Pellet',
-      truckNumber: r.truckNumber || '-',
-      quantity: Number(r.quantity || 0).toFixed(2),
-      rate: r.pricePerQuintal != null ? moneyInr(r.pricePerQuintal) : '-',
-      amount: r.totalAmount != null ? moneyInr(r.totalAmount) : '-'
-    }));
 
-    const fileSuffix = [partyFilter || 'all', materialFilter || 'all'].join('-');
-    sendTabularPdfReport(res, {
-      fileName: `truck-report-${fileSuffix}.pdf`,
-      title: 'Truck Report',
-      filters,
-      summary,
-      columns: [
-        { key: 'date', label: 'Date', width: 74 },
-        { key: 'party', label: 'Party', width: 88 },
-        { key: 'material', label: 'Material', width: 92 },
-        { key: 'truckNumber', label: 'Truck', width: 100 },
-        { key: 'quantity', label: 'Qty', width: 70, align: 'right' },
-        { key: 'rate', label: 'Rate', width: 96, align: 'right' },
-        { key: 'amount', label: 'Amount', width: 96, align: 'right' }
-      ],
-      rows: reportRows
+    doc.font('Helvetica-Bold').fontSize(17).fillColor('#0f3b74').text(heading, left, 26, { width: pageWidth });
+    doc
+      .font('Helvetica')
+      .fontSize(10)
+      .fillColor('#26364a')
+      .text(`Generated: ${generatedAt}`, left, 50, { width: pageWidth });
+    doc
+      .font('Helvetica')
+      .fontSize(10)
+      .fillColor('#26364a')
+      .text(`Filters: Party=${partyLabel} | Material=${materialLabel}`, left, 65, { width: pageWidth });
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(10)
+      .fillColor('#111827')
+      .text(`Records: ${rows.length} | Total Qty: ${totalQty.toFixed(2)} | Total Amount: ${moneyInr(totalAmount)}`, left, 80, {
+        width: pageWidth
+      });
+
+    let y = 106;
+    const headerTop = y;
+    const widths = [66, 58, 72, 76, 52, 52, 68];
+    const cols = ['Date', 'Party', 'Material', 'Truck', 'Qty', 'Rate', 'Amount'];
+    doc.save().roundedRect(left, headerTop - 2, pageWidth, 20, 4).fill('#e6efff').restore();
+    let x = left + 2;
+    cols.forEach((col, idx) => {
+      doc.font('Helvetica-Bold').fontSize(9).fillColor('#13315a').text(col, x, headerTop + 3, { width: widths[idx] });
+      x += widths[idx];
     });
+    y = headerTop + 22;
+
+    const renderHeader = () => {
+      doc.save().roundedRect(left, 26, pageWidth, 20, 4).fill('#e6efff').restore();
+      let hx = left + 2;
+      cols.forEach((col, idx) => {
+        doc.font('Helvetica-Bold').fontSize(9).fillColor('#13315a').text(col, hx, 31, { width: widths[idx] });
+        hx += widths[idx];
+      });
+      y = 50;
+    };
+
+    if (!rows.length) {
+      doc.font('Helvetica').fontSize(11).fillColor('#374151').text('No truck entries found for selected filters.', left, y + 8, {
+        width: pageWidth
+      });
+      doc.end();
+      return;
+    }
+
+    rows.forEach((r) => {
+      if (y > doc.page.height - 48) {
+        doc.addPage();
+        renderHeader();
+      }
+      const party = truckPartyKey(r.party || 'narayan') === 'maa_vaishno' ? 'Maa Vaishno' : 'Narayan';
+      const material = truckMaterialKey(r.rawMaterial) === 'briquettes' ? 'Briquettes' : 'Pellet';
+      const values = [
+        r.date || '-',
+        party,
+        material,
+        r.truckNumber || '-',
+        Number(r.quantity || 0).toFixed(2),
+        r.pricePerQuintal != null ? moneyInr(r.pricePerQuintal) : '-',
+        r.totalAmount != null ? moneyInr(r.totalAmount) : '-'
+      ];
+      let rowX = left + 2;
+      values.forEach((val, idx) => {
+        doc.font('Helvetica').fontSize(9).fillColor('#111827').text(String(val), rowX, y, { width: widths[idx] });
+        rowX += widths[idx];
+      });
+      doc
+        .save()
+        .moveTo(left, y + 13)
+        .lineTo(left + pageWidth, y + 13)
+        .strokeColor('#e5e7eb')
+        .lineWidth(0.8)
+        .stroke()
+        .restore();
+      y += 14;
+    });
+
+    doc.end();
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to export truck PDF' });
