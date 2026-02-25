@@ -4,13 +4,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Narayan Enterprises Operations Control Center — Manage employees, attendance, salary, trucks, expenses, investments, suppliers, and billing in one enterprise dashboard." />
+  <meta name="description"
+    content="Narayan Enterprises Operations Control Center — Manage employees, attendance, salary, trucks, expenses, investments, suppliers, and billing in one enterprise dashboard." />
   <meta name="theme-color" content="#0f61ff" />
   <title>Narayan Enterprises — Operations Control Center</title>
   <link rel="icon" type="image/svg+xml" href="/logo.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/styles.css?v=2" />
 </head>
 
 <body>
@@ -218,7 +219,8 @@
         <div class="row wrap">
           <h2>Salary Ledger (Tally Format)</h2>
         </div>
-        <p class="hint">Select employee, enter debit/credit ledger rows, and download printable PDF statement in Tally style.</p>
+        <p class="hint">Select employee, enter debit/credit ledger rows, and download printable PDF statement in Tally
+          style.</p>
         <div class="salary-ledger-detail-card">
           <div class="row wrap">
             <div class="field-group salary-ledger-employee-select">
@@ -241,7 +243,8 @@
             </div>
             <div class="field-group">
               <label for="salaryLedgerDetailParticulars">Particulars</label>
-              <input id="salaryLedgerDetailParticulars" name="particulars" placeholder="Salary, Payment, Advance..." required />
+              <input id="salaryLedgerDetailParticulars" name="particulars" placeholder="Salary, Payment, Advance..."
+                required />
             </div>
             <div class="field-group">
               <label for="salaryLedgerDetailVoucherType">Vch Type</label>
@@ -259,11 +262,13 @@
             </div>
             <div class="field-group">
               <label for="salaryLedgerDetailDebit">Debit (+ Paid)</label>
-              <input id="salaryLedgerDetailDebit" name="debit" type="number" min="0" step="0.01" placeholder="Paid Amount" />
+              <input id="salaryLedgerDetailDebit" name="debit" type="number" min="0" step="0.01"
+                placeholder="Paid Amount" />
             </div>
             <div class="field-group">
               <label for="salaryLedgerDetailCredit">Credit (+ Salary)</label>
-              <input id="salaryLedgerDetailCredit" name="credit" type="number" min="0" step="0.01" placeholder="Salary Amount" />
+              <input id="salaryLedgerDetailCredit" name="credit" type="number" min="0" step="0.01"
+                placeholder="Salary Amount" />
             </div>
             <div class="field-group">
               <label for="salaryLedgerDetailNote">Note</label>
@@ -1111,13 +1116,13 @@
 
   <!-- Premium micro-interactions -->
   <script>
-    (function() {
+    (function () {
       // Sticky header scroll state
       const header = document.querySelector('.site-header');
       let ticking = false;
-      window.addEventListener('scroll', function() {
+      window.addEventListener('scroll', function () {
         if (!ticking) {
-          requestAnimationFrame(function() {
+          requestAnimationFrame(function () {
             header.classList.toggle('scrolled', window.scrollY > 24);
             ticking = false;
           });
@@ -1127,17 +1132,17 @@
 
       // Back to top
       const btn = document.getElementById('backToTopBtn');
-      window.addEventListener('scroll', function() {
+      window.addEventListener('scroll', function () {
         btn.classList.toggle('visible', window.scrollY > 400);
       }, { passive: true });
-      btn.addEventListener('click', function() {
+      btn.addEventListener('click', function () {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       });
 
       // Scroll reveal for panels & cards
       if ('IntersectionObserver' in window) {
-        const observer = new IntersectionObserver(function(entries) {
-          entries.forEach(function(entry) {
+        const observer = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
             if (entry.isIntersecting) {
               entry.target.classList.add('revealed');
               observer.unobserve(entry.target);
@@ -1145,17 +1150,17 @@
           });
         }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
 
-        document.querySelectorAll('.panel, .card, .summary-stat, .employee-card, .party-total').forEach(function(el) {
+        document.querySelectorAll('.panel, .card, .summary-stat, .employee-card, .party-total').forEach(function (el) {
           el.classList.add('reveal');
           observer.observe(el);
         });
 
         // Re-observe when sections change
         const navBtns = document.querySelectorAll('.nav-btn');
-        navBtns.forEach(function(b) {
-          b.addEventListener('click', function() {
-            setTimeout(function() {
-              document.querySelectorAll('.panel, .card, .summary-stat, .employee-card, .party-total').forEach(function(el) {
+        navBtns.forEach(function (b) {
+          b.addEventListener('click', function () {
+            setTimeout(function () {
+              document.querySelectorAll('.panel, .card, .summary-stat, .employee-card, .party-total').forEach(function (el) {
                 if (!el.classList.contains('revealed')) {
                   observer.observe(el);
                 }
