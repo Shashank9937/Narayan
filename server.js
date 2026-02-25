@@ -4374,6 +4374,44 @@ function requirePermission(permission) {
   };
 }
 
+app.get('/api/restore-lost-data', async (req, res) => {
+  if (STORAGE_MODE !== 'postgres') return res.json({ message: 'Only applies to Postgres mode' });
+  try {
+    const raw = readJsonFileSafe(DB_PATH);
+    if (!raw) return res.status(500).json({ error: 'No db.json found locally to restore' });
+    const ensured = ensureDbShape(raw);
+    const db = ensured.db;
+    const pool = new (require('pg').Pool)({ connectionString: DATABASE_URL });
+
+    // Migrate Employees
+    for (const e of db.employees) {
+      await pool.query(
+        'INSERT INTO employees (id, name, role, monthly_salary, joining_date, active, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (id) DO NOTHING',
+        [e.id, e.name, e.role, e.monthlySalary, e.joiningDate || new Date().toISOString().slice(0, 10), e.active !== false, e.createdAt || new Date().toISOString(), e.updatedAt || new Date().toISOString()]
+      );
+    }
+    // Migrate Attendance
+    for (const a of db.attendance) {
+      await pool.query(
+        'INSERT INTO attendance (id, employee_id, date, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING',
+        [a.id, a.employeeId, a.date, a.status, a.createdAt || new Date().toISOString(), a.updatedAt || new Date().toISOString()]
+      );
+    }
+    // Migrate Salary Advances
+    for (const a of db.salaryAdvances) {
+      await pool.query(
+        'INSERT INTO salary_advances (id, employee_id, date, amount, note, created_at) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING',
+        [a.id, a.employeeId, a.date, a.amount, a.note || '', a.createdAt || new Date().toISOString()]
+      );
+    }
+    await pool.end();
+    return res.json({ message: 'Data restored successfully! Please go back to the app and refresh.' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: String(err) });
+  }
+});
+
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
