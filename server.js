@@ -9,10 +9,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DB_PATH = path.join(__dirname, 'data', 'db.json');
 const DB_BACKUP_PATH = path.join(__dirname, 'data', 'db.backup.json');
-let STORAGE_MODE = process.env.STORAGE_MODE;
-if (STORAGE_MODE !== 'postgres' && STORAGE_MODE !== 'json' && STORAGE_MODE !== 'sqlite') {
-  STORAGE_MODE = 'sqlite'; // Default to an in-app db (better-sqlite3) since data < 10k
-}
+let STORAGE_MODE = 'sqlite';
 const DATABASE_URL = process.env.DATABASE_URL;
 const APP_NAME = 'Narayan Enterprises';
 const STARTED_AT = new Date();
