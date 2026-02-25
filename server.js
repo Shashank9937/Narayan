@@ -6183,116 +6183,176 @@ app.get('/api/supplier-transactions/:id/receipt.pdf', auth, requirePermission('s
       tx.type === 'truck' ? Math.max(0, thisEntryAmount - thisEntryPaid) : 0
     );
 
-    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    const doc = new PDFDocument({ margin: 0, size: 'A4' });
     const safeSupplierName = String(supplier.name || 'supplier').replace(/[^a-z0-9_-]/gi, '-');
     const safeReceiptId = String(tx.id || 'receipt').replace(/[^a-z0-9_-]/gi, '-');
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="supplier-receipt-${safeSupplierName}-${safeReceiptId}.pdf"`);
     doc.pipe(res);
 
-    const pageWidth = doc.page.width;
-    const left = 40;
-    const width = pageWidth - 80;
-    const colors = {
-      border: '#CFD8E6',
-      heading: '#0C2E66',
-      text: '#1A2738',
-      muted: '#5E6A7A',
-      panel: '#F6F9FF'
+    const W = doc.page.width;
+    const H = doc.page.height;
+    const M = 44;
+    const CW = W - M * 2;
+
+    const c = {
+      brand: '#0B3D91',
+      brandGrad: '#1565C0',
+      brandLight: '#E8F0FE',
+      white: '#FFFFFF',
+      text: '#1A2744',
+      muted: '#617594',
+      border: '#D4DFF0',
+      success: '#0E8A4F',
+      danger: '#C0392B',
+      bg: '#F7F9FC'
     };
-    let y = 40;
+    const money = (n) => `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const fmtDate = (d) => {
+      if (!d) return '-';
+      const p = parseISODate(normalizeISODateText(d));
+      if (!p) return String(d).slice(0, 10);
+      return p.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    };
 
-    doc.save().roundedRect(left, y, width, 84, 8).fill(colors.panel).restore();
-    doc.save().roundedRect(left, y, width, 84, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
-    doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(17).text('SUPPLIER RECEIPT', left + 12, y + 14);
-    doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(12).text(APP_NAME, left + 12, y + 42);
-    doc.font('Helvetica').fontSize(9).fillColor(colors.muted).text('Printable copy for supplier acknowledgement', left + 12, y + 60);
-    doc.font('Helvetica').fontSize(9).fillColor(colors.muted);
-    doc.text(`Receipt ID: ${tx.id}`, left + width - 260, y + 14, { width: 248, align: 'right' });
-    doc.text(`Date: ${tx.date}`, left + width - 260, y + 30, { width: 248, align: 'right' });
-    doc.text(`Type: ${tx.type === 'truck' ? 'Material Delivery' : 'Payment'}`, left + width - 260, y + 46, {
-      width: 248,
-      align: 'right'
-    });
-    doc.text(`Supplier: ${supplier.name || '-'}`, left + width - 260, y + 62, { width: 248, align: 'right' });
-    y += 98;
+    // === HEADER GRADIENT ===
+    const grad = doc.linearGradient(0, 0, W, 0);
+    grad.stop(0, c.brand).stop(1, c.brandGrad);
+    doc.save().rect(0, 0, W, 100).fill(grad).restore();
 
-    const topBoxHeight = 170;
-    doc.save().roundedRect(left, y, width, topBoxHeight, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
-    doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(10).text('Supplier Details', left + 10, y + 10);
-    doc.fillColor(colors.text).font('Helvetica').fontSize(10);
-    doc.text(`Name: ${supplier.name || '-'}`, left + 10, y + 28);
-    doc.text(`Phone: ${supplier.phone || '-'}`, left + 10, y + 44);
-    doc.text(`Email: ${supplier.email || '-'}`, left + 10, y + 60);
-    doc.text(`GST No: ${supplier.gstNo || '-'}`, left + 10, y + 76);
-    doc.text(`Address: ${supplier.address || '-'}`, left + 10, y + 92, { width: width - 20 });
-    doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(10).text('Transaction Details', left + width / 2 + 8, y + 10);
-    doc.fillColor(colors.text).font('Helvetica').fontSize(10);
-    doc.text(`Entry Amount: ${moneyInr(thisEntryAmount)}`, left + width / 2 + 8, y + 28);
-    doc.text(`Entry Paid: ${moneyInr(thisEntryPaid)}`, left + width / 2 + 8, y + 44);
-    doc.text(`Entry Remaining: ${moneyInr(thisEntryRemaining)}`, left + width / 2 + 8, y + 60);
-    doc.text(`Balance After Entry: ${moneyInr(enrichedTx.balanceAfter)}`, left + width / 2 + 8, y + 76);
+    doc.save().circle(M + 26, 50, 22).fill(c.white).restore();
+    doc.fillColor(c.brand).font('Helvetica-Bold').fontSize(16).text('NE', M + 12, 42, { width: 28, align: 'center' });
+
+    doc.fillColor(c.white).font('Helvetica-Bold').fontSize(18).text(APP_NAME, M + 60, 28);
+    doc.fillColor('rgba(255,255,255,0.8)').font('Helvetica').fontSize(9).text('Operations Control Center', M + 60, 50);
+    doc.fillColor(c.white).font('Helvetica-Bold').fontSize(12).text('SUPPLIER RECEIPT', W - M - 160, 34, { width: 160, align: 'right' });
+    const txTypeLabel = tx.type === 'truck' ? 'Material Delivery' : 'Payment';
+    doc.fillColor('rgba(255,255,255,0.8)').font('Helvetica').fontSize(9).text(txTypeLabel, W - M - 160, 54, { width: 160, align: 'right' });
+
+    // === SUPPLIER & TRANSACTION INFO CARD ===
+    let y = 116;
+    doc.save().roundedRect(M, y, CW, 82, 10).fill(c.white).restore();
+    doc.save().roundedRect(M, y, CW, 82, 10).lineWidth(1).strokeColor(c.border).stroke().restore();
+
+    const col1 = M + 14;
+    const col2 = M + CW / 2 + 14;
+
+    doc.fillColor(c.muted).font('Helvetica-Bold').fontSize(8);
+    doc.text('SUPPLIER', col1, y + 12);
+    doc.text('CONTACT', col1, y + 38);
+    doc.text('GST NO.', col1, y + 62);
+    doc.text('RECEIPT ID', col2, y + 12);
+    doc.text('DATE', col2, y + 38);
+    doc.text('TYPE', col2, y + 62);
+
+    doc.fillColor(c.text).font('Helvetica-Bold').fontSize(10);
+    doc.text(supplier.name || '-', col1 + 80, y + 10, { width: CW / 2 - 100 });
+    doc.font('Helvetica').text(supplier.phone || '-', col1 + 80, y + 36);
+    doc.text(supplier.gstNo || '-', col1 + 80, y + 60);
+    doc.text(String(tx.id).slice(0, 24), col2 + 80, y + 10, { width: CW / 2 - 100 });
+    doc.text(fmtDate(tx.date), col2 + 80, y + 36);
+    doc.font('Helvetica-Bold').text(txTypeLabel, col2 + 80, y + 60);
+
+    // === TRANSACTION DETAILS ===
+    y += 100;
+    doc.fillColor(c.brand).font('Helvetica-Bold').fontSize(11).text('Transaction Details', M, y);
+    y += 18;
+
+    doc.save().roundedRect(M, y, CW, tx.type === 'truck' ? 110 : 66, 8).fill(c.white).restore();
+    doc.save().roundedRect(M, y, CW, tx.type === 'truck' ? 110 : 66, 8).lineWidth(0.5).strokeColor(c.border).stroke().restore();
+
+    const makeRow = (label, value, yPos, bold) => {
+      doc.fillColor(c.muted).font('Helvetica-Bold').fontSize(8.5).text(label, M + 14, yPos);
+      doc.fillColor(c.text).font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(10).text(String(value), M + 140, yPos, { width: CW / 2 - 160 });
+    };
+    const makeRow2 = (label, value, yPos, bold) => {
+      doc.fillColor(c.muted).font('Helvetica-Bold').fontSize(8.5).text(label, col2, yPos);
+      doc.fillColor(c.text).font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(10).text(String(value), col2 + 120, yPos, { width: CW / 2 - 140 });
+    };
+
+    makeRow('Entry Amount', money(thisEntryAmount), y + 12, true);
+    makeRow2('Entry Paid', money(thisEntryPaid), y + 12);
+    makeRow('Entry Remaining', money(thisEntryRemaining), y + 34);
+    makeRow2('Balance After', money(enrichedTx.balanceAfter), y + 34);
+
     if (tx.type === 'truck') {
-      doc.text(`Truck No: ${tx.truckNumber || '-'}`, left + width / 2 + 8, y + 92);
-      doc.text(`Challan No: ${tx.challanNo || '-'}`, left + width / 2 + 8, y + 108);
-      doc.text(`Material: ${tx.material || '-'}`, left + width / 2 + 8, y + 124);
-      doc.text(`Trolleys: ${tx.trolleyCount == null ? '-' : tx.trolleyCount}`, left + width / 2 + 8, y + 140);
-      doc.text(
-        `Quantity: ${tx.quantity == null ? '-' : tx.quantity} | Rate: ${tx.rate == null ? '-' : moneyInr(tx.rate)}`,
-        left + width / 2 + 8,
-        y + 156,
-        { width: width / 2 - 16 }
-      );
+      makeRow('Truck No.', tx.truckNumber || '-', y + 56);
+      makeRow2('Challan No.', tx.challanNo || '-', y + 56);
+      makeRow('Material', tx.material || '-', y + 78);
+      makeRow2('Qty / Trolleys', `${tx.quantity || '-'} / ${tx.trolleyCount == null ? '-' : tx.trolleyCount}`, y + 78);
+      y += 122;
     } else {
-      doc.text(`Payment Mode: ${tx.paymentMode || '-'}`, left + width / 2 + 8, y + 92);
-      doc.text(`Reference: ${tx.paymentRef || '-'}`, left + width / 2 + 8, y + 108);
+      makeRow('Payment Mode', tx.paymentMode || '-', y + 56);
+      makeRow2('Reference', tx.paymentRef || '-', y + 56);
+      y += 78;
     }
-    y += topBoxHeight + 12;
 
-    const summaryHeight = 138;
-    doc.save().roundedRect(left, y, width, summaryHeight, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
-    doc.fillColor(colors.heading).font('Helvetica-Bold').fontSize(10).text('Supplier Financial Summary', left + 10, y + 10);
+    // === FINANCIAL SUMMARY ===
+    doc.fillColor(c.brand).font('Helvetica-Bold').fontSize(11).text('Supplier Financial Summary', M, y);
+    y += 18;
 
-    const summaryRows = [
+    doc.save().rect(M, y, CW, 26).fill(c.brand).restore();
+    doc.fillColor(c.white).font('Helvetica-Bold').fontSize(8.5);
+    doc.text('PARTICULARS', M + 14, y + 8);
+    doc.text('AMOUNT', M + CW * 0.7, y + 8, { width: CW * 0.28, align: 'right' });
+    y += 26;
+
+    const summaryData = [
+      ['Opening Balance', money(openingBalance)],
+      ['Total Material Value', money(totalMaterialAmount)],
       ['Total Quantity', `${totalQuantity}`],
-      ['Total Material Value', moneyInr(totalMaterialAmount)],
-      ['Total Paid', moneyInr(totalPaid)],
-      ['Total To Give', moneyInr(totalToGive)],
-      ['Remaining Balance', moneyInr(remaining)]
+      ['Total To Give', money(totalToGive)],
+      ['Total Paid', money(totalPaid)],
+      ['Remaining Balance', money(remaining)]
     ];
-    let sy = y + 30;
-    summaryRows.forEach(([label, value], index) => {
-      if (index % 2 === 0) {
-        doc.save().rect(left + 8, sy - 3, width - 16, 20).fill('#F8FBFF').restore();
-      }
-      doc.fillColor(colors.text).font('Helvetica').fontSize(10);
-      doc.text(label, left + 14, sy);
-      doc.font('Helvetica-Bold').text(value, left + 14, sy, { width: width - 28, align: 'right' });
-      sy += 22;
-    });
-    y += summaryHeight + 14;
 
-    doc.save().roundedRect(left, y, width, 56, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
-    doc.fillColor(colors.text).font('Helvetica').fontSize(9.5);
-    doc.text(`Note: ${tx.note || '-'}`, left + 10, y + 10, { width: width - 20 });
-    doc.text('This receipt can be printed and signed by supplier and company representative.', left + 10, y + 32, {
-      width: width - 20
+    summaryData.forEach(([label, value], idx) => {
+      const rowBg = idx % 2 === 0 ? c.white : c.bg;
+      doc.save().rect(M, y, CW, 22).fill(rowBg).restore();
+      doc.save().moveTo(M, y + 22).lineTo(M + CW, y + 22).strokeColor(c.border).lineWidth(0.3).stroke().restore();
+      doc.fillColor(c.text).font('Helvetica').fontSize(9).text(label, M + 14, y + 6);
+      const isLast = idx === summaryData.length - 1;
+      doc.fillColor(isLast ? c.brand : c.text).font(isLast ? 'Helvetica-Bold' : 'Helvetica').fontSize(isLast ? 10 : 9);
+      doc.text(value, M + CW * 0.7, y + 6, { width: CW * 0.28, align: 'right' });
+      y += 22;
     });
 
-    const footerY = doc.page.height - 74;
-    doc.save().moveTo(left, footerY).lineTo(left + width, footerY).lineWidth(1).strokeColor(colors.border).stroke().restore();
-    doc.fillColor(colors.muted).font('Helvetica').fontSize(9);
-    doc.text(`Generated by ${APP_NAME}`, left, footerY + 8, { width, align: 'left' });
-    doc.text(`Company Signature`, left, footerY + 8, { width, align: 'right' });
-    doc.text('Supplier Signature', left, footerY + 42, { width, align: 'left' });
-    doc.text('Date', left, footerY + 42, { width, align: 'right' });
+    // Remaining highlight
+    doc.save().roundedRect(M, y + 4, CW, 38, 8).fill(remaining > 0 ? c.danger : c.success).restore();
+    doc.fillColor(c.white).font('Helvetica-Bold').fontSize(10).text('REMAINING BALANCE', M + 16, y + 12);
+    doc.fillColor(c.white).font('Helvetica-Bold').fontSize(18).text(money(remaining), M + CW * 0.4, y + 10, { width: CW * 0.56, align: 'right' });
+
+    // === NOTE ===
+    y += 54;
+    if (tx.note) {
+      doc.fillColor(c.muted).font('Helvetica-Bold').fontSize(8).text('NOTE', M, y);
+      doc.fillColor(c.text).font('Helvetica').fontSize(9).text(tx.note, M, y + 14, { width: CW });
+      y += 36;
+    }
+
+    // === SIGNATURES ===
+    const sigY = H - 90;
+    doc.save().moveTo(M, sigY).lineTo(M + 180, sigY).strokeColor(c.border).lineWidth(1).stroke().restore();
+    doc.save().moveTo(W - M - 180, sigY).lineTo(W - M, sigY).strokeColor(c.border).lineWidth(1).stroke().restore();
+    doc.fillColor(c.muted).font('Helvetica-Bold').fontSize(8.5);
+    doc.text('Company Representative', M, sigY + 6, { width: 180, align: 'center' });
+    doc.text('Supplier Signature', W - M - 180, sigY + 6, { width: 180, align: 'center' });
+    doc.fillColor(c.text).font('Helvetica').fontSize(8.5);
+    doc.text(APP_NAME, M, sigY + 20, { width: 180, align: 'center' });
+    doc.text(supplier.name || '', W - M - 180, sigY + 20, { width: 180, align: 'center' });
+
+    // === FOOTER ===
+    const fY = H - 32;
+    doc.save().moveTo(M, fY - 6).lineTo(W - M, fY - 6).strokeColor(c.border).lineWidth(0.5).stroke().restore();
+    doc.fillColor(c.muted).font('Helvetica').fontSize(7.5);
+    doc.text(`${APP_NAME} • Supplier Receipt • ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`, M, fY, { width: CW, align: 'center' });
+
     doc.end();
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to generate supplier receipt' });
   }
 });
-
 app.get('/api/billing/companies', auth, requirePermission('billing:view'), async (req, res) => {
   try {
     const gstNo = normalizeGstNo(req.query.gstNo);
@@ -6610,99 +6670,131 @@ function sendTabularPdfReport(res, { fileName, title, filters = [], summary = []
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
 
-  const doc = new PDFDocument({ margin: 28, size: 'A4' });
+  const doc = new PDFDocument({ margin: 0, size: 'A4' });
   doc.pipe(res);
 
-  const left = 28;
-  const usableWidth = doc.page.width - 56;
+  const W = doc.page.width;
+  const H = doc.page.height;
+  const M = 40;
+  const CW = W - M * 2;
+
+  const c = {
+    brand: '#0B3D91',
+    brandGrad: '#1565C0',
+    brandLight: '#E8F0FE',
+    white: '#FFFFFF',
+    text: '#1A2744',
+    muted: '#617594',
+    border: '#D4DFF0',
+    bg: '#F7F9FC'
+  };
+
   const generatedAt = new Date().toLocaleString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
   });
 
-  doc.font('Helvetica-Bold').fontSize(17).fillColor('#0f3b74').text(`${APP_NAME} - ${title}`, left, 26, {
-    width: usableWidth
-  });
-  let y = 50;
-  doc.font('Helvetica').fontSize(10).fillColor('#26364a').text(`Generated: ${generatedAt}`, left, y, {
-    width: usableWidth
-  });
-  y += 14;
+  // === HEADER GRADIENT ===
+  const grad = doc.linearGradient(0, 0, W, 0);
+  grad.stop(0, c.brand).stop(1, c.brandGrad);
+  doc.save().rect(0, 0, W, 80).fill(grad).restore();
+
+  doc.save().circle(M + 20, 40, 18).fill(c.white).restore();
+  doc.fillColor(c.brand).font('Helvetica-Bold').fontSize(14).text('NE', M + 7, 34, { width: 26, align: 'center' });
+
+  doc.fillColor(c.white).font('Helvetica-Bold').fontSize(16).text(APP_NAME, M + 48, 22);
+  doc.fillColor('rgba(255,255,255,0.8)').font('Helvetica').fontSize(9).text(title, M + 48, 42);
+  doc.fillColor(c.white).font('Helvetica-Bold').fontSize(11).text(title.toUpperCase(), W - M - 180, 28, { width: 180, align: 'right' });
+  doc.fillColor('rgba(255,255,255,0.8)').font('Helvetica').fontSize(9).text(generatedAt, W - M - 180, 46, { width: 180, align: 'right' });
+
+  let y = 96;
+
+  // === FILTERS ===
   if (filters.length) {
-    doc.font('Helvetica').fontSize(10).fillColor('#26364a').text(`Filters: ${filters.join(' | ')}`, left, y, {
-      width: usableWidth
-    });
+    doc.fillColor(c.muted).font('Helvetica').fontSize(8.5).text('Filters: ' + filters.join(' | '), M, y, { width: CW });
     y += 14;
   }
+
+  // === SUMMARY STAT CARDS ===
   if (summary.length) {
-    doc.font('Helvetica-Bold').fontSize(10).fillColor('#111827').text(summary.join(' | '), left, y, {
-      width: usableWidth
+    const cardCount = summary.length;
+    const gap = 8;
+    const cardW = (CW - gap * (cardCount - 1)) / cardCount;
+    summary.forEach((item, idx) => {
+      const xPos = M + idx * (cardW + gap);
+      doc.save().roundedRect(xPos, y, cardW, 40, 6).fill(c.white).restore();
+      doc.save().roundedRect(xPos, y, cardW, 40, 6).lineWidth(0.5).strokeColor(c.border).stroke().restore();
+      const parts = item.split(':');
+      if (parts.length === 2) {
+        doc.fillColor(c.muted).font('Helvetica-Bold').fontSize(7.5).text(parts[0].trim().toUpperCase(), xPos + 8, y + 8, { width: cardW - 16 });
+        doc.fillColor(c.text).font('Helvetica-Bold').fontSize(11).text(parts[1].trim(), xPos + 8, y + 22, { width: cardW - 16 });
+      } else {
+        doc.fillColor(c.text).font('Helvetica-Bold').fontSize(9).text(item, xPos + 8, y + 14, { width: cardW - 16 });
+      }
     });
-    y += 18;
-  } else {
-    y += 8;
+    y += 52;
   }
 
+  // === TABLE ===
   const normalizedCols = columns.map((col) => ({
     ...col,
     width: Math.max(40, Number(col.width || 80)),
     align: col.align === 'right' ? 'right' : 'left'
   }));
-  const totalWidth = Math.max(1, normalizedCols.reduce((sum, c) => sum + c.width, 0));
-  const scale = usableWidth / totalWidth;
-  const widths = normalizedCols.map((c) => c.width * scale);
-  const rowHeight = 14;
-  const renderHeader = () => {
-    doc.save().roundedRect(left, y - 2, usableWidth, 20, 4).fill('#e6efff').restore();
-    let x = left + 2;
+  const totalWidth = Math.max(1, normalizedCols.reduce((sum, c2) => sum + c2.width, 0));
+  const scale = CW / totalWidth;
+  const widths = normalizedCols.map((c2) => c2.width * scale);
+  const rowHeight = 22;
+
+  const renderHeader = (yPos) => {
+    doc.save().rect(M, yPos, CW, 26).fill(c.brand).restore();
+    let x = M + 6;
     normalizedCols.forEach((col, idx) => {
-      doc.font('Helvetica-Bold').fontSize(9).fillColor('#13315a').text(col.label, x, y + 3, {
-        width: widths[idx] - 4,
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(c.white).text(col.label.toUpperCase(), x, yPos + 8, {
+        width: widths[idx] - 8,
         align: col.align
       });
       x += widths[idx];
     });
-    y += 22;
+    return yPos + 26;
   };
 
   if (!rows.length) {
-    doc.font('Helvetica').fontSize(11).fillColor('#374151').text('No records found for selected filters.', left, y + 6, {
-      width: usableWidth
-    });
+    doc.fillColor(c.muted).font('Helvetica').fontSize(11).text('No records found for selected filters.', M, y + 12, { width: CW });
     doc.end();
     return;
   }
 
-  renderHeader();
-  rows.forEach((row) => {
-    if (y > doc.page.height - 48) {
+  y = renderHeader(y);
+
+  rows.forEach((row, rowIdx) => {
+    if (y > H - 60) {
       doc.addPage();
-      y = 30;
-      renderHeader();
+      y = renderHeader(30);
     }
-    let x = left + 2;
+    const rowBg = rowIdx % 2 === 0 ? c.white : c.bg;
+    doc.save().rect(M, y, CW, rowHeight).fill(rowBg).restore();
+    doc.save().moveTo(M, y + rowHeight).lineTo(M + CW, y + rowHeight).strokeColor(c.border).lineWidth(0.3).stroke().restore();
+
+    let x = M + 6;
     normalizedCols.forEach((col, idx) => {
-      doc.font('Helvetica').fontSize(9).fillColor('#111827');
-      const text = fitPdfCellText(doc, row[col.key], widths[idx] - 6);
-      doc.text(text, x, y, {
-        width: widths[idx] - 4,
-        align: col.align
-      });
+      doc.font('Helvetica').fontSize(8.5).fillColor(c.text);
+      const text = fitPdfCellText(doc, row[col.key], widths[idx] - 10);
+      doc.text(text, x, y + 6, { width: widths[idx] - 8, align: col.align });
       x += widths[idx];
     });
-    doc
-      .save()
-      .moveTo(left, y + 12)
-      .lineTo(left + usableWidth, y + 12)
-      .strokeColor('#e5e7eb')
-      .lineWidth(0.8)
-      .stroke()
-      .restore();
     y += rowHeight;
   });
+
+  // === TOTALS ROW ===
+  doc.save().rect(M, y, CW, 26).fill(c.brandLight).restore();
+  doc.save().rect(M, y, CW, 26).lineWidth(0.5).strokeColor(c.border).stroke().restore();
+  doc.fillColor(c.brand).font('Helvetica-Bold').fontSize(9).text(`Total: ${rows.length} records`, M + 8, y + 8);
+
+  // === FOOTER ===
+  const fY = H - 30;
+  doc.save().moveTo(M, fY - 6).lineTo(W - M, fY - 6).strokeColor(c.border).lineWidth(0.5).stroke().restore();
+  doc.fillColor(c.muted).font('Helvetica').fontSize(7.5);
+  doc.text(`${APP_NAME} • ${title} • Generated ${generatedAt}`, M, fY, { width: CW, align: 'center' });
 
   doc.end();
 }
@@ -6852,119 +6944,52 @@ app.get('/api/export/trucks.pdf', auth, requirePermission('export:view'), async 
       })
       .sort((a, b) => (a.date < b.date ? 1 : -1));
 
-    const fileSuffix = [partyFilter || 'all', materialFilter || 'all'].join('-');
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="truck-report-${fileSuffix}.pdf"`);
-    const doc = new PDFDocument({ margin: 28, size: 'A4' });
-    doc.pipe(res);
-
-    const pageWidth = doc.page.width - 56;
-    const left = 28;
-    const heading = `${APP_NAME} - Truck Report`;
-    const generatedAt = new Date().toLocaleString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
     const partyLabel = partyFilter ? (partyFilter === 'narayan' ? 'Narayan' : 'Maa Vaishno') : 'All';
-    const materialLabel = materialFilter
-      ? materialFilter === 'pellet'
-        ? 'Pellet'
-        : 'Briquettes'
-      : 'All';
+    const materialLabel = materialFilter ? (materialFilter === 'pellet' ? 'Pellet' : 'Briquettes') : 'All';
     const totalQty = rows.reduce((sum, r) => sum + Number(r.quantity || 0), 0);
     const totalAmount = rows.reduce((sum, r) => sum + Number(r.totalAmount || 0), 0);
 
-    doc.font('Helvetica-Bold').fontSize(17).fillColor('#0f3b74').text(heading, left, 26, { width: pageWidth });
-    doc
-      .font('Helvetica')
-      .fontSize(10)
-      .fillColor('#26364a')
-      .text(`Generated: ${generatedAt}`, left, 50, { width: pageWidth });
-    doc
-      .font('Helvetica')
-      .fontSize(10)
-      .fillColor('#26364a')
-      .text(`Filters: Party=${partyLabel} | Material=${materialLabel}`, left, 65, { width: pageWidth });
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(10)
-      .fillColor('#111827')
-      .text(`Records: ${rows.length} | Total Qty: ${totalQty.toFixed(2)} | Total Amount: ${moneyInr(totalAmount)}`, left, 80, {
-        width: pageWidth
-      });
+    const filters = [];
+    if (partyFilter || materialFilter) filters.push(`Party: ${partyLabel}`);
+    if (materialFilter) filters.push(`Material: ${materialLabel}`);
+    if (req.query.dateFrom || req.query.dateTo) filters.push(`Date: ${req.query.dateFrom || '-'} to ${req.query.dateTo || '-'}`);
 
-    let y = 106;
-    const headerTop = y;
-    const widths = [66, 58, 72, 76, 52, 52, 68];
-    const cols = ['Date', 'Party', 'Material', 'Truck', 'Qty', 'Rate', 'Amount'];
-    doc.save().roundedRect(left, headerTop - 2, pageWidth, 20, 4).fill('#e6efff').restore();
-    let x = left + 2;
-    cols.forEach((col, idx) => {
-      doc.font('Helvetica-Bold').fontSize(9).fillColor('#13315a').text(col, x, headerTop + 3, { width: widths[idx] });
-      x += widths[idx];
+    const reportRows = rows.map((r) => ({
+      date: r.date || '-',
+      party: truckPartyKey(r.party || 'narayan') === 'maa_vaishno' ? 'Maa Vaishno' : 'Narayan',
+      material: truckMaterialKey(r.rawMaterial) === 'briquettes' ? 'Briquettes' : 'Pellet',
+      truck: r.truckNumber || '-',
+      qty: Number(r.quantity || 0).toFixed(2),
+      rate: r.pricePerQuintal != null ? moneyInr(r.pricePerQuintal) : '-',
+      amount: r.totalAmount != null ? moneyInr(r.totalAmount) : '-'
+    }));
+
+    const fileSuffix = [partyFilter || 'all', materialFilter || 'all'].join('-');
+    sendTabularPdfReport(res, {
+      fileName: `truck-report-${fileSuffix}.pdf`,
+      title: 'Truck Report',
+      filters,
+      summary: [
+        `Records: ${rows.length}`,
+        `Total Qty: ${totalQty.toFixed(2)} qtl`,
+        `Total Amount: ${moneyInr(totalAmount)}`
+      ],
+      columns: [
+        { key: 'date', label: 'Date', width: 70 },
+        { key: 'party', label: 'Party', width: 68 },
+        { key: 'material', label: 'Material', width: 62 },
+        { key: 'truck', label: 'Truck No.', width: 76 },
+        { key: 'qty', label: 'Qty (qtl)', width: 56, align: 'right' },
+        { key: 'rate', label: 'Rate', width: 56, align: 'right' },
+        { key: 'amount', label: 'Amount', width: 72, align: 'right' }
+      ],
+      rows: reportRows
     });
-    y = headerTop + 22;
-
-    const renderHeader = () => {
-      doc.save().roundedRect(left, 26, pageWidth, 20, 4).fill('#e6efff').restore();
-      let hx = left + 2;
-      cols.forEach((col, idx) => {
-        doc.font('Helvetica-Bold').fontSize(9).fillColor('#13315a').text(col, hx, 31, { width: widths[idx] });
-        hx += widths[idx];
-      });
-      y = 50;
-    };
-
-    if (!rows.length) {
-      doc.font('Helvetica').fontSize(11).fillColor('#374151').text('No truck entries found for selected filters.', left, y + 8, {
-        width: pageWidth
-      });
-      doc.end();
-      return;
-    }
-
-    rows.forEach((r) => {
-      if (y > doc.page.height - 48) {
-        doc.addPage();
-        renderHeader();
-      }
-      const party = truckPartyKey(r.party || 'narayan') === 'maa_vaishno' ? 'Maa Vaishno' : 'Narayan';
-      const material = truckMaterialKey(r.rawMaterial) === 'briquettes' ? 'Briquettes' : 'Pellet';
-      const values = [
-        r.date || '-',
-        party,
-        material,
-        r.truckNumber || '-',
-        Number(r.quantity || 0).toFixed(2),
-        r.pricePerQuintal != null ? moneyInr(r.pricePerQuintal) : '-',
-        r.totalAmount != null ? moneyInr(r.totalAmount) : '-'
-      ];
-      let rowX = left + 2;
-      values.forEach((val, idx) => {
-        doc.font('Helvetica').fontSize(9).fillColor('#111827').text(String(val), rowX, y, { width: widths[idx] });
-        rowX += widths[idx];
-      });
-      doc
-        .save()
-        .moveTo(left, y + 13)
-        .lineTo(left + pageWidth, y + 13)
-        .strokeColor('#e5e7eb')
-        .lineWidth(0.8)
-        .stroke()
-        .restore();
-      y += 14;
-    });
-
-    doc.end();
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to export truck PDF' });
   }
 });
-
 app.get('/api/export/expenses.pdf', auth, requirePermission('expenses:view'), async (req, res) => {
   try {
     const partyQuery = String(req.query.party || '').trim().toLowerCase();
