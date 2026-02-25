@@ -541,22 +541,22 @@ function mapExternalCompanyFromPayload(gstNo, payload) {
   const normalizedGst = normalizeGstNo(gstNo);
   const companyName = String(
     payload.companyName ||
-      payload.legalName ||
-      payload.legal_name ||
-      payload.tradeNam ||
-      payload.tradeName ||
-      payload.lgnm ||
-      payload.name ||
-      ''
+    payload.legalName ||
+    payload.legal_name ||
+    payload.tradeNam ||
+    payload.tradeName ||
+    payload.lgnm ||
+    payload.name ||
+    ''
   ).trim();
   const address = String(buildAddressFromPayload(payload) || '').trim();
   const stateCode = String(
     payload.stateCode ||
-      payload.state_code ||
-      payload.pradr?.addr?.stcd ||
-      payload.address?.stateCode ||
-      normalizedGst.slice(0, 2) ||
-      ''
+    payload.state_code ||
+    payload.pradr?.addr?.stcd ||
+    payload.address?.stateCode ||
+    normalizedGst.slice(0, 2) ||
+    ''
   ).trim();
   const state = String(payload.state || payload.address?.state || '').trim();
   const contactPerson = String(payload.contactPerson || payload.contact_person || '').trim();
@@ -1054,10 +1054,10 @@ function jsonStore() {
         );
       });
     },
-      async upsertSalaryLedger(
-        employeeId,
-        totalSalary,
-        amountGiven,
+    async upsertSalaryLedger(
+      employeeId,
+      totalSalary,
+      amountGiven,
       note,
       totalToGive,
       period1ToGive,
@@ -2597,45 +2597,45 @@ function postgresStore() {
       period2Paid,
       extra = {}
     ) {
-        const paidRaw = roundMoney(Math.max(0, toSafeNumber(amountGiven, 0)));
-        const monthlySalaryApplied = roundMoney(Math.max(0, toSafeNumber(extra.monthlySalaryApplied, 0)));
-        const durationStart = normalizeISODateText(extra.durationStart || extra.sessionFrom);
-        const durationEnd = normalizeISODateText(extra.durationEnd || extra.sessionTo);
-        const durationDaysFromPayload = Math.max(0, Math.trunc(toSafeNumber(extra.durationDays, 0)));
-        const durationDays = durationDaysFromPayload > 0 ? durationDaysFromPayload : isoDaysInclusive(durationStart, durationEnd);
-        const durationMonths = roundMoney(
-          Math.max(0, toSafeNumber(extra.durationMonths, durationDays > 0 ? durationDays / 30 : 0))
-        );
-        const periodFromDays =
-          durationDays > 0 && monthlySalaryApplied > 0 ? roundMoney((monthlySalaryApplied / 30) * durationDays) : 0;
-        const periodFromMonths =
-          durationMonths > 0 && monthlySalaryApplied > 0 ? roundMoney(monthlySalaryApplied * durationMonths) : 0;
-        const periodSalary = roundMoney(Math.max(0, toSafeNumber(extra.periodSalary, periodFromDays || periodFromMonths)));
-        const salaryGeneratedBefore = roundMoney(Math.max(0, toSafeNumber(extra.salaryGeneratedBefore, 0)));
-        const paidBefore = roundMoney(Math.max(0, toSafeNumber(extra.paidBefore, 0)));
-        const openingPendingAuto = roundMoney(Math.max(0, salaryGeneratedBefore - paidBefore));
-        const openingPending = roundMoney(Math.max(0, toSafeNumber(extra.openingPending, openingPendingAuto)));
-        const paidForPrevious = roundMoney(Math.max(0, toSafeNumber(extra.paidForPrevious, 0)));
-        const paidForCurrent = roundMoney(Math.max(0, toSafeNumber(extra.paidForCurrent, 0)));
-        const totalPaidThisSession = roundMoney(Math.max(0, paidForPrevious + paidForCurrent));
-        const computedTotalSeed = roundMoney(salaryGeneratedBefore + periodSalary);
-        const computedTotal = roundMoney(
-          Math.max(0, toSafeNumber(totalToGive != null && totalToGive !== '' ? totalToGive : totalSalary, computedTotalSeed))
-        );
-        const paid = roundMoney(
-          Math.max(0, Math.min(computedTotal, Math.max(paidRaw, paidBefore + totalPaidThisSession)))
-        );
-        const section1ToGive = roundMoney(Math.max(0, toSafeNumber(period1ToGive, computedTotal)));
-        const section1Paid = roundMoney(Math.max(0, toSafeNumber(period1Paid, paid)));
-        const section2ToGive = roundMoney(Math.max(0, toSafeNumber(period2ToGive, 0)));
-        const section2Paid = roundMoney(Math.max(0, toSafeNumber(period2Paid, 0)));
-        const resolvedPeriodSalary =
-          periodSalary > 0 ? periodSalary : roundMoney(Math.max(0, computedTotal - salaryGeneratedBefore));
-        const existing = await pool.query('SELECT id FROM salary_ledgers WHERE employee_id = $1', [employeeId]);
-        if (existing.rows[0]) {
-          const id = existing.rows[0].id;
-          await pool.query(
-            `UPDATE salary_ledgers
+      const paidRaw = roundMoney(Math.max(0, toSafeNumber(amountGiven, 0)));
+      const monthlySalaryApplied = roundMoney(Math.max(0, toSafeNumber(extra.monthlySalaryApplied, 0)));
+      const durationStart = normalizeISODateText(extra.durationStart || extra.sessionFrom);
+      const durationEnd = normalizeISODateText(extra.durationEnd || extra.sessionTo);
+      const durationDaysFromPayload = Math.max(0, Math.trunc(toSafeNumber(extra.durationDays, 0)));
+      const durationDays = durationDaysFromPayload > 0 ? durationDaysFromPayload : isoDaysInclusive(durationStart, durationEnd);
+      const durationMonths = roundMoney(
+        Math.max(0, toSafeNumber(extra.durationMonths, durationDays > 0 ? durationDays / 30 : 0))
+      );
+      const periodFromDays =
+        durationDays > 0 && monthlySalaryApplied > 0 ? roundMoney((monthlySalaryApplied / 30) * durationDays) : 0;
+      const periodFromMonths =
+        durationMonths > 0 && monthlySalaryApplied > 0 ? roundMoney(monthlySalaryApplied * durationMonths) : 0;
+      const periodSalary = roundMoney(Math.max(0, toSafeNumber(extra.periodSalary, periodFromDays || periodFromMonths)));
+      const salaryGeneratedBefore = roundMoney(Math.max(0, toSafeNumber(extra.salaryGeneratedBefore, 0)));
+      const paidBefore = roundMoney(Math.max(0, toSafeNumber(extra.paidBefore, 0)));
+      const openingPendingAuto = roundMoney(Math.max(0, salaryGeneratedBefore - paidBefore));
+      const openingPending = roundMoney(Math.max(0, toSafeNumber(extra.openingPending, openingPendingAuto)));
+      const paidForPrevious = roundMoney(Math.max(0, toSafeNumber(extra.paidForPrevious, 0)));
+      const paidForCurrent = roundMoney(Math.max(0, toSafeNumber(extra.paidForCurrent, 0)));
+      const totalPaidThisSession = roundMoney(Math.max(0, paidForPrevious + paidForCurrent));
+      const computedTotalSeed = roundMoney(salaryGeneratedBefore + periodSalary);
+      const computedTotal = roundMoney(
+        Math.max(0, toSafeNumber(totalToGive != null && totalToGive !== '' ? totalToGive : totalSalary, computedTotalSeed))
+      );
+      const paid = roundMoney(
+        Math.max(0, Math.min(computedTotal, Math.max(paidRaw, paidBefore + totalPaidThisSession)))
+      );
+      const section1ToGive = roundMoney(Math.max(0, toSafeNumber(period1ToGive, computedTotal)));
+      const section1Paid = roundMoney(Math.max(0, toSafeNumber(period1Paid, paid)));
+      const section2ToGive = roundMoney(Math.max(0, toSafeNumber(period2ToGive, 0)));
+      const section2Paid = roundMoney(Math.max(0, toSafeNumber(period2Paid, 0)));
+      const resolvedPeriodSalary =
+        periodSalary > 0 ? periodSalary : roundMoney(Math.max(0, computedTotal - salaryGeneratedBefore));
+      const existing = await pool.query('SELECT id FROM salary_ledgers WHERE employee_id = $1', [employeeId]);
+      if (existing.rows[0]) {
+        const id = existing.rows[0].id;
+        await pool.query(
+          `UPDATE salary_ledgers
                 SET total_salary = $2,
                     amount_given = $3,
                     note = $4,
@@ -2656,56 +2656,30 @@ function postgresStore() {
                     paid_for_current = $19,
                     updated_at = NOW()
               WHERE id = $1`,
-            [
-              id,
-              computedTotal,
-              paid,
-              String(note || '').trim(),
-              section1ToGive,
-              section1Paid,
-              section2ToGive,
-              section2Paid,
-              monthlySalaryApplied || null,
-              durationStart || null,
-              durationEnd || null,
-              durationDays || null,
-              durationMonths || null,
-              openingPending,
-              resolvedPeriodSalary,
-              salaryGeneratedBefore,
-              paidBefore,
-              paidForPrevious,
-              paidForCurrent
-            ]
-          );
-          return {
+          [
             id,
-            employeeId,
-            totalSalary: computedTotal,
-            totalToGive: computedTotal,
-            amountGiven: paid,
-            sessionPaid: totalPaidThisSession,
+            computedTotal,
+            paid,
+            String(note || '').trim(),
+            section1ToGive,
+            section1Paid,
+            section2ToGive,
+            section2Paid,
+            monthlySalaryApplied || null,
+            durationStart || null,
+            durationEnd || null,
+            durationDays || null,
+            durationMonths || null,
+            openingPending,
+            resolvedPeriodSalary,
             salaryGeneratedBefore,
             paidBefore,
-            openingPending,
-            periodSalary: resolvedPeriodSalary,
             paidForPrevious,
-            paidForCurrent,
-            totalPaidThisSession,
-            period1ToGive: section1ToGive,
-            period1Paid: section1Paid,
-            period2ToGive: section2ToGive,
-            period2Paid: section2Paid,
-            monthlySalaryApplied,
-            durationMonths,
-            durationStart,
-            durationEnd,
-            durationDays,
-            note: String(note || '').trim()
-          };
-        }
-        const row = {
-          id: uid('sld'),
+            paidForCurrent
+          ]
+        );
+        return {
+          id,
           employeeId,
           totalSalary: computedTotal,
           totalToGive: computedTotal,
@@ -2727,12 +2701,38 @@ function postgresStore() {
           durationStart,
           durationEnd,
           durationDays,
-          note: String(note || '').trim(),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+          note: String(note || '').trim()
         };
-        await pool.query(
-          `INSERT INTO salary_ledgers (
+      }
+      const row = {
+        id: uid('sld'),
+        employeeId,
+        totalSalary: computedTotal,
+        totalToGive: computedTotal,
+        amountGiven: paid,
+        sessionPaid: totalPaidThisSession,
+        salaryGeneratedBefore,
+        paidBefore,
+        openingPending,
+        periodSalary: resolvedPeriodSalary,
+        paidForPrevious,
+        paidForCurrent,
+        totalPaidThisSession,
+        period1ToGive: section1ToGive,
+        period1Paid: section1Paid,
+        period2ToGive: section2ToGive,
+        period2Paid: section2Paid,
+        monthlySalaryApplied,
+        durationMonths,
+        durationStart,
+        durationEnd,
+        durationDays,
+        note: String(note || '').trim(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      await pool.query(
+        `INSERT INTO salary_ledgers (
               id,
               employee_id,
               total_salary,
@@ -2757,33 +2757,33 @@ function postgresStore() {
               updated_at
             )
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`,
-          [
-            row.id,
-            row.employeeId,
-            row.totalSalary,
-            row.amountGiven,
-            row.note,
-            row.period1ToGive,
-            row.period1Paid,
-            row.period2ToGive,
-            row.period2Paid,
-            row.monthlySalaryApplied || null,
-            row.durationStart || null,
-            row.durationEnd || null,
-            row.durationDays || null,
-            row.durationMonths || null,
-            row.openingPending,
-            row.periodSalary,
-            row.salaryGeneratedBefore,
-            row.paidBefore,
-            row.paidForPrevious,
-            row.paidForCurrent,
-            row.createdAt,
-            row.updatedAt
-          ]
-        );
-        return row;
-      },
+        [
+          row.id,
+          row.employeeId,
+          row.totalSalary,
+          row.amountGiven,
+          row.note,
+          row.period1ToGive,
+          row.period1Paid,
+          row.period2ToGive,
+          row.period2Paid,
+          row.monthlySalaryApplied || null,
+          row.durationStart || null,
+          row.durationEnd || null,
+          row.durationDays || null,
+          row.durationMonths || null,
+          row.openingPending,
+          row.periodSalary,
+          row.salaryGeneratedBefore,
+          row.paidBefore,
+          row.paidForPrevious,
+          row.paidForCurrent,
+          row.createdAt,
+          row.updatedAt
+        ]
+      );
+      return row;
+    },
     async listSalaryLedgerEntries(employeeId) {
       const res = await pool.query(
         `SELECT *
@@ -5174,13 +5174,6 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     const monthDays = daysInMonth(year, monthNum - 1);
     const monthEnd = `${month}-${String(monthDays).padStart(2, '0')}`;
     const joiningDate = normalizeISODateText(employee.joiningDate);
-    const attendanceRows = await store.listAttendance();
-    const ledgerRows = await store.listSalaryLedgers();
-    const ledger = ledgerRows.find((r) => String(r.employeeId) === String(employee.id));
-    const monthAdvances = allAdvances.filter((a) => {
-      const d = normalizeISODateText(a.date);
-      return Boolean(d) && d >= monthStart && d <= monthEnd;
-    });
 
     const requestedUpto = req.query.uptoDate ? String(req.query.uptoDate) : null;
     if (requestedUpto && !/^\d{4}-\d{2}-\d{2}$/.test(requestedUpto)) {
@@ -5192,49 +5185,21 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
       today.getUTCDate()
     ).padStart(2, '0')}`;
 
-    // Default behavior:
-    // - Current month: count from 1st to today
-    // - Past/future month: count full month unless uptoDate is provided
     let periodEnd = monthEnd;
     if (requestedUpto) {
       periodEnd = requestedUpto;
     } else if (month === currentMonth()) {
       periodEnd = todayIso;
     }
-
     if (periodEnd < monthStart) periodEnd = monthStart;
     if (periodEnd > monthEnd) periodEnd = monthEnd;
 
-    const attendanceInMonth = attendanceRows.filter(
-      (a) => String(a.employeeId) === String(employee.id) && monthOf(a.date) === month
-    );
-    const attendanceStartPresent =
-      attendanceInMonth
-        .filter((a) => String(a.status || '').toLowerCase() === 'present')
-        .map((a) => normalizeISODateText(a.date))
-        .filter(Boolean)
-        .sort()[0] || '';
-    const attendanceStartAny =
-      attendanceInMonth
-        .map((a) => normalizeISODateText(a.date))
-        .filter(Boolean)
-        .sort()[0] || '';
-    const attendanceStart = attendanceStartPresent || attendanceStartAny;
-    const advanceStart = monthAdvances
-      .map((a) => normalizeISODateText(a.date))
-      .filter(Boolean)
-      .sort()[0] || '';
-    const ledgerStart = normalizeISODateText(ledger?.durationStart);
-
-    // Join date takes priority. Attendance/advance is only a fallback when join date is missing/outside month.
+    // Period ALWAYS starts from joining date if within the month
     let periodStart = monthStart;
     if (joiningDate && joiningDate >= monthStart && joiningDate <= monthEnd) {
       periodStart = joiningDate;
-    } else if (ledgerStart && ledgerStart >= monthStart && ledgerStart <= monthEnd) {
-      periodStart = ledgerStart;
-    } else {
-      const fallbackStart = attendanceStartPresent || advanceStart || attendanceStartAny || '';
-      if (fallbackStart && fallbackStart > periodStart) periodStart = fallbackStart;
+    } else if (joiningDate && joiningDate > monthEnd) {
+      return res.status(400).json({ error: 'Employee joined after this month' });
     }
     if (periodStart > periodEnd) periodStart = periodEnd;
 
@@ -5248,13 +5213,18 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
       startDate <= endDate
         ? Math.floor((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1
         : 0;
-    // Apply advances for selected month up to the selected slip end-date.
-    let advancesInPeriod = monthAdvances.filter((a) => {
+
+    // FIXED: Include ALL advances for this month (regardless of period), ensuring deductions work
+    const monthAdvances = allAdvances.filter((a) => {
       const d = normalizeISODateText(a.date);
-      if (!d) return false;
-      return d <= periodEnd;
+      return Boolean(d) && d >= monthStart && d <= monthEnd;
     });
+
+    // Also check salary ledger for paid amounts
+    let advancesInPeriod = monthAdvances;
     if (advancesInPeriod.length === 0) {
+      const ledgerRows = await store.listSalaryLedgers();
+      const ledger = ledgerRows.find((r) => String(r.employeeId) === String(employee.id));
       const ledgerPaidForCurrent = roundMoney(Math.max(0, toSafeNumber(ledger?.paidForCurrent, 0)));
       if (ledgerPaidForCurrent > 0) {
         const ledgerStart = normalizeISODateText(ledger?.durationStart);
@@ -5262,195 +5232,200 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
         const overlaps =
           ledgerStart && ledgerEnd ? !(ledgerEnd < periodStart || ledgerStart > periodEnd) : true;
         if (overlaps) {
-          advancesInPeriod = [
-            {
-              id: `ledger_${String(employee.id)}`,
-              employeeId: employee.id,
-              date: periodEnd,
-              amount: ledgerPaidForCurrent,
-              note: 'From salary ledger'
-            }
-          ];
+          advancesInPeriod = [{
+            id: `ledger_${String(employee.id)}`,
+            employeeId: employee.id,
+            date: periodEnd,
+            amount: ledgerPaidForCurrent,
+            note: 'From salary ledger'
+          }];
         }
       }
     }
+
     const totalAdvance = advancesInPeriod.reduce((sum, a) => sum + Number(a.amount), 0);
     const monthlySalary = Number(employee.monthlySalary);
     const perDaySalary = monthlySalary / monthDays;
-    const proratedSalary = perDaySalary * daysCounted;
-    const remaining = Math.max(0, proratedSalary - totalAdvance);
+    const proratedSalary = roundMoney(perDaySalary * daysCounted);
+    const remaining = roundMoney(Math.max(0, proratedSalary - totalAdvance));
+    const monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const monthLabel = `${monthNames[monthNum]} ${year}`;
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="salary-slip-${employee.name}-${month}.pdf"`);
 
-    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    const doc = new PDFDocument({ margin: 0, size: 'A4' });
     doc.pipe(res);
 
-    const pageWidth = doc.page.width;
-    const pageMargin = 40;
-    const contentWidth = pageWidth - pageMargin * 2;
-    const centerX = pageWidth / 2;
-    const colors = {
-      brand: '#0F3C8A',
-      brandLight: '#EAF2FF',
-      text: '#1A2538',
-      muted: '#5D6A7E',
-      success: '#0F9D58',
-      border: '#D6DEEB'
+    const W = doc.page.width;
+    const H = doc.page.height;
+    const M = 48;
+    const CW = W - M * 2;
+
+    const c = {
+      brand: '#0B3D91',
+      brandGrad: '#1565C0',
+      brandLight: '#E8F0FE',
+      white: '#FFFFFF',
+      text: '#1A2744',
+      muted: '#617594',
+      border: '#D4DFF0',
+      success: '#0E8A4F',
+      danger: '#C0392B',
+      bg: '#F7F9FC',
+      accent: '#FF6B35'
     };
 
-    const moneyText = (n) => `₹${Number(n).toFixed(2)}`;
-    const generatedAt = new Date().toISOString();
+    const money = (n) => `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const fmtDate = (d) => {
+      if (!d) return '-';
+      const p = parseISODate(d);
+      if (!p) return d;
+      return p.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    };
 
-    // Header band
-    doc
-      .save()
-      .roundedRect(pageMargin, 30, contentWidth, 82, 12)
-      .fill(colors.brandLight)
-      .restore();
+    // === HEADER GRADIENT BAND ===
+    const grad = doc.linearGradient(0, 0, W, 0);
+    grad.stop(0, c.brand).stop(1, c.brandGrad);
+    doc.save().rect(0, 0, W, 100).fill(grad).restore();
 
-    // Center logo emblem
-    const logoY = 46;
-    doc
-      .save()
-      .circle(centerX, logoY + 20, 20)
-      .fill(colors.brand)
-      .restore();
-    doc
-      .fillColor('#FFFFFF')
-      .fontSize(14)
-      .font('Helvetica-Bold')
-      .text('NE', centerX - 12, logoY + 13, { width: 24, align: 'center' });
+    // Company Logo Circle
+    doc.save().circle(M + 28, 50, 22).fill(c.white).restore();
+    doc.fillColor(c.brand).font('Helvetica-Bold').fontSize(16).text('NE', M + 12, 42, { width: 32, align: 'center' });
 
-    doc
-      .fillColor(colors.brand)
-      .font('Helvetica-Bold')
-      .fontSize(17)
-      .text(APP_NAME, pageMargin, 78, { width: contentWidth, align: 'center' });
-    doc
-      .fillColor(colors.text)
-      .fontSize(12)
-      .font('Helvetica-Bold')
-      .text('Salary Slip', pageMargin, 99, { width: contentWidth, align: 'center' });
+    // Company Name & Slip Title
+    doc.fillColor(c.white).font('Helvetica-Bold').fontSize(18).text(APP_NAME, M + 62, 30);
+    doc.fillColor('rgba(255,255,255,0.85)').font('Helvetica').fontSize(10).text('Operations Control Center', M + 62, 52);
+    doc.fillColor(c.white).font('Helvetica-Bold').fontSize(13).text('SALARY SLIP', W - M - 140, 38, { width: 140, align: 'right' });
+    doc.fillColor('rgba(255,255,255,0.85)').font('Helvetica').fontSize(10).text(monthLabel, W - M - 140, 56, { width: 140, align: 'right' });
 
-    // Employee and period block
-    let y = 130;
-    doc
-      .save()
-      .roundedRect(pageMargin, y, contentWidth, 92, 10)
-      .fill('#FFFFFF')
-      .restore();
-    doc
-      .save()
-      .roundedRect(pageMargin, y, contentWidth, 92, 10)
-      .strokeColor(colors.border)
-      .lineWidth(1)
-      .stroke()
-      .restore();
+    // === EMPLOYEE INFO CARD ===
+    let y = 118;
+    doc.save().roundedRect(M, y, CW, 80, 10).fill(c.white).restore();
+    doc.save().roundedRect(M, y, CW, 80, 10).lineWidth(1).strokeColor(c.border).stroke().restore();
 
-    doc.fillColor(colors.muted).fontSize(10).font('Helvetica-Bold');
-    doc.text('Month', pageMargin + 14, y + 12);
-    doc.text('Salary Period', pageMargin + 14, y + 38);
-    doc.text('Generated', pageMargin + 14, y + 64);
+    const col1 = M + 16;
+    const col2 = M + CW / 2 + 16;
+    const labelW = 110;
 
-    doc.text('Employee', pageMargin + contentWidth / 2, y + 12);
-    doc.text('Role', pageMargin + contentWidth / 2, y + 38);
-    doc.text('Days Counted', pageMargin + contentWidth / 2, y + 64);
+    doc.fillColor(c.muted).font('Helvetica-Bold').fontSize(8.5);
+    doc.text('EMPLOYEE NAME', col1, y + 14);
+    doc.text('DESIGNATION', col1, y + 44);
+    doc.text('SALARY PERIOD', col2, y + 14);
+    doc.text('JOINING DATE', col2, y + 44);
 
-    doc.fillColor(colors.text).font('Helvetica').fontSize(11);
-    doc.text(month, pageMargin + 90, y + 12);
-    doc.text(`${periodStart} to ${periodEnd}`, pageMargin + 90, y + 38);
-    doc.text(generatedAt, pageMargin + 90, y + 64);
+    doc.fillColor(c.text).font('Helvetica-Bold').fontSize(11);
+    doc.text(employee.name, col1 + labelW, y + 12);
+    doc.text(employee.role || 'Employee', col1 + labelW, y + 42);
+    doc.text(`${fmtDate(periodStart)} — ${fmtDate(periodEnd)}`, col2 + labelW, y + 12);
+    doc.text(fmtDate(joiningDate), col2 + labelW, y + 42);
 
-    doc.text(employee.name, pageMargin + contentWidth / 2 + 76, y + 12);
-    doc.text(`${employee.role} | Joined: ${joiningDate || '-'}`, pageMargin + contentWidth / 2 + 76, y + 38, {
-      width: contentWidth / 2 - 84,
-      ellipsis: true
-    });
-    doc.text(`${daysCounted} / ${monthDays}`, pageMargin + contentWidth / 2 + 76, y + 64);
+    // === EARNINGS TABLE ===
+    y += 100;
+    doc.fillColor(c.brand).font('Helvetica-Bold').fontSize(12).text('Earnings', M, y);
+    y += 20;
 
-    // Compensation summary cards
-    y += 112;
-    const gap = 10;
-    const cardW = (contentWidth - gap) / 2;
-    const cardH = 98;
+    // Table header
+    doc.save().rect(M, y, CW, 28).fill(c.brand).restore();
+    doc.fillColor(c.white).font('Helvetica-Bold').fontSize(9);
+    doc.text('PARTICULARS', M + 14, y + 9);
+    doc.text('DAYS', M + CW * 0.45, y + 9, { width: 60, align: 'center' });
+    doc.text('RATE', M + CW * 0.6, y + 9, { width: 80, align: 'right' });
+    doc.text('AMOUNT', M + CW * 0.78, y + 9, { width: CW * 0.2, align: 'right' });
+    y += 28;
 
-    doc.save().roundedRect(pageMargin, y, cardW, cardH, 10).fill('#FFFFFF').restore();
-    doc.save().roundedRect(pageMargin, y, cardW, cardH, 10).strokeColor(colors.border).stroke().restore();
-    doc.save().roundedRect(pageMargin + cardW + gap, y, cardW, cardH, 10).fill('#FFFFFF').restore();
-    doc
-      .save()
-      .roundedRect(pageMargin + cardW + gap, y, cardW, cardH, 10)
-      .strokeColor(colors.border)
-      .stroke()
-      .restore();
+    // Earnings row
+    doc.save().rect(M, y, CW, 28).fill(c.white).restore();
+    doc.save().rect(M, y, CW, 28).lineWidth(0.5).strokeColor(c.border).stroke().restore();
+    doc.fillColor(c.text).font('Helvetica').fontSize(9.5);
+    doc.text('Basic Salary (Prorated)', M + 14, y + 9);
+    doc.text(`${daysCounted} / ${monthDays}`, M + CW * 0.45, y + 9, { width: 60, align: 'center' });
+    doc.text(money(perDaySalary) + '/day', M + CW * 0.6, y + 9, { width: 80, align: 'right' });
+    doc.font('Helvetica-Bold').text(money(proratedSalary), M + CW * 0.78, y + 9, { width: CW * 0.2, align: 'right' });
+    y += 28;
 
-    doc.fillColor(colors.brand).font('Helvetica-Bold').fontSize(11);
-    doc.text('Salary Calculation', pageMargin + 12, y + 10);
-    doc.fillColor(colors.text).font('Helvetica').fontSize(10.5);
-    doc.text(`Monthly Salary: ${moneyText(monthlySalary)}`, pageMargin + 12, y + 32);
-    doc.text(`Per Day Salary: ${moneyText(perDaySalary)}`, pageMargin + 12, y + 50);
-    doc.text(`Prorated Salary: ${moneyText(proratedSalary)}`, pageMargin + 12, y + 68);
+    // Monthly salary reference
+    doc.save().rect(M, y, CW, 24).fill(c.bg).restore();
+    doc.save().rect(M, y, CW, 24).lineWidth(0.5).strokeColor(c.border).stroke().restore();
+    doc.fillColor(c.muted).font('Helvetica').fontSize(8.5);
+    doc.text(`Monthly Salary Reference: ${money(monthlySalary)}`, M + 14, y + 7);
+    y += 24;
 
-    doc.fillColor(colors.brand).font('Helvetica-Bold').fontSize(11);
-    doc.text('Payment Status', pageMargin + cardW + gap + 12, y + 10);
-    doc.fillColor(colors.text).font('Helvetica').fontSize(10.5);
-    doc.text(`Total Advance: ${moneyText(totalAdvance)}`, pageMargin + cardW + gap + 12, y + 32);
-    doc.text(`Remaining Payable: ${moneyText(remaining)}`, pageMargin + cardW + gap + 12, y + 50);
-    doc.fillColor(colors.success).font('Helvetica-Bold').fontSize(12);
-    doc.text(`Pending: ${moneyText(remaining)}`, pageMargin + cardW + gap + 12, y + 70);
+    // Earnings total
+    doc.save().rect(M, y, CW, 30).fill(c.brandLight).restore();
+    doc.save().rect(M, y, CW, 30).lineWidth(1).strokeColor(c.border).stroke().restore();
+    doc.fillColor(c.brand).font('Helvetica-Bold').fontSize(10);
+    doc.text('GROSS EARNINGS', M + 14, y + 10);
+    doc.text(money(proratedSalary), M + CW * 0.78, y + 10, { width: CW * 0.2, align: 'right' });
+    y += 42;
 
-    // Advance details section
-    y += 120;
-    doc.fillColor(colors.brand).font('Helvetica-Bold').fontSize(12);
-    doc.text('Advance Details', pageMargin, y);
-    y += 18;
+    // === DEDUCTIONS TABLE ===
+    doc.fillColor(c.danger).font('Helvetica-Bold').fontSize(12).text('Deductions (Advances Paid)', M, y);
+    y += 20;
 
-    doc
-      .save()
-      .roundedRect(pageMargin, y, contentWidth, 24, 6)
-      .fill(colors.brandLight)
-      .restore();
-    doc.fillColor(colors.brand).font('Helvetica-Bold').fontSize(10);
-    doc.text('No.', pageMargin + 10, y + 7);
-    doc.text('Date', pageMargin + 48, y + 7);
-    doc.text('Amount', pageMargin + 160, y + 7);
-    doc.text('Note', pageMargin + 280, y + 7);
-    y += 30;
+    // Table header
+    doc.save().rect(M, y, CW, 28).fill(c.danger).restore();
+    doc.fillColor(c.white).font('Helvetica-Bold').fontSize(9);
+    doc.text('NO.', M + 14, y + 9, { width: 30 });
+    doc.text('DATE', M + 50, y + 9);
+    doc.text('NOTE', M + CW * 0.35, y + 9);
+    doc.text('AMOUNT', M + CW * 0.78, y + 9, { width: CW * 0.2, align: 'right' });
+    y += 28;
 
     if (advancesInPeriod.length === 0) {
-      doc.fillColor(colors.muted).font('Helvetica').fontSize(10.5);
-      doc.text('No advance transactions for this period.', pageMargin + 4, y + 2);
+      doc.save().rect(M, y, CW, 28).fill(c.white).restore();
+      doc.save().rect(M, y, CW, 28).lineWidth(0.5).strokeColor(c.border).stroke().restore();
+      doc.fillColor(c.muted).font('Helvetica').fontSize(9.5);
+      doc.text('No advances/deductions for this period', M + 14, y + 9);
+      y += 28;
     } else {
       advancesInPeriod.forEach((a, idx) => {
-        doc
-          .save()
-          .roundedRect(pageMargin, y - 2, contentWidth, 22, 4)
-          .fill(idx % 2 === 0 ? '#FFFFFF' : '#F9FBFF')
-          .restore();
-        doc.fillColor(colors.text).font('Helvetica').fontSize(10);
-        doc.text(String(idx + 1), pageMargin + 10, y + 4);
-        doc.text(a.date, pageMargin + 48, y + 4);
-        doc.text(moneyText(a.amount), pageMargin + 160, y + 4);
-        doc.text(a.note || '-', pageMargin + 280, y + 4, { width: contentWidth - 290, ellipsis: true });
-        y += 24;
+        const rowBg = idx % 2 === 0 ? c.white : c.bg;
+        doc.save().rect(M, y, CW, 26).fill(rowBg).restore();
+        doc.save().rect(M, y, CW, 26).lineWidth(0.5).strokeColor(c.border).stroke().restore();
+        doc.fillColor(c.text).font('Helvetica').fontSize(9);
+        doc.text(String(idx + 1), M + 14, y + 8, { width: 30 });
+        doc.text(fmtDate(a.date), M + 50, y + 8);
+        doc.text(a.note || '-', M + CW * 0.35, y + 8, { width: CW * 0.4, ellipsis: true });
+        doc.fillColor(c.danger).font('Helvetica-Bold');
+        doc.text(`- ${money(a.amount)}`, M + CW * 0.78, y + 8, { width: CW * 0.2, align: 'right' });
+        y += 26;
       });
     }
 
-    // Footer
-    const footerY = doc.page.height - 46;
-    doc
-      .save()
-      .moveTo(pageMargin, footerY - 8)
-      .lineTo(pageMargin + contentWidth, footerY - 8)
-      .strokeColor(colors.border)
-      .stroke()
-      .restore();
-    doc.fillColor(colors.muted).font('Helvetica').fontSize(9);
-    doc.text(`${APP_NAME} • Generated salary statement`, pageMargin, footerY, {
-      width: contentWidth,
-      align: 'center'
-    });
+    // Deduction total
+    doc.save().rect(M, y, CW, 30).fill('#FFF0ED').restore();
+    doc.save().rect(M, y, CW, 30).lineWidth(1).strokeColor(c.border).stroke().restore();
+    doc.fillColor(c.danger).font('Helvetica-Bold').fontSize(10);
+    doc.text('TOTAL DEDUCTIONS', M + 14, y + 10);
+    doc.text(`- ${money(totalAdvance)}`, M + CW * 0.78, y + 10, { width: CW * 0.2, align: 'right' });
+    y += 48;
+
+    // === NET PAYABLE ===
+    doc.save().roundedRect(M, y, CW, 52, 10).fill(c.brand).restore();
+    doc.fillColor(c.white).font('Helvetica-Bold').fontSize(12);
+    doc.text('NET PAYABLE', M + 20, y + 10);
+    doc.fillColor(c.white).font('Helvetica-Bold').fontSize(22);
+    doc.text(money(remaining), M + CW * 0.5, y + 10, { width: CW * 0.48, align: 'right' });
+    doc.fillColor('rgba(255,255,255,0.7)').font('Helvetica').fontSize(9);
+    doc.text(`(${money(proratedSalary)} earned - ${money(totalAdvance)} deducted)`, M + CW * 0.5, y + 36, { width: CW * 0.48, align: 'right' });
+
+    // === SIGNATURES ===
+    const sigY = H - 100;
+    doc.save().moveTo(M, sigY).lineTo(M + 180, sigY).strokeColor(c.border).lineWidth(1).stroke().restore();
+    doc.save().moveTo(W - M - 180, sigY).lineTo(W - M, sigY).strokeColor(c.border).lineWidth(1).stroke().restore();
+    doc.fillColor(c.muted).font('Helvetica-Bold').fontSize(9);
+    doc.text('Authorized Signatory', M, sigY + 6, { width: 180, align: 'center' });
+    doc.text('Employee Signature', W - M - 180, sigY + 6, { width: 180, align: 'center' });
+    doc.fillColor(c.text).font('Helvetica').fontSize(9);
+    doc.text(APP_NAME, M, sigY + 20, { width: 180, align: 'center' });
+    doc.text(employee.name, W - M - 180, sigY + 20, { width: 180, align: 'center' });
+
+    // === FOOTER ===
+    const fY = H - 36;
+    doc.save().moveTo(M, fY - 8).lineTo(W - M, fY - 8).strokeColor(c.border).lineWidth(0.5).stroke().restore();
+    doc.fillColor(c.muted).font('Helvetica').fontSize(8);
+    doc.text(`${APP_NAME} • Computer Generated Salary Statement • ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`, M, fY, { width: CW, align: 'center' });
 
     doc.end();
   } catch (err) {
@@ -5458,7 +5433,6 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     return res.status(500).json({ error: 'Unable to generate salary slip' });
   }
 });
-
 app.post('/api/trucks', auth, requirePermission('trucks:create'), async (req, res) => {
   const {
     date,
@@ -7197,121 +7171,155 @@ app.get('/api/employees/:id/offer-letter', auth, async (req, res) => {
     }
 
     const PDFDocument = require('pdfkit');
-    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    const doc = new PDFDocument({ margin: 0, size: 'A4' });
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="offer-letter-${employee.name.replace(/\s+/g, '-')}.pdf"`);
 
     doc.pipe(res);
 
-    const colors = {
-      brand: '#1D4ED8',
-      brandDark: '#102A43',
-      brandSoft: '#EAF2FF',
-      text: '#132A4A',
-      muted: '#5D6A7E',
-      border: '#D8E2F0',
-      ok: '#0E9F6E'
+    const W = doc.page.width;
+    const H = doc.page.height;
+    const M = 48;
+    const CW = W - M * 2;
+
+    const c = {
+      brand: '#0B3D91',
+      brandGrad: '#1565C0',
+      brandLight: '#E8F0FE',
+      white: '#FFFFFF',
+      text: '#1A2744',
+      muted: '#617594',
+      border: '#D4DFF0',
+      success: '#0E8A4F',
+      bg: '#F7F9FC'
     };
-    const pageW = doc.page.width;
-    const margin = 40;
-    const contentW = pageW - margin * 2;
+
     const today = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
     const annualCtc = Number(employee.monthlySalary || 0) * 12;
     const money = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+    const joiningDate = employee.joiningDate
+      ? new Date(employee.joiningDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+      : 'As communicated';
 
-    // Header band
-    doc.save().roundedRect(margin, 24, contentW, 104, 14).fill(colors.brandSoft).restore();
-    doc.save().roundedRect(margin, 24, contentW, 104, 14).lineWidth(1).strokeColor(colors.border).stroke().restore();
+    // === HEADER GRADIENT BAND ===
+    const grad = doc.linearGradient(0, 0, W, 0);
+    grad.stop(0, c.brand).stop(1, c.brandGrad);
+    doc.save().rect(0, 0, W, 110).fill(grad).restore();
 
-    // Center emblem (logo-style mark)
-    const cx = pageW / 2;
-    doc.save().circle(cx, 56, 20).fill(colors.brand).restore();
-    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(14).text('NE', cx - 11, 50, { width: 22, align: 'center' });
+    // Company Logo Circle
+    doc.save().circle(M + 28, 55, 24).fill(c.white).restore();
+    doc.fillColor(c.brand).font('Helvetica-Bold').fontSize(18).text('NE', M + 10, 46, { width: 36, align: 'center' });
 
-    doc.fillColor(colors.brandDark).font('Helvetica-Bold').fontSize(20).text(APP_NAME, margin, 78, {
-      width: contentW,
-      align: 'center'
-    });
-    doc.fillColor(colors.brand).font('Helvetica-Bold').fontSize(11).text('OFFICIAL EMPLOYMENT OFFER LETTER', margin, 102, {
-      width: contentW,
-      align: 'center'
-    });
+    // Company Name & Document Title
+    doc.fillColor(c.white).font('Helvetica-Bold').fontSize(20).text(APP_NAME, M + 66, 32);
+    doc.fillColor('rgba(255,255,255,0.8)').font('Helvetica').fontSize(10).text('Operations Control Center', M + 66, 56);
+    doc.fillColor(c.white).font('Helvetica-Bold').fontSize(12).text('EMPLOYMENT OFFER LETTER', W - M - 200, 40, { width: 200, align: 'right' });
+    doc.fillColor('rgba(255,255,255,0.8)').font('Helvetica').fontSize(10).text(today, W - M - 200, 60, { width: 200, align: 'right' });
 
-    // Meta box
-    let y = 144;
-    doc.save().roundedRect(margin, y, contentW, 82, 10).fill('#FFFFFF').restore();
-    doc.save().roundedRect(margin, y, contentW, 82, 10).lineWidth(1).strokeColor(colors.border).stroke().restore();
-    doc.fillColor(colors.muted).font('Helvetica-Bold').fontSize(10);
-    doc.text('Date', margin + 12, y + 14);
-    doc.text('Candidate', margin + 12, y + 38);
-    doc.text('Position', margin + contentW / 2, y + 14);
-    doc.text('Monthly Compensation', margin + contentW / 2, y + 38);
-    doc.fillColor(colors.text).font('Helvetica').fontSize(11);
-    doc.text(today, margin + 110, y + 14);
-    doc.text(employee.name, margin + 110, y + 38, { width: contentW / 2 - 130 });
-    doc.text(employee.role || 'Employee', margin + contentW / 2 + 132, y + 14, { width: contentW / 2 - 144 });
-    doc.text(money(employee.monthlySalary), margin + contentW / 2 + 132, y + 38, { width: contentW / 2 - 144 });
+    // === CANDIDATE INFO CARD ===
+    let y = 128;
+    doc.save().roundedRect(M, y, CW, 72, 10).fill(c.white).restore();
+    doc.save().roundedRect(M, y, CW, 72, 10).lineWidth(1).strokeColor(c.border).stroke().restore();
 
-    y += 102;
-    doc.fillColor(colors.text).font('Helvetica').fontSize(11);
-    doc.text(`Dear ${employee.name},`, margin, y);
+    const col1 = M + 16;
+    const col2 = M + CW / 2 + 16;
+
+    doc.fillColor(c.muted).font('Helvetica-Bold').fontSize(8.5);
+    doc.text('CANDIDATE NAME', col1, y + 14);
+    doc.text('POSITION', col1, y + 42);
+    doc.text('MONTHLY COMPENSATION', col2, y + 14);
+    doc.text('ANNUAL CTC (REFERENCE)', col2, y + 42);
+
+    doc.fillColor(c.text).font('Helvetica-Bold').fontSize(11);
+    doc.text(employee.name, col1 + 130, y + 12);
+    doc.text(employee.role || 'Employee', col1 + 130, y + 40);
+    doc.text(money(employee.monthlySalary), col2 + 145, y + 12);
+    doc.text(money(annualCtc), col2 + 145, y + 40);
+
+    // === GREETING ===
+    y += 92;
+    doc.fillColor(c.text).font('Helvetica').fontSize(11);
+    doc.text(`Dear ${employee.name},`, M, y);
     y += 22;
     doc.text(
-      `We are pleased to welcome you to ${APP_NAME}. This letter confirms our offer and outlines your key employment terms.`,
-      margin,
-      y,
-      { width: contentW, lineGap: 3 }
+      `We are pleased to welcome you to ${APP_NAME}. This letter confirms our offer of employment and outlines your key terms and conditions.`,
+      M, y, { width: CW, lineGap: 3 }
     );
 
-    y += 54;
+    // === TERMS SECTIONS ===
+    y += 50;
     const sections = [
-      ['Role & Responsibilities', `You will join as ${employee.role || 'Employee'} and will be responsible for role-specific tasks assigned by management.`],
-      [
-        'Compensation',
-        `Your monthly salary will be ${money(employee.monthlySalary)} (Rupees ${numberToWords(Number(employee.monthlySalary || 0))} only). The annual reference CTC is ${money(annualCtc)}.`
-      ],
-      ['Probation', 'Your probation period will be 3 months from joining date. During probation, either party may terminate with 7 days notice.'],
-      ['Work Schedule', 'Working hours and weekly offs will follow company operations and shift requirements as communicated by your reporting manager.'],
-      ['Confidentiality', 'All business, financial, customer, and operational information must be treated as confidential during and after your employment.'],
-      ['Separation', 'Post probation, either party may separate with 30 days notice or salary in lieu, subject to company policy.']
+      ['1. Role & Responsibilities', `You will join as ${employee.role || 'Employee'} and will be responsible for role-specific tasks assigned by management. Your date of joining will be ${joiningDate}.`],
+      ['2. Compensation', `Your monthly salary will be ${money(employee.monthlySalary)} (Rupees ${numberToWords(Number(employee.monthlySalary || 0))} only). The annual reference CTC is ${money(annualCtc)}. Salary will be credited to your designated bank account by the 7th of each month.`],
+      ['3. Probation & Confirmation', 'Your probation period will be 3 months from the date of joining. During probation, either party may terminate employment with 7 days written notice. Confirmation will be subject to satisfactory performance.'],
+      ['4. Working Hours', 'Working hours and weekly offs will follow company operations and shift requirements as communicated by your reporting manager. Overtime, if applicable, will be governed by company policy.'],
+      ['5. Leave & Benefits', 'You will be entitled to leaves as per the company leave policy. Details of leave entitlements and other benefits will be shared during your induction.'],
+      ['6. Confidentiality', 'All business, financial, customer, and operational information must be treated as strictly confidential during and after your employment. Any breach of confidentiality may result in disciplinary action.'],
+      ['7. Separation', 'Post probation, either party may terminate employment with 30 days written notice or salary in lieu thereof, subject to company policy and settlement of dues.']
     ];
 
     sections.forEach(([title, body], idx) => {
-      if (y > doc.page.height - 170) {
+      if (y > H - 140) {
         doc.addPage();
-        y = 54;
+        y = 50;
       }
-      doc.save().roundedRect(margin, y, contentW, 68, 8).fill(idx % 2 === 0 ? '#FFFFFF' : '#F8FBFF').restore();
-      doc.save().roundedRect(margin, y, contentW, 68, 8).lineWidth(1).strokeColor(colors.border).stroke().restore();
-      doc.fillColor(colors.brand).font('Helvetica-Bold').fontSize(11).text(title, margin + 12, y + 10);
-      doc.fillColor(colors.text).font('Helvetica').fontSize(10.3).text(body, margin + 12, y + 28, {
-        width: contentW - 24,
+
+      const secBg = idx % 2 === 0 ? c.white : c.bg;
+      const textHeight = doc.heightOfString(body, { width: CW - 32, fontSize: 10 });
+      const boxHeight = Math.max(60, textHeight + 40);
+
+      doc.save().roundedRect(M, y, CW, boxHeight, 8).fill(secBg).restore();
+      doc.save().roundedRect(M, y, CW, boxHeight, 8).lineWidth(0.5).strokeColor(c.border).stroke().restore();
+
+      // Blue left accent bar
+      doc.save().rect(M, y + 4, 3, boxHeight - 8).fill(c.brand).restore();
+
+      doc.fillColor(c.brand).font('Helvetica-Bold').fontSize(10.5).text(title, M + 16, y + 12);
+      doc.fillColor(c.text).font('Helvetica').fontSize(10).text(body, M + 16, y + 28, {
+        width: CW - 32,
         lineGap: 2
       });
-      y += 78;
+      y += boxHeight + 8;
     });
 
-    y += 6;
-    doc.fillColor(colors.text).font('Helvetica').fontSize(11);
-    doc.text('Please sign below to indicate your acceptance of the above terms.', margin, y);
+    // === ACCEPTANCE ===
+    if (y > H - 200) {
+      doc.addPage();
+      y = 50;
+    }
 
-    y += 44;
-    const lineY = y + 24;
-    doc.save().moveTo(margin, lineY).lineTo(margin + 200, lineY).strokeColor(colors.border).stroke().restore();
-    doc.save().moveTo(pageW - margin - 200, lineY).lineTo(pageW - margin, lineY).strokeColor(colors.border).stroke().restore();
-    doc.fillColor(colors.muted).font('Helvetica-Bold').fontSize(10);
-    doc.text('Authorized Signatory', margin, lineY + 6, { width: 200, align: 'center' });
-    doc.text('Employee Signature', pageW - margin - 200, lineY + 6, { width: 200, align: 'center' });
-    doc.fillColor(colors.text).font('Helvetica').fontSize(10);
-    doc.text(APP_NAME, margin, lineY + 22, { width: 200, align: 'center' });
-    doc.text(employee.name, pageW - margin - 200, lineY + 22, { width: 200, align: 'center' });
+    y += 8;
+    doc.fillColor(c.text).font('Helvetica').fontSize(11);
+    doc.text('Please sign below to indicate your acceptance of the above terms and conditions.', M, y, { width: CW });
 
-    // Footer strip
-    const fy = doc.page.height - 36;
-    doc.save().moveTo(margin, fy - 6).lineTo(margin + contentW, fy - 6).strokeColor(colors.border).stroke().restore();
-    doc.fillColor(colors.muted).font('Helvetica').fontSize(9);
-    doc.text(`${APP_NAME} • Professional Offer Documentation`, margin, fy, { width: contentW, align: 'center' });
+    y += 16;
+    doc.fillColor(c.muted).font('Helvetica').fontSize(9.5);
+    doc.text('We look forward to a productive and mutually beneficial association.', M, y, { width: CW });
+
+    // === SIGNATURES ===
+    y += 50;
+    const sigY = y + 24;
+    doc.save().moveTo(M, sigY).lineTo(M + 200, sigY).strokeColor(c.border).lineWidth(1).stroke().restore();
+    doc.save().moveTo(W - M - 200, sigY).lineTo(W - M, sigY).strokeColor(c.border).lineWidth(1).stroke().restore();
+
+    doc.fillColor(c.muted).font('Helvetica-Bold').fontSize(9);
+    doc.text('Authorized Signatory', M, sigY + 6, { width: 200, align: 'center' });
+    doc.text('Employee Signature', W - M - 200, sigY + 6, { width: 200, align: 'center' });
+
+    doc.fillColor(c.text).font('Helvetica').fontSize(9);
+    doc.text(APP_NAME, M, sigY + 22, { width: 200, align: 'center' });
+    doc.text(employee.name, W - M - 200, sigY + 22, { width: 200, align: 'center' });
+
+    doc.fillColor(c.muted).font('Helvetica').fontSize(8.5);
+    doc.text(`Date: ${today}`, M, sigY + 38);
+    doc.text('Date: ______________', W - M - 200, sigY + 38, { width: 200, align: 'center' });
+
+    // === FOOTER ===
+    const fY = H - 36;
+    doc.save().moveTo(M, fY - 8).lineTo(W - M, fY - 8).strokeColor(c.border).lineWidth(0.5).stroke().restore();
+    doc.fillColor(c.muted).font('Helvetica').fontSize(8);
+    doc.text(`${APP_NAME} • Official Employment Documentation • Confidential`, M, fY, { width: CW, align: 'center' });
 
     doc.end();
   } catch (err) {
@@ -7319,8 +7327,6 @@ app.get('/api/employees/:id/offer-letter', auth, async (req, res) => {
     return res.status(500).json({ error: 'Unable to generate offer letter' });
   }
 });
-
-// Helper function to convert number to words (simplified for Indian numbering)
 function numberToWords(num) {
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
   const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
