@@ -613,23 +613,51 @@ async function api(url, method = 'GET', body) {
 }
 
 function renderCards(data) {
-  const items = [
-    ['Employees', data.totalEmployees],
-    ['Total Salary', money(data.totalSalary)],
-    ['Total Advances (Month)', money(data.totalAdvances)],
-    ['Remaining Payable', money(data.totalRemaining)],
-    ['Present Today', data.presentToday],
-    ['Absent Today', data.absentToday],
-    ['Trucks This Month', data.truckCountThisMonth],
-    ['Truck Quantity (Month)', data.truckQuantityThisMonth]
+  const totalBills = Array.isArray(billsCache) ? billsCache.reduce((sum, b) => sum + toNumber(b.grandTotal, 0), 0) : 0;
+  const totalExpenseAmount = Array.isArray(expensesCache) ? expensesCache.reduce((sum, r) => sum + toNumber(r.amount, 0), 0) : 0;
+  const totalChini = Array.isArray(chiniExpensesCache) ? chiniExpensesCache.reduce((sum, r) => sum + toNumber(r.amount, 0), 0) : 0;
+  const totalInvestStatus = Array.isArray(investmentsCache) ? investmentsCache.reduce((sum, r) => sum + toNumber(r.amount, 0), 0) : 0;
+  const supplierCount = Array.isArray(suppliersCache) ? suppliersCache.length : 0;
+
+  const sections = [
+    {
+      title: 'Workforce & Operations',
+      items: [
+        ['Active Employees', data.totalEmployees || employeesCache.length],
+        ['Present Today', data.presentToday],
+        ['Total Salary Setup', money(data.totalSalary)],
+      ]
+    },
+    {
+      title: 'Financials (Current/All-Time)',
+      items: [
+        ['Advances (Month)', money(data.totalAdvances)],
+        ['Remaining Payable', money(data.totalRemaining)],
+        ['Global Expenses', money(totalExpenseAmount)],
+        ['Total Billed', money(totalBills)],
+      ]
+    },
+    {
+      title: 'Assets & Logistics',
+      items: [
+        ['Trucks (Month)', data.truckCountThisMonth],
+        ['Truck Quantity', data.truckQuantityThisMonth + ' Qtnl'],
+        ['Chini Expenses', money(totalChini)],
+        ['Capital Investments', money(totalInvestStatus)],
+      ]
+    }
   ];
 
-  cardsEl.innerHTML = items
-    .map(
-      ([label, value]) =>
-        `<div class="card"><div class="label">${label}</div><div class="value">${value}</div></div>`
-    )
-    .join('');
+  cardsEl.innerHTML = sections.map(sec => `
+    <div class="dashboard-segment">
+      <h3 class="dashboard-segment-title">${sec.title}</h3>
+      <div class="cards">
+        ${sec.items.map(([label, value]) => `
+          <div class="card"><div class="label">${label}</div><div class="value">${value}</div></div>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
 }
 
 function renderEmployeeOptions(employees) {
@@ -2699,7 +2727,12 @@ function activateSection(sectionId) {
     el.classList.toggle('active-view', el.id === sectionId);
   });
   document.querySelectorAll('.nav-btn').forEach((btn) => {
-    btn.classList.toggle('active', btn.getAttribute('data-target') === sectionId);
+    const isActive = btn.getAttribute('data-target') === sectionId;
+    btn.classList.toggle('active', isActive);
+    if (isActive) {
+      const titleEl = document.getElementById('currentSectionTitle');
+      if (titleEl) titleEl.textContent = btn.textContent.trim();
+    }
   });
 }
 
