@@ -6,51 +6,44 @@
 
 :root {
   /* Core palette — Global Industrial Enterprise */
-  --bg: #F4F6F8;
-  --bg-soft: #EDF1F5;
+  --bg: #F8FAFC;
+  --bg-soft: #F1F5F9;
   --panel: #FFFFFF;
   --panel-solid: #FFFFFF;
-  --panel-border: #DFE3E8;
-  --text: #1C2434;
-  --text-light: #475569;
+  --panel-border: #E2E8F0;
+  --text: #0F172A;
+  --text-light: #334155;
   --text-muted: #64748B;
-  --primary: #0A2540;
-  /* Stripe / Palantir deep corporate navy */
-  --primary-hover: #061B2F;
+  --primary: #0F172A;
+  --primary-hover: #1E293B;
   --primary-2: #2563EB;
-  /* Bright secondary blue for links/accents */
   --accent: #E11D48;
-  /* Red indicator, minimal usage */
   --success: #059669;
-  /* Sharp green */
   --danger: #DC2626;
   --warning: #D97706;
-  --border: #CBD5E1;
+  --border: #E2E8F0;
 
   /* Depth system — Sharp, minimal, corporate */
-  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
-  --shadow-sm: 0 2px 4px rgba(15, 23, 42, 0.05);
-  --shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.08);
-  --shadow-md: 0 10px 15px -3px rgba(15, 23, 42, 0.1);
-  --shadow-lg: 0 20px 25px -5px rgba(15, 23, 42, 0.1);
-  --shadow-primary: 0 4px 12px rgba(10, 37, 64, 0.2);
-
-  /* Glass - Removed for authoritative solid look */
-  --glass: none;
+  --shadow-xs: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 1px 3px 0 rgba(15, 23, 42, 0.08), 0 1px 2px -1px rgba(15, 23, 42, 0.04);
+  --shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 20px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+  --shadow-primary: 0 4px 14px 0 rgba(15, 23, 42, 0.15);
 
   /* Radius — Structured, stable, precise */
-  --radius-xs: 2px;
-  --radius-sm: 4px;
-  --radius: 4px;
-  --radius-lg: 8px;
-  --radius-xl: 12px;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
   --radius-pill: 9999px;
 
   /* Typography - Modern corporate */
-  --font-body: 'Inter', -apple-system, system-ui, sans-serif;
-  --font-heading: 'Inter', -apple-system, system-ui, sans-serif;
+  --font-body: 'Inter', -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-heading: 'Space Grotesk', 'Inter', -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
-  /* Spacing */
+  /* 8px Spacing Grid */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -62,12 +55,12 @@
   --space-9: 80px;
   --space-10: 120px;
 
-  /* Transitions */
-  --ease-out: cubic-bezier(0.2, 0, 0, 1);
-  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  /* Micro-interactions & Transitions */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --duration-fast: 150ms;
-  --duration: 200ms;
-  --duration-slow: 300ms;
+  --duration: 250ms;
+  --duration-slow: 400ms;
 }
 
 /* ========================================================================
@@ -397,17 +390,16 @@ body::after {
 .panel {
   position: relative;
   overflow: hidden;
-  border-radius: var(--radius-lg);
-  padding: var(--space-6);
+  border-radius: var(--radius-xl);
+  padding: var(--space-8) var(--space-6);
   border: 1px solid var(--panel-border);
   background: var(--panel);
   box-shadow: var(--shadow-sm);
-  transition: box-shadow var(--duration-slow) var(--ease-out),
-    transform var(--duration-slow) var(--ease-out);
+  transition: box-shadow var(--duration) var(--ease-out), transform var(--duration) var(--ease-out);
 }
 
 .panel:hover {
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-md);
 }
 
 .panel h2,
@@ -471,19 +463,18 @@ body::after {
 }
 
 .card {
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   border: 1px solid var(--panel-border);
   background: var(--panel);
-  padding: var(--space-5) var(--space-5);
+  padding: var(--space-6);
   box-shadow: var(--shadow-sm);
-  transition: transform var(--duration) var(--ease-out),
-    box-shadow var(--duration) var(--ease-out);
+  transition: transform var(--duration) var(--ease-out), box-shadow var(--duration) var(--ease-out);
   will-change: transform;
 }
 
 .card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow);
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
 }
 
 .card .label {
@@ -525,7 +516,7 @@ select,
 textarea,
 output {
   width: 100%;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   font: inherit;
   color: var(--text);
@@ -534,16 +525,16 @@ output {
 input,
 select,
 textarea {
-  padding: 10px var(--space-3);
-  background: rgba(255, 255, 255, 0.7);
-  font-size: 0.9rem;
+  padding: 12px var(--space-4);
+  background: var(--bg-soft);
+  font-size: 0.95rem;
   transition: border-color var(--duration-fast) var(--ease-in-out),
     box-shadow var(--duration-fast) var(--ease-in-out),
     background var(--duration-fast) var(--ease-in-out);
 }
 
 textarea {
-  min-height: 88px;
+  min-height: 100px;
   resize: vertical;
 }
 
@@ -551,9 +542,9 @@ input:focus,
 select:focus,
 textarea:focus {
   outline: none;
-  border-color: var(--primary);
+  border-color: var(--primary-2);
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(15, 97, 255, 0.1);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 }
 
 input::placeholder,
@@ -568,10 +559,10 @@ textarea::placeholder {
 
 button {
   border: none;
-  border-radius: var(--radius-xs);
-  padding: 10px var(--space-5);
-  font: 600 0.88rem var(--font-heading);
-  letter-spacing: 0.01em;
+  border-radius: var(--radius);
+  padding: 12px var(--space-6);
+  font: 600 0.95rem var(--font-heading);
+  letter-spacing: 0.02em;
   color: #fff;
   background: var(--primary);
   box-shadow: var(--shadow-sm);
@@ -585,14 +576,14 @@ button {
 }
 
 button:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
   box-shadow: var(--shadow);
   background: var(--primary-hover);
 }
 
 button:active {
-  transform: translateY(0) scale(0.98);
-  box-shadow: var(--shadow-sm);
+  transform: translateY(1px);
+  box-shadow: var(--shadow-xs);
 }
 
 button:focus-visible {
@@ -669,32 +660,33 @@ button.offer-btn {
 .table-wrap {
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: var(--panel-solid);
+  box-shadow: var(--shadow-xs);
 }
 
 .table-wrap::-webkit-scrollbar {
-  height: 6px;
-  width: 6px;
+  height: 8px;
+  width: 8px;
 }
 
 .table-wrap::-webkit-scrollbar-thumb {
   border-radius: var(--radius-pill);
-  background: rgba(90, 111, 142, 0.3);
+  background: rgba(148, 163, 184, 0.4);
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.88rem;
+  font-size: 0.9rem;
 }
 
 th,
 td {
   padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid #ecf2fc;
+  border-bottom: 1px solid var(--border);
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 th {
@@ -702,7 +694,7 @@ th {
   top: 0;
   z-index: 1;
   text-transform: uppercase;
-  font: 600 0.75rem var(--font-heading);
+  font: 700 0.75rem var(--font-heading);
   letter-spacing: 0.05em;
   color: var(--text-muted);
   background: var(--bg-soft);
@@ -710,15 +702,15 @@ th {
 }
 
 tbody tr {
-  transition: background var(--duration-fast) var(--ease-in-out);
+  transition: background var(--duration-fast) var(--ease-out);
 }
 
 tbody tr:nth-child(2n) td {
-  background: rgba(0, 0, 0, 0.015);
+  background: rgba(248, 250, 252, 0.4);
 }
 
 tr:hover td {
-  background: rgba(0, 0, 0, 0.03) !important;
+  background: rgba(241, 245, 249, 0.6) !important;
 }
 
 th.sortable {
@@ -800,11 +792,14 @@ th.sortable.desc::after {
    ======================================================================== */
 
 .login-panel {
-  max-width: 400px;
+  max-width: 440px;
   margin: var(--space-10) auto;
   text-align: center;
   padding: var(--space-8) var(--space-7);
   border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--panel-border);
+  background: var(--panel-solid);
 }
 
 .login-logo-wrap {
@@ -851,16 +846,16 @@ th.sortable.desc::after {
 
 .summary-stat {
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
+  padding: var(--space-4) var(--space-5);
   background: var(--panel-solid);
   transition: transform var(--duration) var(--ease-out),
     box-shadow var(--duration) var(--ease-out);
 }
 
 .summary-stat:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-sm);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
 .summary-stat .label {
@@ -1105,8 +1100,8 @@ th.sortable.desc::after {
 
 .employee-card {
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
   background: var(--panel-solid);
   box-shadow: var(--shadow-sm);
   transition: transform var(--duration) var(--ease-out),
@@ -1114,7 +1109,7 @@ th.sortable.desc::after {
 }
 
 .employee-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-4px);
   box-shadow: var(--shadow-md);
 }
 
@@ -1333,15 +1328,17 @@ th.sortable.desc::after {
 }
 
 .party-total {
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--panel-solid);
-  padding: var(--space-3) var(--space-4);
-  transition: transform var(--duration) var(--ease-out);
+  padding: var(--space-4) var(--space-5);
+  transition: transform var(--duration) var(--ease-out),
+    box-shadow var(--duration) var(--ease-out);
 }
 
 .party-total:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
 .party-total .label {
@@ -1521,18 +1518,18 @@ th.sortable.desc::after {
 
 body.dark-mode {
   --bg: #0B1120;
-  --bg-soft: #111827;
+  --bg-soft: #0F172A;
   --panel: #1E293B;
   --panel-solid: #1E293B;
   --panel-border: rgba(255, 255, 255, 0.08);
   --text: #F8FAFC;
-  --text-light: #94A3B8;
-  --text-muted: #64748B;
+  --text-light: #CBD5E1;
+  --text-muted: #94A3B8;
   --primary: #3B82F6;
   --primary-hover: #2563EB;
   --primary-2: #60A5FA;
   --accent: #F43F5E;
-  --border: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.08);
   --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
   --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.2);
   --shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
@@ -1621,7 +1618,7 @@ body.dark-mode .back-to-top {
 
 @media (max-width: 1140px) {
   .app-shell {
-    padding: var(--space-5);
+    padding: 0;
   }
 
   .supplier-layout {

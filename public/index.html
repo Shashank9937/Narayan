@@ -3,14 +3,28 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
   <meta name="description"
     content="Narayan Enterprises Operations Control Center — Manage employees, attendance, salary, trucks, expenses, investments, suppliers, and billing in one enterprise dashboard." />
-  <meta name="theme-color" content="#0f61ff" />
+  <meta name="theme-color" content="#0A2540" />
   <title>Narayan Enterprises — Operations Control Center</title>
-  <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+
+  <!-- Preconnect to Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <!-- Asynchronous Font Loading with Preload -->
+  <link rel="preload" as="style"
+    href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..800&family=Space+Grotesk:wght@500;600;700&display=swap" />
+  <link rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..800&family=Space+Grotesk:wght@500;600;700&display=swap"
+    media="print" onload="this.media='all'" />
+  <noscript>
+    <link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..800&family=Space+Grotesk:wght@500;600;700&display=swap" />
+  </noscript>
+
+  <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+
   <link rel="stylesheet" href="/styles.css?v=2" />
 </head>
 
@@ -19,7 +33,7 @@
 
   <section id="loginPanel" class="panel login-panel">
     <div class="login-logo-wrap">
-      <img src="/logo.svg" alt="Narayan Enterprises" class="login-logo" />
+      <img src="/logo.svg" alt="Narayan Enterprises" class="login-logo" width="76" height="76" loading="eager" />
       <h2>Operations Control Center</h2>
     </div>
     <form id="loginForm">
@@ -36,7 +50,7 @@
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
           <a href="#" class="brand-wrap">
-            <img src="/logo.svg" alt="Narayan" class="brand-logo" />
+            <img src="/logo.svg" alt="Narayan" class="brand-logo" width="36" height="36" loading="eager" />
             <div class="brand-text">
               <h1>Narayan</h1>
               <p>Control Center</p>
@@ -1270,8 +1284,8 @@
   <!-- Back to Top -->
   <button class="back-to-top" id="backToTopBtn" aria-label="Back to top" title="Back to top">↑</button>
 
-  <script src="/app.js"></script>
-
+  <!-- Main Application Logic -->
+  <script src="/app.js" defer></script>
   <!-- Premium micro-interactions -->
   <script>
     (function () {
