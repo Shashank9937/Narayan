@@ -2350,25 +2350,36 @@ function renderVehicleRows(rows) {
   const canDelete = hasPermission('vehicles:delete');
   const totalMonthly = rows.reduce((sum, r) => sum + Number(r.monthlyPrice || 0), 0);
   const totalPaid = rows.reduce((sum, r) => sum + Number(r.amountPaid || 0), 0);
-  const totalPending = rows.reduce((sum, r) => sum + Math.max(0, Number(r.monthlyPrice || 0) - Number(r.amountPaid || 0)), 0);
+  const totalAmtSum = rows.reduce((sum, r) => sum + Number(r.totalAmount || 0), 0);
+  const totalPending = rows.reduce((sum, r) => sum + Math.max(0, Number(r.totalAmount || 0) - Number(r.amountPaid || 0)), 0);
+
   const set = (id, value) => {
     const el = document.getElementById(id);
     if (el) el.textContent = money(value);
   };
-  set('vehicleMonthlyTotal', totalMonthly);
+  set('vehicleMonthlyTotal', totalAmtSum);
   set('vehiclePaidTotal', totalPaid);
   set('vehiclePendingTotal', totalPending);
 
   vehicleTbody.innerHTML = rows
-    .map(
-      (r) => `<tr>
-          <td>${r.vehicleName}</td>
-          <td>${r.vehicleNumber}</td>
+    .map((r) => {
+      const remaining = Math.max(0, Number(r.totalAmount || 0) - Number(r.amountPaid || 0));
+      return `<tr>
+          <td><div class="record-name">${r.vehicleName}</div></td>
+          <td>
+            <div class="record-subtext fw-600">${r.startDate || '-'}</div>
+            <div class="record-subtext">to</div>
+            <div class="record-subtext fw-600">${r.endDate || '-'}</div>
+          </td>
           <td class="money">${money(r.monthlyPrice || 0)}</td>
-          <td>${r.serviceDueDate || '-'}</td>
-          <td>${r.lastServiceDate || '-'}</td>
-          <td>${r.paymentStatus || '-'}</td>
+          <td class="money">${money(r.totalAmount || 0)}</td>
           <td class="money">${money(r.amountPaid || 0)}</td>
+          <td class="money danger-text">${money(remaining)}</td>
+          <td>
+            <div class="record-subtext">Due: ${r.serviceDueDate || '-'}</div>
+            <div class="record-subtext">Last: ${r.lastServiceDate || '-'}</div>
+          </td>
+          <td><span class="status-badge ${r.paymentStatus === 'paid' ? 'paid' : r.paymentStatus === 'partial' ? 'pending' : 'unpaid'}">${r.paymentStatus || 'pending'}</span></td>
           <td>${r.note || '-'}</td>
           <td>
             <div class="actions">
@@ -2377,43 +2388,34 @@ function renderVehicleRows(rows) {
               ${!canEdit && !canDelete ? '-' : ''}
             </div>
           </td>
-        </tr>`
-    )
+        </tr>`;
+    })
     .join('');
 
   if (canEdit) {
     document.querySelectorAll('.veh-edit').forEach((btn) => {
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', () => {
         const id = btn.getAttribute('data-id');
         const current = vehiclesCache.find((v) => v.id === id);
         if (!current) return;
-        const vehicleName = prompt('Vehicle Name', current.vehicleName || '');
-        if (!vehicleName) return;
-        const vehicleNumber = prompt('Vehicle Number', current.vehicleNumber || '');
-        if (!vehicleNumber) return;
-        const monthlyPrice = prompt('Monthly Price', String(current.monthlyPrice || 0));
-        if (!monthlyPrice) return;
-        const serviceDueDate = prompt('Service Due Date (YYYY-MM-DD)', current.serviceDueDate || '') || '';
-        const lastServiceDate = prompt('Last Service Date (YYYY-MM-DD)', current.lastServiceDate || '') || '';
-        const paymentStatus = prompt('Payment Status (pending/partial/paid)', current.paymentStatus || 'pending') || 'pending';
-        const amountPaid = prompt('Amount Paid', String(current.amountPaid || 0)) || '0';
-        const note = prompt('Note', current.note || '') || '';
-        try {
-          await api(`/api/vehicles/${id}`, 'PUT', {
-            vehicleName,
-            vehicleNumber,
-            monthlyPrice,
-            serviceDueDate,
-            lastServiceDate,
-            paymentStatus,
-            amountPaid,
-            note
-          });
-          await refresh();
-          showToast('Vehicle updated');
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
+        editingVehicleId = id;
+        vehicleForm.elements['vehicleName'].value = current.vehicleName || '';
+        vehicleForm.elements['vehicleNumber'].value = current.vehicleNumber || '';
+        vehicleForm.elements['monthlyPrice'].value = current.monthlyPrice || '';
+        vehicleForm.elements['startDate'].value = current.startDate || '';
+        vehicleForm.elements['endDate'].value = current.endDate || '';
+        vehicleForm.elements['totalAmount'].value = current.totalAmount || '';
+        vehicleForm.elements['serviceDueDate'].value = current.serviceDueDate || '';
+        vehicleForm.elements['lastServiceDate'].value = current.lastServiceDate || '';
+        vehicleForm.elements['paymentStatus'].value = current.paymentStatus || 'pending';
+        vehicleForm.elements['amountPaid'].value = current.amountPaid || '0';
+        vehicleForm.elements['note'].value = current.note || '';
+
+        const submitBtn = vehicleForm.querySelector('button[type="submit"]');
+        if (submitBtn) submitBtn.textContent = 'Save Changes';
+        const cancelBtn = vehicleForm.querySelector('.warn');
+        if (cancelBtn) cancelBtn.classList.remove('hidden');
+        window.scrollTo({ top: document.getElementById('vehiclePanel').offsetTop - 80, behavior: 'smooth' });
       });
     });
   }
@@ -3478,14 +3480,52 @@ landForm.addEventListener('submit', async (e) => {
   }
 });
 
+let editingVehicleId = null;
+
+vehicleForm?.addEventListener('input', () => {
+  const vStart = vehicleForm.elements['startDate'].value;
+  const vEnd = vehicleForm.elements['endDate'].value;
+  const vMonthly = Number(vehicleForm.elements['monthlyPrice'].value || 0);
+  const vTotalAmtEl = vehicleForm.elements['totalAmount'];
+
+  if (vStart && vEnd && vMonthly > 0) {
+    const start = new Date(vStart);
+    const end = new Date(vEnd);
+    if (end >= start) {
+      const diffTime = Math.abs(end - start);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // inclusive
+      const amt = (vMonthly / 30) * diffDays;
+      vTotalAmtEl.value = amt.toFixed(2);
+      return;
+    }
+  }
+  // Don't clear manual overrides unless desired, but auto-calculate normally runs over it
+});
+
+const vehicleCancelEditBtn = document.getElementById('vehicleCancelEditBtn');
+if (vehicleCancelEditBtn) {
+  vehicleCancelEditBtn.addEventListener('click', () => {
+    editingVehicleId = null;
+    vehicleForm.reset();
+    vehicleCancelEditBtn.classList.add('hidden');
+    const submitBtn = vehicleForm.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = 'Add Vehicle Track';
+  });
+}
+
 vehicleForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(vehicleForm);
   try {
-    await api('/api/vehicles', 'POST', {
+    const endpoint = editingVehicleId ? `/api/vehicles/${editingVehicleId}` : '/api/vehicles';
+    const method = editingVehicleId ? 'PUT' : 'POST';
+    await api(endpoint, method, {
       vehicleName: fd.get('vehicleName'),
       vehicleNumber: fd.get('vehicleNumber'),
       monthlyPrice: fd.get('monthlyPrice'),
+      startDate: fd.get('startDate') || undefined,
+      endDate: fd.get('endDate') || undefined,
+      totalAmount: fd.get('totalAmount') || undefined,
       serviceDueDate: fd.get('serviceDueDate') || undefined,
       lastServiceDate: fd.get('lastServiceDate') || undefined,
       paymentStatus: fd.get('paymentStatus') || 'pending',
@@ -3493,9 +3533,13 @@ vehicleForm?.addEventListener('submit', async (e) => {
       note: fd.get('note') || undefined
     });
     vehicleForm.reset();
+    editingVehicleId = null;
+    if (vehicleCancelEditBtn) vehicleCancelEditBtn.classList.add('hidden');
+    const submitBtn = vehicleForm.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = 'Add Vehicle Track';
     setDefaultDates();
     await refresh();
-    showToast('Vehicle track added');
+    showToast(method === 'PUT' ? 'Vehicle updated' : 'Vehicle track added');
   } catch (err) {
     showToast(err.message, 'error');
   }

@@ -1033,8 +1033,8 @@ function jsonStore() {
       }
       return arr
         .map(a => {
-           const e = db.employees.find(x => x.id === a.employeeId);
-           return { ...a, employeeName: e?.name || '', employeeRole: e?.role || '' };
+          const e = db.employees.find(x => x.id === a.employeeId);
+          return { ...a, employeeName: e?.name || '', employeeRole: e?.role || '' };
         })
         .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
     },
@@ -1594,6 +1594,9 @@ function jsonStore() {
         vehicleName: String(data.vehicleName || '').trim(),
         vehicleNumber: String(data.vehicleNumber || '').trim(),
         monthlyPrice: Number(data.monthlyPrice),
+        startDate: data.startDate || '',
+        endDate: data.endDate || '',
+        totalAmount: Number(data.totalAmount || 0),
         serviceDueDate: data.serviceDueDate || '',
         lastServiceDate: data.lastServiceDate || '',
         paymentStatus: String(data.paymentStatus || 'pending').trim().toLowerCase(),
@@ -1612,6 +1615,9 @@ function jsonStore() {
       vehicle.vehicleName = String(data.vehicleName || '').trim();
       vehicle.vehicleNumber = String(data.vehicleNumber || '').trim();
       vehicle.monthlyPrice = Number(data.monthlyPrice);
+      vehicle.startDate = data.startDate || '';
+      vehicle.endDate = data.endDate || '';
+      vehicle.totalAmount = Number(data.totalAmount || 0);
       vehicle.serviceDueDate = data.serviceDueDate || '';
       vehicle.lastServiceDate = data.lastServiceDate || '';
       vehicle.paymentStatus = String(data.paymentStatus || 'pending').trim().toLowerCase();
@@ -2161,6 +2167,9 @@ function postgresStore() {
           vehicle_name TEXT NOT NULL,
           vehicle_number TEXT NOT NULL,
           monthly_price NUMERIC(12,2) NOT NULL,
+          start_date DATE,
+          end_date DATE,
+          total_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
           service_due_date DATE,
           last_service_date DATE,
           payment_status TEXT NOT NULL,
@@ -2168,6 +2177,9 @@ function postgresStore() {
           note TEXT,
           created_at TIMESTAMPTZ NOT NULL
         );
+        ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS start_date DATE;
+        ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS end_date DATE;
+        ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS total_amount NUMERIC(12,2) NOT NULL DEFAULT 0;
 
         CREATE TABLE IF NOT EXISTS suppliers (
           id TEXT PRIMARY KEY,
@@ -3444,6 +3456,9 @@ function postgresStore() {
         vehicleName: r.vehicle_name,
         vehicleNumber: r.vehicle_number,
         monthlyPrice: Number(r.monthly_price),
+        startDate: r.start_date ? normalizeISODateText(r.start_date) : '',
+        endDate: r.end_date ? normalizeISODateText(r.end_date) : '',
+        totalAmount: Number(r.total_amount || 0),
         serviceDueDate: r.service_due_date ? normalizeISODateText(r.service_due_date) : '',
         lastServiceDate: r.last_service_date ? normalizeISODateText(r.last_service_date) : '',
         paymentStatus: r.payment_status,
@@ -3458,6 +3473,9 @@ function postgresStore() {
         vehicleName: String(data.vehicleName || '').trim(),
         vehicleNumber: String(data.vehicleNumber || '').trim(),
         monthlyPrice: Number(data.monthlyPrice),
+        startDate: data.startDate || null,
+        endDate: data.endDate || null,
+        totalAmount: Number(data.totalAmount || 0),
         serviceDueDate: data.serviceDueDate || null,
         lastServiceDate: data.lastServiceDate || null,
         paymentStatus: String(data.paymentStatus || 'pending').trim().toLowerCase(),
@@ -3467,13 +3485,16 @@ function postgresStore() {
       };
       await pool.query(
         `INSERT INTO vehicles
-         (id, vehicle_name, vehicle_number, monthly_price, service_due_date, last_service_date, payment_status, amount_paid, note, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+         (id, vehicle_name, vehicle_number, monthly_price, start_date, end_date, total_amount, service_due_date, last_service_date, payment_status, amount_paid, note, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [
           row.id,
           row.vehicleName,
           row.vehicleNumber,
           row.monthlyPrice,
+          row.startDate,
+          row.endDate,
+          row.totalAmount,
           row.serviceDueDate,
           row.lastServiceDate,
           row.paymentStatus,
@@ -3490,11 +3511,14 @@ function postgresStore() {
          SET vehicle_name = $2,
              vehicle_number = $3,
              monthly_price = $4,
-             service_due_date = $5,
-             last_service_date = $6,
-             payment_status = $7,
-             amount_paid = $8,
-             note = $9
+             start_date = $5,
+             end_date = $6,
+             total_amount = $7,
+             service_due_date = $8,
+             last_service_date = $9,
+             payment_status = $10,
+             amount_paid = $11,
+             note = $12
          WHERE id = $1
          RETURNING *`,
         [
@@ -3502,6 +3526,9 @@ function postgresStore() {
           String(data.vehicleName || '').trim(),
           String(data.vehicleNumber || '').trim(),
           Number(data.monthlyPrice),
+          data.startDate || null,
+          data.endDate || null,
+          Number(data.totalAmount || 0),
           data.serviceDueDate || null,
           data.lastServiceDate || null,
           String(data.paymentStatus || 'pending').trim().toLowerCase(),
@@ -3516,6 +3543,9 @@ function postgresStore() {
         vehicleName: r.vehicle_name,
         vehicleNumber: r.vehicle_number,
         monthlyPrice: Number(r.monthly_price),
+        startDate: r.start_date ? normalizeISODateText(r.start_date) : '',
+        endDate: r.end_date ? normalizeISODateText(r.end_date) : '',
+        totalAmount: Number(r.total_amount || 0),
         serviceDueDate: r.service_due_date ? normalizeISODateText(r.service_due_date) : '',
         lastServiceDate: r.last_service_date ? normalizeISODateText(r.last_service_date) : '',
         paymentStatus: r.payment_status,
@@ -5932,13 +5962,14 @@ app.get('/api/vehicles', auth, requirePermission('vehicles:view'), async (_req, 
 });
 
 app.post('/api/vehicles', auth, requirePermission('vehicles:create'), async (req, res) => {
-  const { vehicleName, vehicleNumber, monthlyPrice, serviceDueDate, lastServiceDate, paymentStatus, amountPaid, note } =
+  const { vehicleName, vehicleNumber, monthlyPrice, startDate, endDate, totalAmount, serviceDueDate, lastServiceDate, paymentStatus, amountPaid, note } =
     req.body;
   if (!vehicleName || !vehicleNumber || monthlyPrice == null) {
     return res.status(400).json({ error: 'vehicleName, vehicleNumber and monthlyPrice are required' });
   }
   const monthly = Number(monthlyPrice);
   const paid = Number(amountPaid || 0);
+  const totalAmt = Number(totalAmount || 0);
   if (Number.isNaN(monthly) || monthly < 0 || Number.isNaN(paid) || paid < 0) {
     return res.status(400).json({ error: 'monthlyPrice and amountPaid must be valid non-negative numbers' });
   }
@@ -5947,6 +5978,9 @@ app.post('/api/vehicles', auth, requirePermission('vehicles:create'), async (req
       vehicleName,
       vehicleNumber,
       monthlyPrice: monthly,
+      startDate,
+      endDate,
+      totalAmount: totalAmt,
       serviceDueDate,
       lastServiceDate,
       paymentStatus,
@@ -5961,13 +5995,14 @@ app.post('/api/vehicles', auth, requirePermission('vehicles:create'), async (req
 });
 
 app.put('/api/vehicles/:id', auth, requirePermission('vehicles:update'), async (req, res) => {
-  const { vehicleName, vehicleNumber, monthlyPrice, serviceDueDate, lastServiceDate, paymentStatus, amountPaid, note } =
+  const { vehicleName, vehicleNumber, monthlyPrice, startDate, endDate, totalAmount, serviceDueDate, lastServiceDate, paymentStatus, amountPaid, note } =
     req.body;
   if (!vehicleName || !vehicleNumber || monthlyPrice == null) {
     return res.status(400).json({ error: 'vehicleName, vehicleNumber and monthlyPrice are required' });
   }
   const monthly = Number(monthlyPrice);
   const paid = Number(amountPaid || 0);
+  const totalAmt = Number(totalAmount || 0);
   if (Number.isNaN(monthly) || monthly < 0 || Number.isNaN(paid) || paid < 0) {
     return res.status(400).json({ error: 'monthlyPrice and amountPaid must be valid non-negative numbers' });
   }
@@ -5976,6 +6011,9 @@ app.put('/api/vehicles/:id', auth, requirePermission('vehicles:update'), async (
       vehicleName,
       vehicleNumber,
       monthlyPrice: monthly,
+      startDate,
+      endDate,
+      totalAmount: totalAmt,
       serviceDueDate,
       lastServiceDate,
       paymentStatus,
