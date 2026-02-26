@@ -657,6 +657,8 @@ function normalizeAdvanceRow(row) {
   return {
     id: String(row?.id || ''),
     employeeId: String(row?.employeeId || ''),
+    employeeName: String(row?.employeeName || ''),
+    employeeRole: String(row?.employeeRole || ''),
     date: normalizeIsoDateValue(row?.date),
     amount: round2(toNumber(row?.amount, 0)),
     note: String(row?.note || '').trim()
@@ -684,7 +686,7 @@ function renderAdvanceRows(rows) {
     });
   advanceRowsCache = safeRows;
   if (!safeRows.length) {
-    advanceTableTbody.innerHTML = '<tr><td colspan="4">No advances found for selected employee.</td></tr>';
+    advanceTableTbody.innerHTML = '<tr><td colspan="5">No advances found.</td></tr>';
     return;
   }
   const canEdit = hasPermission('advances:create');
@@ -697,6 +699,10 @@ function renderAdvanceRows(rows) {
            </div>`
         : '-';
       return `<tr>
+        <td>
+          <div class="record-name">${escapeHtml(row.employeeName || row.employeeId)}</div>
+          <div class="record-subtext">${escapeHtml(row.employeeRole)}</div>
+        </td>
         <td>${row.date || '-'}</td>
         <td class="money">${money(row.amount)}</td>
         <td>${escapeHtml(row.note || '-')}</td>
@@ -913,7 +919,8 @@ function renderSalaryRows(rows) {
                <input type="number" min="0" step="0.01" class="advances-input" value="${advVal}" 
                data-emp-id="${r.employeeId}" data-salary="${salary}" data-original="${advVal}"
                placeholder="0" />
-               <button type="button" class="small adv-save" data-emp-id="${r.employeeId}">Save</button>
+               <button type="button" class="small adv-save" data-emp-id="${r.employeeId}">Update</button>
+               ${advVal > 0 ? `<button type="button" class="small danger adv-del-all" data-emp-id="${r.employeeId}">Delete</button>` : ''}
              </div>`
           : `<span class="money">${money(advVal)}</span>`;
 
@@ -992,6 +999,27 @@ function renderSalaryRows(rows) {
         const empId = btn.getAttribute('data-emp-id');
         const input = document.querySelector(`.advances-input[data-emp-id="${empId}"]`);
         if (input) await saveAdvance(input);
+      });
+    });
+
+    document.querySelectorAll('.adv-del-all').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm("Are you sure you want to delete this month's advances for this employee?")) return;
+        const empId = btn.getAttribute('data-emp-id');
+        const input = document.querySelector(`.advances-input[data-emp-id="${empId}"]`);
+        if (input) input.value = '0';
+        try {
+          await api('/api/advances/set', 'PUT', {
+            employeeId: empId,
+            month: getActiveSalaryMonth(),
+            totalAdvances: 0
+          });
+          if (input) input.dataset.original = '0';
+          await refresh();
+          showToast('Advances deleted');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
       });
     });
   }

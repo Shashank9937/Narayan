@@ -137,8 +137,13 @@ function parseISODate(dateStr) {
 }
 
 function normalizeISODateText(value) {
-  const text = String(value || '').slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : '';
+  if (!value) return '';
+  if (value instanceof Date) return isNaN(value) ? '' : value.toISOString().slice(0, 10);
+  const text = String(value).slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const d = new Date(value);
+  if (!isNaN(d)) return d.toISOString().slice(0, 10);
+  return '';
 }
 
 function isoDaysInclusive(startDateText, endDateText) {
@@ -888,7 +893,7 @@ function jsonStore() {
     async listEmployees() {
       return readJsonDb().employees.map((e) => ({
         ...e,
-        joiningDate: e.joiningDate || String(e.createdAt || new Date().toISOString()).slice(0, 10)
+        joiningDate: e.joiningDate || normalizeISODateText(e.createdAt || new Date())
       }));
     },
     async getEmployeeById(id) {
@@ -897,7 +902,7 @@ function jsonStore() {
       if (!e) return null;
       return {
         ...e,
-        joiningDate: e.joiningDate || String(e.createdAt || new Date().toISOString()).slice(0, 10)
+        joiningDate: e.joiningDate || normalizeISODateText(e.createdAt || new Date())
       };
     },
     async createEmployee(data) {
@@ -923,7 +928,7 @@ function jsonStore() {
       employee.name = String(data.name).trim();
       employee.role = String(data.role).trim();
       employee.monthlySalary = Number(data.monthlySalary);
-      employee.joiningDate = data.joiningDate || employee.joiningDate || String(employee.createdAt).slice(0, 10);
+      employee.joiningDate = data.joiningDate || employee.joiningDate || normalizeISODateText(employee.createdAt);
       employee.updatedAt = new Date().toISOString();
       writeJsonDb(db);
       return employee;
@@ -997,11 +1002,41 @@ function jsonStore() {
       writeJsonDb(db);
       return row;
     },
+    async getAdvanceById(id) {
+      const db = readJsonDb();
+      return db.salaryAdvances.find((a) => String(a.id) === String(id)) || null;
+    },
+    async updateAdvance(id, data) {
+      const db = readJsonDb();
+      const idx = db.salaryAdvances.findIndex((a) => String(a.id) === String(id));
+      if (idx < 0) return null;
+      if (data.date !== undefined) db.salaryAdvances[idx].date = data.date;
+      if (data.amount !== undefined) db.salaryAdvances[idx].amount = Number(data.amount);
+      if (data.note !== undefined) db.salaryAdvances[idx].note = String(data.note).trim();
+      db.salaryAdvances[idx].updatedAt = new Date().toISOString();
+      writeJsonDb(db);
+      return db.salaryAdvances[idx];
+    },
+    async deleteAdvance(id) {
+      const db = readJsonDb();
+      const idx = db.salaryAdvances.findIndex((a) => String(a.id) === String(id));
+      if (idx < 0) return false;
+      db.salaryAdvances.splice(idx, 1);
+      writeJsonDb(db);
+      return true;
+    },
     async listEmployeeAdvances(employeeId) {
       const db = readJsonDb();
-      return db.salaryAdvances
-        .filter((a) => String(a.employeeId) === String(employeeId))
-        .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+      let arr = db.salaryAdvances;
+      if (employeeId) {
+        arr = arr.filter((a) => String(a.employeeId) === String(employeeId));
+      }
+      return arr
+        .map(a => {
+           const e = db.employees.find(x => x.id === a.employeeId);
+           return { ...a, employeeName: e?.name || '', employeeRole: e?.role || '' };
+        })
+        .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
     },
     async getEmployeeAdvances(employeeId, month) {
       const db = readJsonDb();
@@ -1250,7 +1285,7 @@ function jsonStore() {
           .filter((a) => a.employeeId === employee.id)
           .reduce((sum, a) => sum + Number(a.amount), 0);
 
-        const startMonth = String(employee.joiningDate || employee.createdAt || new Date().toISOString()).slice(0, 7);
+        const startMonth = normalizeISODateText(employee.joiningDate || employee.createdAt || new Date()).slice(0, 7);
         const [startY, startM] = startMonth.split('-').map(Number);
         const [endY, endM] = month.split('-').map(Number);
         const monthsWorked = Math.max(0, (endY - startY) * 12 + (endM - startM) + 1);
@@ -2305,7 +2340,7 @@ function postgresStore() {
         name: r.name,
         role: r.role,
         monthlySalary: Number(r.monthly_salary),
-        joiningDate: r.joining_date ? String(r.joining_date).slice(0, 10) : String(r.created_at).slice(0, 10),
+        joiningDate: r.joining_date ? normalizeISODateText(r.joining_date) : normalizeISODateText(r.created_at),
         active: r.active,
         createdAt: r.created_at
       }));
@@ -2319,7 +2354,7 @@ function postgresStore() {
         name: r.name,
         role: r.role,
         monthlySalary: Number(r.monthly_salary),
-        joiningDate: r.joining_date ? String(r.joining_date).slice(0, 10) : String(r.created_at).slice(0, 10),
+        joiningDate: r.joining_date ? normalizeISODateText(r.joining_date) : normalizeISODateText(r.created_at),
         active: r.active,
         createdAt: r.created_at
       };
@@ -2357,7 +2392,7 @@ function postgresStore() {
         name: r.name,
         role: r.role,
         monthlySalary: Number(r.monthly_salary),
-        joiningDate: r.joining_date ? String(r.joining_date).slice(0, 10) : String(r.created_at).slice(0, 10),
+        joiningDate: r.joining_date ? normalizeISODateText(r.joining_date) : normalizeISODateText(r.created_at),
         active: r.active,
         createdAt: r.created_at
       };
@@ -2402,7 +2437,7 @@ function postgresStore() {
       return res.rows.map((r) => ({
         id: r.id,
         employeeId: r.employee_id,
-        date: String(r.date).slice(0, 10),
+        date: normalizeISODateText(r.date),
         status: r.status,
         createdAt: r.created_at
       }));
@@ -2449,17 +2484,51 @@ function postgresStore() {
       );
       return row;
     },
-    async listEmployeeAdvances(employeeId) {
-      const res = await pool.query(
-        `SELECT * FROM salary_advances
-         WHERE employee_id = $1
-         ORDER BY date ASC`,
-        [employeeId]
+    async getAdvanceById(id) {
+      const res = await pool.query('SELECT * FROM salary_advances WHERE id = $1', [id]);
+      if (!res.rows.length) return null;
+      const r = res.rows[0];
+      return { id: r.id, employeeId: r.employee_id, date: normalizeISODateText(r.date), amount: Number(r.amount), note: r.note || '' };
+    },
+    async updateAdvance(id, data) {
+      const existing = await this.getAdvanceById(id);
+      if (!existing) return null;
+      const date = data.date !== undefined ? data.date : existing.date;
+      const amount = data.amount !== undefined ? Number(data.amount) : existing.amount;
+      const note = data.note !== undefined ? String(data.note).trim() : existing.note;
+      await pool.query(
+        'UPDATE salary_advances SET date = $1, amount = $2, note = $3 WHERE id = $4',
+        [date, amount, note, id]
       );
+      return { ...existing, date, amount, note };
+    },
+    async deleteAdvance(id) {
+      const res = await pool.query('DELETE FROM salary_advances WHERE id = $1', [id]);
+      return res.rowCount > 0;
+    },
+    async listEmployeeAdvances(employeeId) {
+      let res;
+      if (employeeId) {
+        res = await pool.query(
+          `SELECT a.*, e.name, e.role FROM salary_advances a
+           LEFT JOIN employees e ON a.employee_id = e.id
+           WHERE a.employee_id = $1
+           ORDER BY a.date DESC, a.id DESC`,
+          [employeeId]
+        );
+      } else {
+        res = await pool.query(
+          `SELECT a.*, e.name, e.role FROM salary_advances a
+           LEFT JOIN employees e ON a.employee_id = e.id
+           ORDER BY a.date DESC, a.id DESC`
+        );
+      }
       return res.rows.map((r) => ({
+        employeeName: r.name,
+        employeeRole: r.role,
         id: r.id,
         employeeId: r.employee_id,
-        date: String(r.date).slice(0, 10),
+        date: normalizeISODateText(r.date),
         amount: Number(r.amount),
         note: r.note || ''
       }));
@@ -2475,7 +2544,7 @@ function postgresStore() {
       return res.rows.map((r) => ({
         id: r.id,
         employeeId: r.employee_id,
-        date: String(r.date).slice(0, 10),
+        date: normalizeISODateText(r.date),
         amount: Number(r.amount),
         note: r.note || ''
       }));
@@ -2573,8 +2642,8 @@ function postgresStore() {
             period2ToGive: Number(r.period2_to_give || 0),
             period2Paid: Number(r.period2_paid || 0),
             monthlySalaryApplied: r.monthly_salary_applied == null ? null : Number(r.monthly_salary_applied),
-            durationStart: r.duration_start ? String(r.duration_start).slice(0, 10) : '',
-            durationEnd: r.duration_end ? String(r.duration_end).slice(0, 10) : '',
+            durationStart: r.duration_start ? normalizeISODateText(r.duration_start) : '',
+            durationEnd: r.duration_end ? normalizeISODateText(r.duration_end) : '',
             durationDays: Number(r.duration_days || 0),
             durationMonths: Number(r.duration_months || 0),
             note: r.note || '',
@@ -2795,7 +2864,7 @@ function postgresStore() {
       return res.rows.map((r) => ({
         id: r.id,
         employeeId: r.employee_id,
-        date: String(r.date).slice(0, 10),
+        date: normalizeISODateText(r.date),
         particulars: r.particulars,
         voucherType: r.voucher_type || 'Manual',
         voucherNo: r.voucher_no || '',
@@ -2882,7 +2951,7 @@ function postgresStore() {
       return {
         id: r.id,
         employeeId: r.employee_id,
-        date: String(r.date).slice(0, 10),
+        date: normalizeISODateText(r.date),
         particulars: r.particulars,
         voucherType: r.voucher_type || 'Manual',
         voucherNo: r.voucher_no || '',
@@ -2927,7 +2996,7 @@ function postgresStore() {
           name: r.name,
           role: r.role,
           monthlySalary: Number(r.monthly_salary),
-          joiningDate: r.joining_date ? String(r.joining_date).slice(0, 10) : String(r.created_at).slice(0, 10),
+          joiningDate: r.joining_date ? normalizeISODateText(r.joining_date) : normalizeISODateText(r.created_at),
           advances: Number(r.advances),
           remaining: Math.max(0, Number(r.monthly_salary) - Number(r.advances)),
           monthsWorked,
@@ -3051,7 +3120,7 @@ function postgresStore() {
       const r = res.rows[0];
       return {
         id: r.id,
-        date: String(r.date).slice(0, 10),
+        date: normalizeISODateText(r.date),
         truckNumber: r.truck_number,
         driverName: r.driver_name || '',
         rawMaterial: r.raw_material,
@@ -3078,7 +3147,7 @@ function postgresStore() {
       const r = res.rows[0];
       return {
         id: r.id,
-        date: String(r.date).slice(0, 10),
+        date: normalizeISODateText(r.date),
         truckNumber: r.truck_number,
         driverName: r.driver_name || '',
         rawMaterial: r.raw_material,
@@ -3113,7 +3182,7 @@ function postgresStore() {
       const res = await pool.query(`SELECT * FROM trucks ${where} ORDER BY date DESC`, values);
       return res.rows.map((r) => ({
         id: r.id,
-        date: String(r.date).slice(0, 10),
+        date: normalizeISODateText(r.date),
         truckNumber: r.truck_number,
         driverName: r.driver_name || '',
         rawMaterial: r.raw_material,
@@ -3142,7 +3211,7 @@ function postgresStore() {
       const res = await pool.query(`SELECT * FROM expenses ${where} ORDER BY date DESC`, values);
       return res.rows.map((r) => ({
         id: r.id,
-        date: String(r.date).slice(0, 10),
+        date: normalizeISODateText(r.date),
         party: r.party || 'narayan',
         description: r.description || '',
         amount: Number(r.amount),
@@ -3182,7 +3251,7 @@ function postgresStore() {
       const r = res.rows[0];
       return {
         id: r.id,
-        date: String(r.date).slice(0, 10),
+        date: normalizeISODateText(r.date),
         party: r.party || 'narayan',
         description: r.description || '',
         amount: Number(r.amount),
@@ -3207,7 +3276,7 @@ function postgresStore() {
       const res = await pool.query(`SELECT * FROM investments ${where} ORDER BY date DESC`, values);
       return res.rows.map((r) => ({
         id: r.id,
-        date: String(r.date).slice(0, 10),
+        date: normalizeISODateText(r.date),
         party: r.party || 'narayan',
         amount: Number(r.amount),
         note: r.note || '',
@@ -3247,7 +3316,7 @@ function postgresStore() {
       const r = res.rows[0];
       return {
         id: r.id,
-        date: String(r.date).slice(0, 10),
+        date: normalizeISODateText(r.date),
         party: r.party || 'narayan',
         amount: Number(r.amount),
         note: r.note || '',
@@ -3272,7 +3341,7 @@ function postgresStore() {
       const res = await pool.query(`SELECT * FROM chini_expenses ${where} ORDER BY date DESC`, values);
       return res.rows.map((r) => ({
         id: r.id,
-        date: String(r.date).slice(0, 10),
+        date: normalizeISODateText(r.date),
         party: r.party || 'narayan',
         description: r.description || '',
         amount: Number(r.amount),
@@ -3312,7 +3381,7 @@ function postgresStore() {
       const r = res.rows[0];
       return {
         id: r.id,
-        date: String(r.date).slice(0, 10),
+        date: normalizeISODateText(r.date),
         party: r.party || 'narayan',
         description: r.description || '',
         amount: Number(r.amount),
@@ -3375,8 +3444,8 @@ function postgresStore() {
         vehicleName: r.vehicle_name,
         vehicleNumber: r.vehicle_number,
         monthlyPrice: Number(r.monthly_price),
-        serviceDueDate: r.service_due_date ? String(r.service_due_date).slice(0, 10) : '',
-        lastServiceDate: r.last_service_date ? String(r.last_service_date).slice(0, 10) : '',
+        serviceDueDate: r.service_due_date ? normalizeISODateText(r.service_due_date) : '',
+        lastServiceDate: r.last_service_date ? normalizeISODateText(r.last_service_date) : '',
         paymentStatus: r.payment_status,
         amountPaid: Number(r.amount_paid || 0),
         note: r.note || '',
@@ -3447,8 +3516,8 @@ function postgresStore() {
         vehicleName: r.vehicle_name,
         vehicleNumber: r.vehicle_number,
         monthlyPrice: Number(r.monthly_price),
-        serviceDueDate: r.service_due_date ? String(r.service_due_date).slice(0, 10) : '',
-        lastServiceDate: r.last_service_date ? String(r.last_service_date).slice(0, 10) : '',
+        serviceDueDate: r.service_due_date ? normalizeISODateText(r.service_due_date) : '',
+        lastServiceDate: r.last_service_date ? normalizeISODateText(r.last_service_date) : '',
         paymentStatus: r.payment_status,
         amountPaid: Number(r.amount_paid || 0),
         note: r.note || '',
@@ -3662,7 +3731,7 @@ function postgresStore() {
       return res.rows.map((r) => ({
         id: r.id,
         supplierId: r.supplier_id,
-        date: String(r.date).slice(0, 10),
+        date: normalizeISODateText(r.date),
         type: r.type,
         amount: toSafeNumber(r.amount, 0),
         truckNumber: r.truck_number || '',
@@ -3688,7 +3757,7 @@ function postgresStore() {
       return {
         id: r.id,
         supplierId: r.supplier_id,
-        date: String(r.date).slice(0, 10),
+        date: normalizeISODateText(r.date),
         type: r.type,
         amount: toSafeNumber(r.amount, 0),
         truckNumber: r.truck_number || '',
@@ -3899,8 +3968,8 @@ function postgresStore() {
       return res.rows.map((r) => ({
         id: r.id,
         invoiceNo: r.invoice_no,
-        billDate: String(r.bill_date).slice(0, 10),
-        dueDate: r.due_date ? String(r.due_date).slice(0, 10) : '',
+        billDate: normalizeISODateText(r.bill_date),
+        dueDate: r.due_date ? normalizeISODateText(r.due_date) : '',
         vehicleNo: r.vehicle_no || '',
         company: {
           gstNo: normalizeGstNo(r.company_gst_no),
@@ -3930,8 +3999,8 @@ function postgresStore() {
       return {
         id: r.id,
         invoiceNo: r.invoice_no,
-        billDate: String(r.bill_date).slice(0, 10),
-        dueDate: r.due_date ? String(r.due_date).slice(0, 10) : '',
+        billDate: normalizeISODateText(r.bill_date),
+        dueDate: r.due_date ? normalizeISODateText(r.due_date) : '',
         vehicleNo: r.vehicle_no || '',
         company: {
           gstNo: normalizeGstNo(r.company_gst_no),
@@ -4069,8 +4138,8 @@ function postgresStore() {
       return {
         id: r.id,
         invoiceNo: r.invoice_no,
-        billDate: String(r.bill_date).slice(0, 10),
-        dueDate: r.due_date ? String(r.due_date).slice(0, 10) : '',
+        billDate: normalizeISODateText(r.bill_date),
+        dueDate: r.due_date ? normalizeISODateText(r.due_date) : '',
         vehicleNo: r.vehicle_no || '',
         company: {
           gstNo: normalizeGstNo(r.company_gst_no),
@@ -4455,6 +4524,50 @@ app.post('/api/advances', auth, requirePermission('advances:create'), async (req
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to create advance' });
+  }
+});
+
+app.get('/api/advances', auth, requirePermission('advances:create'), async (req, res) => {
+  const employeeId = String(req.query.employeeId || '').trim();
+  try {
+    const rows = typeof store.listEmployeeAdvances === 'function'
+      ? await store.listEmployeeAdvances(employeeId)
+      : await store.getEmployeeAdvances(employeeId, currentMonth());
+    return res.json(Array.isArray(rows) ? rows : []);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to fetch advances' });
+  }
+});
+
+app.put('/api/advances/:id', auth, requirePermission('advances:create'), async (req, res) => {
+  const { date, amount, note } = req.body;
+  const numericAmount = Number(amount);
+  if (!date || Number.isNaN(numericAmount) || numericAmount <= 0) {
+    return res.status(400).json({ error: 'date and valid positive amount are required' });
+  }
+  try {
+    const updated = await store.updateAdvance(req.params.id, {
+      date,
+      amount: numericAmount,
+      note: note || ''
+    });
+    if (!updated) return res.status(404).json({ error: 'Advance not found' });
+    return res.json(updated);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to update advance' });
+  }
+});
+
+app.delete('/api/advances/:id', auth, requirePermission('advances:create'), async (req, res) => {
+  try {
+    const deleted = await store.deleteAdvance(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Advance not found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to delete advance' });
   }
 });
 
