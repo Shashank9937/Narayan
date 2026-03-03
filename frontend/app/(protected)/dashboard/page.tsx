@@ -63,47 +63,49 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 animate-fade-in">
+      {/* Header Section */}
+      <header className="flex flex-col gap-2">
+        <h1 className="text-4xl font-bold text-white tracking-tight">Intelligence Dashboard</h1>
+        <p className="text-white/40 font-medium">Monitoring global pain signals for asymmetric founder advantage.</p>
+      </header>
+
+      {/* KPI Section */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {overview.kpis.map((kpi) => (
+        {overview.kpis.map((kpi, index) => (
           <KpiTile key={kpi.label} label={kpi.label} value={kpi.value} delta={kpi.delta} />
         ))}
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Top Problem Clusters</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {overview.top_clusters.map((cluster) => (
-                <ClusterCard key={cluster.id} cluster={cluster} />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-        <div className="space-y-4">
+      {/* Clusters Horizontal Row */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold text-white">Top Problem Clusters</h2>
+          <span className="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">Scroll for more →</span>
+        </div>
+        <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide mask-fade-right">
+          {overview.top_clusters.map((cluster) => (
+            <ClusterCard key={cluster.id} cluster={cluster} />
+          ))}
+        </div>
+      </section>
+
+      <div className="grid gap-8 lg:grid-cols-3">
+        {/* Ideas Kanban Grid */}
+        <section className="lg:col-span-2 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-white">High Potential Ideas</h2>
+          </div>
+          <IdeaTable ideas={overview.top_ideas} />
+        </section>
+
+        {/* Sidebar Components */}
+        <aside className="space-y-8">
           <TrendingSignals signals={overview.trending_signals} />
           <RevenueSummaryCard items={overview.revenue_summary} />
-        </div>
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Highest Validation Score Ideas</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <IdeaTable ideas={overview.top_ideas} />
-          </CardContent>
-        </Card>
-
-        <div className="space-y-4">
-          <QuickLaunchCard title={overview.quick_launch_plan.title} bullets={overview.quick_launch_plan.bullet_points} />
           <AdminPanel accessToken={token} initialFilters={filters} />
-        </div>
-      </section>
+        </aside>
+      </div>
     </div>
   );
 }
