@@ -82,9 +82,9 @@ export default function LoginPage() {
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-              className="h-12 w-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-glow"
+              className="h-16 w-16 rounded-2xl overflow-hidden shadow-glow"
             >
-              <Radar className="h-5 w-5 text-white" />
+              <img src="/logo.png" alt="Logo" className="w-full h-full object-cover" />
             </motion.div>
             <div>
               <h1 className="text-2xl font-bold text-white tracking-tight">

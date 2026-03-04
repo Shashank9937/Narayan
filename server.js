@@ -5438,9 +5438,11 @@ app.get('/api/salary-slip/:employeeId.pdf', auth, requirePermission('salaryslip:
     grad.stop(0, c.brand).stop(1, c.brandGrad);
     doc.save().rect(0, 0, W, 100).fill(grad).restore();
 
-    // Company Logo Circle
+    // Company Logo
     doc.save().circle(M + 28, 50, 22).fill(c.white).restore();
-    doc.fillColor(c.brand).font('Helvetica-Bold').fontSize(16).text('NE', M + 12, 42, { width: 32, align: 'center' });
+    doc.save().circle(M + 28, 50, 22).clip();
+    try { doc.image(path.join(__dirname, 'public', 'logo.png'), M + 6, 28, { width: 44, height: 44 }); } catch (err) { console.error("Error loading logo"); }
+    doc.restore();
 
     // Company Name & Slip Title
     doc.fillColor(c.white).font('Helvetica-Bold').fontSize(18).text(APP_NAME, M + 62, 30);
@@ -6377,8 +6379,11 @@ app.get('/api/supplier-transactions/:id/receipt.pdf', auth, requirePermission('s
     grad.stop(0, c.brand).stop(1, c.brandGrad);
     doc.save().rect(0, 0, W, 100).fill(grad).restore();
 
+    // Company Logo
     doc.save().circle(M + 26, 50, 22).fill(c.white).restore();
-    doc.fillColor(c.brand).font('Helvetica-Bold').fontSize(16).text('NE', M + 12, 42, { width: 28, align: 'center' });
+    doc.save().circle(M + 26, 50, 22).clip();
+    try { doc.image(path.join(__dirname, 'public', 'logo.png'), M + 4, 28, { width: 44, height: 44 }); } catch (err) { console.error("Error loading logo"); }
+    doc.restore();
 
     doc.fillColor(c.white).font('Helvetica-Bold').fontSize(18).text(APP_NAME, M + 60, 28);
     doc.fillColor('rgba(255,255,255,0.8)').font('Helvetica').fontSize(9).text('Operations Control Center', M + 60, 50);
@@ -6855,8 +6860,11 @@ function sendTabularPdfReport(res, { fileName, title, filters = [], summary = []
   grad.stop(0, c.brand).stop(1, c.brandGrad);
   doc.save().rect(0, 0, W, 80).fill(grad).restore();
 
+  // Company Logo
   doc.save().circle(M + 20, 40, 18).fill(c.white).restore();
-  doc.fillColor(c.brand).font('Helvetica-Bold').fontSize(14).text('NE', M + 7, 34, { width: 26, align: 'center' });
+  doc.save().circle(M + 20, 40, 18).clip();
+  try { doc.image(path.join(__dirname, 'public', 'logo.png'), M + 2, 22, { width: 36, height: 36 }); } catch (err) { console.error("Error loading logo"); }
+  doc.restore();
 
   doc.fillColor(c.white).font('Helvetica-Bold').fontSize(16).text(APP_NAME, M + 48, 22);
   doc.fillColor('rgba(255,255,255,0.8)').font('Helvetica').fontSize(9).text(title, M + 48, 42);
@@ -7394,9 +7402,11 @@ app.get('/api/employees/:id/offer-letter', auth, async (req, res) => {
     grad.stop(0, c.brand).stop(1, c.brandGrad);
     doc.save().rect(0, 0, W, 110).fill(grad).restore();
 
-    // Company Logo Circle
+    // Company Logo
     doc.save().circle(M + 28, 55, 24).fill(c.white).restore();
-    doc.fillColor(c.brand).font('Helvetica-Bold').fontSize(18).text('NE', M + 10, 46, { width: 36, align: 'center' });
+    doc.save().circle(M + 28, 55, 24).clip();
+    try { doc.image(path.join(__dirname, 'public', 'logo.png'), M + 4, 31, { width: 48, height: 48 }); } catch (err) { console.error("Error loading logo"); }
+    doc.restore();
 
     // Company Name & Document Title
     doc.fillColor(c.white).font('Helvetica-Bold').fontSize(20).text(APP_NAME, M + 66, 32);

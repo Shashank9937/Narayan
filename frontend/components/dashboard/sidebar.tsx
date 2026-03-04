@@ -71,8 +71,8 @@ export function Sidebar() {
                 {/* Logo */}
                 <div className="h-16 flex items-center justify-between px-4 border-b border-white/[0.04]">
                     <Link href="/dashboard" className="flex items-center gap-3 overflow-hidden">
-                        <div className="min-w-[32px] h-[32px] rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-glow shrink-0">
-                            <Radar className="h-4 w-4 text-white" />
+                        <div className="min-w-[32px] h-[32px] rounded-xl overflow-hidden shadow-glow shrink-0">
+                            <img src="/logo.png" alt="Logo" className="w-full h-full object-cover" />
                         </div>
                         {!collapsed && (
                             <span className="font-bold text-lg gradient-text truncate">
