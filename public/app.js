@@ -6,7 +6,7 @@ const truckNarayanTbody = document.querySelector('#truckTableNarayan tbody');
 const truckMaaVaishnoTbody = document.querySelector('#truckTableMaaVaishno tbody');
 const expenseNarayanTbody = document.querySelector('#expenseTableNarayan tbody');
 const expenseMaaVaishnoTbody = document.querySelector('#expenseTableMaaVaishno tbody');
-const expenseSalaryGivenTbody = document.querySelector('#expenseSalaryGivenTable tbody');
+
 const investmentTbody = document.querySelector('#investmentTable tbody');
 const chiniTbody = document.querySelector('#chiniTable tbody');
 const landTbody = document.querySelector('#landTable tbody');
@@ -540,7 +540,6 @@ function applyRoleUI() {
   setPanelVisible('employeeListPanel', hasPermission('employees:view'));
   setPanelVisible('attendanceReportPanel', hasPermission('attendance:report'));
   setPanelVisible('expenseReportPanel', hasPermission('expenses:view'));
-  setPanelVisible('expenseSalaryGivenPanel', hasPermission('salaryledger:view') || hasPermission('salary:view'));
   setPanelVisible('investmentSummaryPanel', hasPermission('investments:view'));
   setPanelVisible('chiniReportPanel', hasPermission('chini:view'));
   setPanelVisible('landReportPanel', hasPermission('land:view'));
@@ -2121,76 +2120,7 @@ function renderExpenseRows(rows) {
   }
 }
 
-function renderExpenseSalaryGiven() {
-  const panel = document.getElementById('expenseSalaryGivenPanel');
-  if (!panel || !expenseSalaryGivenTbody) return;
-  const canViewSalaryGiven = hasPermission('salaryledger:view') || hasPermission('salary:view');
-  panel.classList.toggle('hidden', !canViewSalaryGiven);
-  if (!canViewSalaryGiven) return;
 
-  const rows = (salaryLedgersCache || [])
-    .map((r) => normalizeLedgerRow(r))
-    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
-
-  const totals = rows.reduce(
-    (acc, r) => {
-      const historicalGiven = Number(r.period1Paid || 0);
-      const advancesGiven = Number(r.period2Paid || 0);
-      const totalGiven = historicalGiven + advancesGiven;
-      const currentMonthSalary = Number(r.currentMonthSalary || 0);
-      const currentMonthAdvance = Number(r.currentMonthAdvance || 0);
-      const currentMonthPending = Math.max(0, currentMonthSalary - currentMonthAdvance);
-      acc.historicalGiven += historicalGiven;
-      acc.advancesGiven += advancesGiven;
-      acc.totalGiven += totalGiven;
-      acc.currentMonthSalary += currentMonthSalary;
-      acc.currentMonthAdvance += currentMonthAdvance;
-      acc.currentMonthPending += currentMonthPending;
-      return acc;
-    },
-    {
-      historicalGiven: 0,
-      advancesGiven: 0,
-      totalGiven: 0,
-      currentMonthSalary: 0,
-      currentMonthAdvance: 0,
-      currentMonthPending: 0
-    }
-  );
-
-  const set = (id, value) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = money(value);
-  };
-  set('expenseSalaryLedgerPaidTotal', totals.historicalGiven);
-  set('expenseSalaryAdvancePaidTotal', totals.advancesGiven);
-  set('expenseSalaryGivenTotal', totals.totalGiven);
-  set('expenseSalaryCurrentMonthSalaryTotal', totals.currentMonthSalary);
-  set('expenseSalaryCurrentMonthAdvanceTotal', totals.currentMonthAdvance);
-  set('expenseSalaryCurrentMonthPendingTotal', totals.currentMonthPending);
-
-  expenseSalaryGivenTbody.innerHTML = rows
-    .map((r, idx) => {
-      const historicalGiven = Number(r.period1Paid || 0);
-      const advancesGiven = Number(r.period2Paid || 0);
-      const totalGiven = historicalGiven + advancesGiven;
-      const currentMonthSalary = Number(r.currentMonthSalary || 0);
-      const currentMonthAdvance = Number(r.currentMonthAdvance || 0);
-      const currentMonthPending = Math.max(0, currentMonthSalary - currentMonthAdvance);
-      return `<tr>
-          <td>${idx + 1}</td>
-          <td>${escapeHtml(r.name || '-')}</td>
-          <td>${escapeHtml(r.role || '-')}</td>
-          <td class="money">${money(historicalGiven)}</td>
-          <td class="money">${money(advancesGiven)}</td>
-          <td class="money">${money(totalGiven)}</td>
-          <td class="money">${money(currentMonthSalary)}</td>
-          <td class="money">${money(currentMonthAdvance)}</td>
-          <td class="money">${money(currentMonthPending)}</td>
-        </tr>`;
-    })
-    .join('');
-}
 
 function renderInvestmentRows(rows) {
   if (!investmentTbody) return;
@@ -2866,7 +2796,6 @@ async function refresh() {
     renderSalaryLedgers(salaryLedgersCache);
     renderVisibleTrucks();
     renderExpenseRows(expensesCache);
-    renderExpenseSalaryGiven();
     renderInvestmentRows(investmentsCache);
     renderInvestmentSummary();
     renderChiniRows(chiniExpensesCache);
