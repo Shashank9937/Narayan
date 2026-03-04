@@ -29,10 +29,8 @@ const config: Config = {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
-        "deep-navy": "#0A0F1E",
+        "deep-navy": "#060A16",
         "electric-indigo": "#6366F1",
-        "emerald-500": "#10B981",
-        "rose-500": "#F43F5E",
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -40,7 +38,8 @@ const config: Config = {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        sans: ["Inter", "Geist", "sans-serif"],
+        sans: ["var(--font-space-grotesk)", "system-ui", "sans-serif"],
+        mono: ["var(--font-ibm-plex-mono)", "SF Mono", "monospace"],
       },
       keyframes: {
         "fade-up": {
@@ -51,20 +50,21 @@ const config: Config = {
           "0%": { opacity: "0" },
           "100%": { opacity: "1" },
         },
-        "glow": {
+        glow: {
           "0%, 100%": { opacity: "1" },
           "50%": { opacity: "0.6" },
-        }
+        },
       },
       animation: {
         "fade-up": "fade-up 0.5s ease-out forwards",
         "fade-in": "fade-in 0.5s ease-out forwards",
-        "glow": "glow 2s ease-in-out infinite",
+        glow: "glow 2s ease-in-out infinite",
       },
       boxShadow: {
-        glow: "0 0 20px rgba(99, 102, 241, 0.15), 0 0 40px rgba(99, 102, 241, 0.1)",
+        glow: "0 0 20px rgba(99, 102, 241, 0.15), 0 0 40px rgba(99, 102, 241, 0.08)",
         "glow-emerald": "0 0 20px rgba(16, 185, 129, 0.15)",
         "glow-rose": "0 0 20px rgba(244, 63, 94, 0.15)",
+        "glass": "0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04)",
       },
     },
   },

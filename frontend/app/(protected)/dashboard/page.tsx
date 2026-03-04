@@ -2,18 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
 
 import { AdminPanel } from "@/components/dashboard/admin-panel";
 import { ClusterCard } from "@/components/dashboard/cluster-card";
-import { IdeaTable } from "@/components/dashboard/idea-table";
-import { KpiTile } from "@/components/dashboard/kpi-tile";
-import { QuickLaunchCard } from "@/components/dashboard/quick-launch";
+import { IdeaTable, IdeaTableSkeleton } from "@/components/dashboard/idea-table";
+import { KpiTile, KpiTileSkeleton } from "@/components/dashboard/kpi-tile";
 import { RevenueSummaryCard } from "@/components/dashboard/revenue-summary";
 import { TrendingSignals } from "@/components/dashboard/trending-signals";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAdminFilters, getDashboardOverview } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 import type { AdminFilters, DashboardOverview } from "@/lib/types";
+import { Sparkles, ArrowRight, Zap } from "lucide-react";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -54,53 +54,149 @@ export default function DashboardPage() {
     load();
   }, [router]);
 
-  if (isLoading) {
-    return <p className="py-20 text-center text-muted-foreground">Loading intelligence dashboard...</p>;
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+        <div className="glass p-12 rounded-3xl max-w-md">
+          <div className="h-12 w-12 rounded-2xl bg-rose-500/10 flex items-center justify-center mx-auto mb-4">
+            <Zap className="h-5 w-5 text-rose-400" />
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Connection Error</h2>
+          <p className="text-sm text-white/40 mb-6">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-6 py-2.5 rounded-xl bg-indigo-500/20 text-indigo-400 text-sm font-semibold hover:bg-indigo-500/30 transition-all"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
   }
 
-  if (error || !overview) {
-    return <p className="py-20 text-center text-sm text-rose-300">{error ?? "No dashboard data available"}</p>;
+  if (isLoading) {
+    return (
+      <div className="space-y-8">
+        {/* Header skeleton */}
+        <div className="space-y-2">
+          <div className="skeleton h-10 w-80 rounded-lg" />
+          <div className="skeleton h-5 w-96 rounded-lg" />
+        </div>
+        {/* KPI skeletons */}
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => <KpiTileSkeleton key={i} />)}
+        </div>
+        {/* Cluster skeletons */}
+        <div className="flex gap-4">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="skeleton h-16 min-w-[300px] rounded-2xl" />
+          ))}
+        </div>
+        {/* Content skeleton */}
+        <div className="grid gap-8 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <IdeaTableSkeleton />
+          </div>
+          <div className="space-y-4">
+            <div className="skeleton h-[400px] rounded-2xl" />
+            <div className="skeleton h-48 rounded-2xl" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!overview) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+        <div className="glass p-12 rounded-3xl max-w-md">
+          <Sparkles className="h-8 w-8 text-white/10 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-white mb-2">No Data Yet</h2>
+          <p className="text-sm text-white/40">
+            Run the scraping pipeline from the admin controls to start collecting intelligence.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      {/* Header Section */}
-      <header className="flex flex-col gap-2">
-        <h1 className="text-4xl font-bold text-white tracking-tight">Intelligence Dashboard</h1>
-        <p className="text-white/40 font-medium">Monitoring global pain signals for asymmetric founder advantage.</p>
-      </header>
+    <div className="space-y-8">
+      {/* Header */}
+      <motion.header
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4"
+      >
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse-dot" style={{ boxShadow: '0 0 8px rgba(16,185,129,0.4)' }} />
+            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-500/80">
+              Live Intelligence
+            </span>
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight">
+            Intelligence Dashboard
+          </h1>
+          <p className="text-sm text-white/30 font-medium max-w-lg">
+            Real-time monitoring of global pain signals for asymmetric founder advantage.
+          </p>
+        </div>
 
-      {/* KPI Section */}
+        <div className="flex items-center gap-3">
+          <div className="glass px-4 py-2 rounded-xl flex items-center gap-2">
+            <span className="text-[10px] font-bold text-white/30 uppercase tracking-wider">Last scan</span>
+            <span className="text-xs font-mono text-white/60">
+              {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+            </span>
+          </div>
+        </div>
+      </motion.header>
+
+      {/* KPI Grid */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {overview.kpis.map((kpi, index) => (
-          <KpiTile key={kpi.label} label={kpi.label} value={kpi.value} delta={kpi.delta} />
+          <KpiTile key={kpi.label} label={kpi.label} value={kpi.value} delta={kpi.delta} index={index} />
         ))}
       </section>
 
-      {/* Clusters Horizontal Row */}
-      <section className="space-y-4">
+      {/* Clusters horizontal scroll */}
+      <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-white">Top Problem Clusters</h2>
-          <span className="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">Scroll for more →</span>
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+            Top Problem Clusters
+          </h2>
+          <span className="text-[10px] font-bold text-white/15 uppercase tracking-[0.2em]">
+            Scroll for more →
+          </span>
         </div>
-        <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide mask-fade-right">
-          {overview.top_clusters.map((cluster) => (
-            <ClusterCard key={cluster.id} cluster={cluster} />
+        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide mask-fade-right">
+          {overview.top_clusters.map((cluster, idx) => (
+            <ClusterCard key={cluster.id} cluster={cluster} index={idx} />
           ))}
         </div>
       </section>
 
+      {/* Main content grid */}
       <div className="grid gap-8 lg:grid-cols-3">
-        {/* Ideas Kanban Grid */}
-        <section className="lg:col-span-2 space-y-4">
+        {/* Ideas */}
+        <section className="lg:col-span-2 space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-white">High Potential Ideas</h2>
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
+              High Potential Ideas
+            </h2>
+            <span className="text-[10px] font-bold text-white/15 uppercase tracking-[0.2em]">
+              {overview.top_ideas.length} opportunities
+            </span>
           </div>
           <IdeaTable ideas={overview.top_ideas} />
         </section>
 
-        {/* Sidebar Components */}
-        <aside className="space-y-8">
+        {/* Sidebar */}
+        <aside className="space-y-6">
           <TrendingSignals signals={overview.trending_signals} />
           <RevenueSummaryCard items={overview.revenue_summary} />
           <AdminPanel accessToken={token} initialFilters={filters} />

@@ -10,33 +10,36 @@
   --popover: 222 47% 4%;
   --popover-foreground: 210 20% 98%;
   --primary: 245 80% 64%;
-  /* Electric Indigo */
   --primary-foreground: 210 20% 98%;
   --secondary: 160 84% 39%;
-  /* Emerald Green */
   --secondary-foreground: 210 20% 98%;
   --muted: 222 47% 12%;
   --muted-foreground: 215 20% 65%;
   --accent: 245 80% 64%;
   --accent-foreground: 210 20% 98%;
   --destructive: 342 89% 60%;
-  /* Rose */
   --destructive-foreground: 210 20% 98%;
   --border: 222 47% 12%;
   --input: 222 47% 12%;
   --ring: 245 80% 64%;
   --radius: 0.75rem;
+  --sidebar-width: 64px;
+  --sidebar-expanded: 240px;
 }
 
 * {
   @apply border-border;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
-  @apply bg-[#0A0F1E] text-foreground antialiased selection:bg-primary/30;
+  @apply bg-[#060A16] text-foreground antialiased selection:bg-primary/30;
   background-image:
-    radial-gradient(circle at 50% -20%, rgba(99, 102, 241, 0.15), transparent 80%),
-    radial-gradient(circle at 0% 0%, rgba(16, 185, 129, 0.05), transparent 40%);
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.12), transparent),
+    radial-gradient(ellipse 60% 40% at 0% 0%, rgba(16, 185, 129, 0.04), transparent);
   min-height: 100vh;
   position: relative;
 }
@@ -45,24 +48,43 @@ body::before {
   content: "";
   position: fixed;
   inset: 0;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
-  background-size: 24px 24px;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 28px 28px;
   pointer-events: none;
   z-index: -1;
 }
 
-/* Glassmorphism utility */
+/* ─── Enhanced Glassmorphism ─── */
 .glass {
-  @apply bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] shadow-[0_8px_32px_0_rgba(0, 0, 0, 0.37)];
+  @apply bg-white/[0.03] backdrop-blur-xl border border-white/[0.06];
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .glass-hover {
-  @apply transition-all duration-300 hover:bg-white/[0.06] hover:border-white/[0.12] hover:shadow-primary/10;
+  @apply transition-all duration-300 ease-out;
 }
 
-/* Custom Scrollbar */
+.glass-hover:hover {
+  @apply bg-white/[0.06] border-white/[0.12];
+  box-shadow:
+    0 12px 40px rgba(99, 102, 241, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transform: translateY(-1px);
+}
+
+.glass-card {
+  @apply bg-white/[0.02] backdrop-blur-2xl border border-white/[0.05] rounded-2xl;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+/* ─── Scrollbar ─── */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -70,12 +92,19 @@ body::before {
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-primary/20 rounded-full hover:bg-primary/40 transition-colors;
+  background: rgba(99, 102, 241, 0.2);
+  border-radius: 999px;
 }
 
-/* Animations */
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.4);
+}
+
+/* ─── Animations ─── */
 @keyframes pulse-dot {
-  0% {
+
+  0%,
+  100% {
     transform: scale(0.95);
     opacity: 0.5;
   }
@@ -84,15 +113,6 @@ body::before {
     transform: scale(1.05);
     opacity: 1;
   }
-
-  100% {
-    transform: scale(0.95);
-    opacity: 0.5;
-  }
-}
-
-.animate-pulse-dot {
-  animation: pulse-dot 2s infinite;
 }
 
 @keyframes ticker {
@@ -105,14 +125,201 @@ body::before {
   }
 }
 
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes gradient-shift {
+
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes slide-in-right {
+  0% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-out-right {
+  0% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+@keyframes scale-in {
+  0% {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes count-up {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
 .animate-ticker {
   animation: ticker 20s linear infinite;
 }
 
+.animate-shimmer {
+  animation: shimmer 2s linear infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-gradient {
+  animation: gradient-shift 8s ease infinite;
+  background-size: 200% 200%;
+}
+
+.animate-slide-in {
+  animation: slide-in-right 0.3s ease-out;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.2s ease-out;
+}
+
+.animate-count-up {
+  animation: count-up 0.4s ease-out forwards;
+}
+
+/* ─── Skeleton Loading ─── */
+.skeleton {
+  @apply relative overflow-hidden bg-white/[0.04] rounded-lg;
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.04) 50%,
+      transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+
+/* ─── Typography ─── */
 .font-heading {
-  font-family: var(--font-space-grotesk), sans-serif;
+  font-family: var(--font-space-grotesk), system-ui, sans-serif;
 }
 
 .font-mono {
-  font-family: var(--font-ibm-plex-mono), monospace;
+  font-family: var(--font-ibm-plex-mono), "SF Mono", "Cascadia Code", monospace;
+}
+
+/* ─── Section label ─── */
+.section-label {
+  @apply text-[10px] font-bold uppercase tracking-[0.2em] text-white/30;
+}
+
+/* ─── Focus ring ─── */
+.focus-ring {
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#060A16];
+}
+
+/* ─── Toast container ─── */
+.toast-container {
+  @apply fixed bottom-6 right-6 z-[100] flex flex-col gap-3;
+}
+
+/* ─── Command palette overlay ─── */
+.cmd-overlay {
+  @apply fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-start justify-center pt-[20vh];
+}
+
+/* ─── Gradient text ─── */
+.gradient-text {
+  @apply bg-gradient-to-r from-indigo-400 via-violet-400 to-purple-400 bg-clip-text text-transparent;
+}
+
+/* ─── Status indicator ─── */
+.status-live {
+  @apply relative;
+}
+
+.status-live::before {
+  content: "";
+  @apply absolute -left-3 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-emerald-500;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* ─── Utility masks ─── */
+.mask-fade-right {
+  mask-image: linear-gradient(to right, black 90%, transparent);
+  -webkit-mask-image: linear-gradient(to right, black 90%, transparent);
+}
+
+.mask-fade-left {
+  mask-image: linear-gradient(to left, black 80%, transparent);
+  -webkit-mask-image: linear-gradient(to left, black 80%, transparent);
+}
+
+/* ─── Hide scrollbar ─── */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }

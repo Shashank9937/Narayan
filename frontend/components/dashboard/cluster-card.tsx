@@ -1,29 +1,72 @@
+"use client";
+
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import type { ProblemCluster } from "@/lib/types";
-import { MoveRight } from "lucide-react";
+import { MoveRight, Flame } from "lucide-react";
+import { motion } from "framer-motion";
+import { cn } from "@/lib/utils";
 
-export function ClusterCard({ cluster }: { cluster: ProblemCluster }) {
-  const urgencyColor =
-    cluster.avg_urgency > 7 ? "text-rose-400 bg-rose-400/10 border-rose-400/20" :
-      cluster.avg_urgency > 4 ? "text-yellow-400 bg-yellow-400/10 border-yellow-400/20" :
-        "text-emerald-400 bg-emerald-400/10 border-emerald-400/20";
+export function ClusterCard({ cluster, index = 0 }: { cluster: ProblemCluster; index?: number }) {
+  const urgencyLevel =
+    cluster.avg_urgency > 7 ? "high" :
+      cluster.avg_urgency > 4 ? "medium" : "low";
+
+  const urgencyConfig = {
+    high: {
+      dot: "bg-rose-400",
+      text: "text-rose-400",
+      bg: "bg-rose-400/10",
+      border: "border-rose-400/20",
+      glow: "shadow-[0_0_12px_rgba(251,113,133,0.2)]",
+    },
+    medium: {
+      dot: "bg-amber-400",
+      text: "text-amber-400",
+      bg: "bg-amber-400/10",
+      border: "border-amber-400/20",
+      glow: "",
+    },
+    low: {
+      dot: "bg-emerald-400",
+      text: "text-emerald-400",
+      bg: "bg-emerald-400/10",
+      border: "border-emerald-400/20",
+      glow: "",
+    },
+  }[urgencyLevel];
 
   return (
-    <Link href={`/clusters/${cluster.id}`}>
-      <div className="glass glass-hover p-4 rounded-full flex items-center gap-4 min-w-[300px] group">
-        <div className={`w-2 h-2 rounded-full animate-pulse ${urgencyColor.split(' ')[0].replace('text-', 'bg-')}`} />
-        <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-semibold text-white truncate">{cluster.name}</h3>
-          <p className="text-[10px] text-white/40 uppercase tracking-wider">{cluster.post_count} signals</p>
+    <motion.div
+      initial={{ opacity: 0, x: -12 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.35, delay: index * 0.06, ease: "easeOut" }}
+    >
+      <Link href={`/clusters/${cluster.id}`}>
+        <div className={cn(
+          "glass glass-hover py-4 px-5 rounded-2xl flex items-center gap-4 min-w-[300px] group",
+          urgencyLevel === "high" && "border-rose-500/10"
+        )}>
+          <div className={cn("w-2.5 h-2.5 rounded-full animate-pulse-dot shrink-0", urgencyConfig.dot, urgencyConfig.glow)} />
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm font-semibold text-white truncate group-hover:text-indigo-400 transition-colors">
+              {cluster.name}
+            </h3>
+            <p className="text-[10px] text-white/30 uppercase tracking-wider mt-0.5">
+              {cluster.post_count} signals · {cluster.trend_7d > 0 ? '+' : ''}{cluster.trend_7d}% trend
+            </p>
+          </div>
+          <div className={cn(
+            "px-2.5 py-1 rounded-lg text-[10px] font-bold border",
+            urgencyConfig.text, urgencyConfig.bg, urgencyConfig.border
+          )}>
+            {cluster.avg_urgency.toFixed(1)}
+          </div>
+          <div className="w-8 h-8 rounded-xl bg-white/[0.03] flex items-center justify-center group-hover:bg-indigo-500/20 transition-all">
+            <MoveRight className="h-3.5 w-3.5 text-white/30 group-hover:text-indigo-400 transition-colors" />
+          </div>
         </div>
-        <div className={`px-3 py-1 rounded-full text-[10px] font-bold border ${urgencyColor}`}>
-          {cluster.avg_urgency.toFixed(1)}
-        </div>
-        <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-          <MoveRight className="h-4 w-4 text-white/40 group-hover:text-primary transition-colors" />
-        </div>
-      </div>
-    </Link>
+      </Link>
+    </motion.div>
   );
 }
