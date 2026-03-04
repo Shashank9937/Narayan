@@ -656,6 +656,12 @@
                     <option value="narayan">Narayan</option>
                     <option value="maa_vaishno">Maa Vaishno</option>
                   </select>
+                  <input name="expenseType" list="expenseTypesList" placeholder="Expense Type (e.g. Salary, Daily)" />
+                  <datalist id="expenseTypesList">
+                    <option value="Salary"></option>
+                    <option value="Daily Expense"></option>
+                    <option value="Suit Expense"></option>
+                  </datalist>
                   <input name="description" placeholder="Description" />
                   <input name="amount" type="number" min="0.01" step="0.01" placeholder="Amount (₹)" required />
                   <div class="row wrap">
@@ -663,6 +669,11 @@
                     <button id="expenseCancelEditBtn" type="button" class="small warn hidden">Cancel Edit</button>
                   </div>
                 </form>
+              </section>
+              <section class="panel">
+                <h2>Total by Expense Type (All Time)</h2>
+                <div id="expenseTypeBreakdown" class="summary-stat-grid mt-sm"
+                  style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));"></div>
               </section>
             </div>
 
@@ -673,6 +684,7 @@
                   <input id="expenseDateFrom" type="date" />
                   <input id="expenseDateTo" type="date" />
                   <input id="expenseSearchInput" type="text" placeholder="Search by description" />
+                  <input id="expenseTypeFilterInput" type="text" list="expenseTypesList" placeholder="Filter by type" />
                   <button id="expenseFilterBtn" class="small" type="button">Apply</button>
                   <button id="expenseClearBtn" class="small warn" type="button">Clear</button>
                   <button id="expenseDownloadPdfBtn" class="small" type="button">Download PDF</button>
@@ -748,6 +760,7 @@
                         <tr>
                           <th>No.</th>
                           <th>Date</th>
+                          <th>Type</th>
                           <th>Description</th>
                           <th>Amount</th>
                           <th>Actions</th>
@@ -765,6 +778,7 @@
                         <tr>
                           <th>No.</th>
                           <th>Date</th>
+                          <th>Type</th>
                           <th>Description</th>
                           <th>Amount</th>
                           <th>Actions</th>

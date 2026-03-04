@@ -143,6 +143,7 @@ const manualRefreshBtn = document.getElementById('manualRefreshBtn');
 const expenseDateFromInput = document.getElementById('expenseDateFrom');
 const expenseDateToInput = document.getElementById('expenseDateTo');
 const expenseSearchInput = document.getElementById('expenseSearchInput');
+const expenseTypeFilterInput = document.getElementById('expenseTypeFilterInput');
 const expenseFilterBtn = document.getElementById('expenseFilterBtn');
 const expenseClearBtn = document.getElementById('expenseClearBtn');
 const expenseDownloadPdfBtn = document.getElementById('expenseDownloadPdfBtn');
@@ -166,7 +167,7 @@ let salaryLedgersCache = [];
 let dashboardCache = null;
 let attendanceReportCache = { rows: [] };
 let autoRefreshTimer = null;
-let expenseFilter = { dateFrom: '', dateTo: '', description: '' };
+let expenseFilter = { dateFrom: '', dateTo: '', description: '', expenseType: '' };
 let editingTruckId = null;
 let editingExpenseId = null;
 let editingLandId = null;
@@ -2008,12 +2009,37 @@ function renderExpenseRows(rows) {
   const descriptionQuery = String(expenseFilter.description || '')
     .trim()
     .toLowerCase();
+  const typeQuery = String(expenseFilter.expenseType || '')
+    .trim()
+    .toLowerCase();
   const filtered = rows.filter((e) => {
     if (expenseFilter.dateFrom && e.date < expenseFilter.dateFrom) return false;
     if (expenseFilter.dateTo && e.date > expenseFilter.dateTo) return false;
     if (descriptionQuery && !String(e.description || '').toLowerCase().includes(descriptionQuery)) return false;
+    if (typeQuery && !String(e.expenseType || '').toLowerCase().includes(typeQuery)) return false;
     return true;
   });
+
+  const typeTotals = {};
+  rows.forEach(e => {
+    const t = String(e.expenseType || 'Uncategorized').trim();
+    typeTotals[t] = (typeTotals[t] || 0) + Number(e.amount || 0);
+  });
+  const breakdownEl = document.getElementById('expenseTypeBreakdown');
+  if (breakdownEl) {
+    if (Object.keys(typeTotals).length === 0) {
+      breakdownEl.innerHTML = '<div class="summary-stat"><div class="label">No Data</div></div>';
+    } else {
+      breakdownEl.innerHTML = Object.entries(typeTotals)
+        .sort((a, b) => b[1] - a[1])
+        .map(([type, amount]) => `
+          <div class="summary-stat">
+            <div class="label">${escapeHtml(type)}</div>
+            <div class="value">${money(amount)}</div>
+          </div>
+        `).join('');
+    }
+  }
 
   const narayanRows = filtered.filter((e) => e.party === 'narayan');
   const maaVaishnoRows = filtered.filter((e) => e.party === 'maa_vaishno');
@@ -2036,7 +2062,8 @@ function renderExpenseRows(rows) {
           `<tr>
           <td>${idx + 1}</td>
           <td>${e.date}</td>
-          <td>${e.description || '-'}</td>
+          <td>${escapeHtml(e.expenseType || '-')}</td>
+          <td>${escapeHtml(e.description || '-')}</td>
           <td class="money">${money(e.amount)}</td>
           <td>
             <div class="actions">
@@ -2065,9 +2092,9 @@ function renderExpenseRows(rows) {
         editingExpenseId = id;
         expenseForm.querySelector('input[name="date"]').value = current.date || '';
         expenseForm.querySelector('select[name="party"]').value = current.party || 'narayan';
+        expenseForm.querySelector('input[name="expenseType"]').value = current.expenseType || '';
         expenseForm.querySelector('input[name="description"]').value = current.description || '';
-        expenseForm.querySelector('input[name="amount"]').value =
-          current.amount != null ? String(current.amount) : '';
+        expenseForm.querySelector('input[name="amount"]').value = current.amount != null ? String(current.amount) : '';
         const submitBtn = expenseForm.querySelector('button[type="submit"]');
         if (submitBtn) submitBtn.textContent = 'Update Expense';
         if (expenseCancelEditBtn) expenseCancelEditBtn.classList.remove('hidden');
@@ -2974,6 +3001,7 @@ expenseForm.addEventListener('submit', async (e) => {
     await api(endpoint, method, {
       date: fd.get('date'),
       party: fd.get('party'),
+      expenseType: fd.get('expenseType') || undefined,
       description: fd.get('description') || undefined,
       amount: fd.get('amount')
     });
@@ -3816,16 +3844,18 @@ expenseFilterBtn?.addEventListener('click', () => {
   expenseFilter = {
     dateFrom: expenseDateFromInput?.value || '',
     dateTo: expenseDateToInput?.value || '',
-    description: expenseSearchInput?.value || ''
+    description: expenseSearchInput?.value || '',
+    expenseType: expenseTypeFilterInput?.value || ''
   };
   renderExpenseRows(expensesCache);
 });
 
 expenseClearBtn?.addEventListener('click', () => {
-  expenseFilter = { dateFrom: '', dateTo: '', description: '' };
+  expenseFilter = { dateFrom: '', dateTo: '', description: '', expenseType: '' };
   if (expenseDateFromInput) expenseDateFromInput.value = '';
   if (expenseDateToInput) expenseDateToInput.value = '';
   if (expenseSearchInput) expenseSearchInput.value = '';
+  if (expenseTypeFilterInput) expenseTypeFilterInput.value = '';
   renderExpenseRows(expensesCache);
 });
 
@@ -3833,6 +3863,14 @@ expenseSearchInput?.addEventListener('input', () => {
   expenseFilter = {
     ...expenseFilter,
     description: expenseSearchInput.value || ''
+  };
+  renderExpenseRows(expensesCache);
+});
+
+expenseTypeFilterInput?.addEventListener('input', () => {
+  expenseFilter = {
+    ...expenseFilter,
+    expenseType: expenseTypeFilterInput.value || ''
   };
   renderExpenseRows(expensesCache);
 });
@@ -4058,9 +4096,11 @@ function buildExpensePdfExportParams() {
   const dateFrom = String(expenseDateFromInput?.value || expenseFilter.dateFrom || '').trim();
   const dateTo = String(expenseDateToInput?.value || expenseFilter.dateTo || '').trim();
   const description = String(expenseSearchInput?.value || expenseFilter.description || '').trim();
+  const expenseType = String(expenseTypeFilterInput?.value || expenseFilter.expenseType || '').trim();
   if (dateFrom) params.set('dateFrom', dateFrom);
   if (dateTo) params.set('dateTo', dateTo);
   if (description) params.set('description', description);
+  if (expenseType) params.set('expenseType', expenseType);
   return params.toString();
 }
 

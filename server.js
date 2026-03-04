@@ -1428,6 +1428,7 @@ function jsonStore() {
         id: uid('exp'),
         date: data.date,
         party,
+        expenseType: String(data.expenseType || '').trim(),
         description: String(data.description || '').trim() || 'Expense',
         amount: Number(data.amount),
         createdAt: new Date().toISOString()
@@ -1445,6 +1446,7 @@ function jsonStore() {
         : 'narayan';
       expense.date = data.date;
       expense.party = party;
+      expense.expenseType = String(data.expenseType || '').trim();
       expense.description = String(data.description || '').trim() || 'Expense';
       expense.amount = Number(data.amount);
       expense.updatedAt = new Date().toISOString();
@@ -2134,6 +2136,7 @@ function postgresStore() {
           created_at TIMESTAMPTZ NOT NULL
         );
         ALTER TABLE expenses ADD COLUMN IF NOT EXISTS party TEXT;
+        ALTER TABLE expenses ADD COLUMN IF NOT EXISTS expense_type TEXT;
 
         CREATE TABLE IF NOT EXISTS investments (
           id TEXT PRIMARY KEY,
@@ -3225,6 +3228,7 @@ function postgresStore() {
         id: r.id,
         date: normalizeISODateText(r.date),
         party: r.party || 'narayan',
+        expenseType: r.expense_type || '',
         description: r.description || '',
         amount: Number(r.amount),
         createdAt: r.created_at
@@ -3238,13 +3242,14 @@ function postgresStore() {
         id: uid('exp'),
         date: data.date,
         party,
+        expenseType: String(data.expenseType || '').trim(),
         description: String(data.description || '').trim() || 'Expense',
         amount: Number(data.amount),
         createdAt: new Date().toISOString()
       };
       await pool.query(
-        'INSERT INTO expenses (id, date, party, description, amount, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
-        [row.id, row.date, row.party, row.description, row.amount, row.createdAt]
+        'INSERT INTO expenses (id, date, party, expense_type, description, amount, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [row.id, row.date, row.party, row.expenseType, row.description, row.amount, row.createdAt]
       );
       return row;
     },
@@ -3254,10 +3259,10 @@ function postgresStore() {
         : 'narayan';
       const res = await pool.query(
         `UPDATE expenses
-         SET date = $2, party = $3, description = $4, amount = $5
+         SET date = $2, party = $3, expense_type = $4, description = $5, amount = $6
          WHERE id = $1
          RETURNING *`,
-        [id, data.date, party, String(data.description || '').trim() || 'Expense', Number(data.amount)]
+        [id, data.date, party, String(data.expenseType || '').trim(), String(data.description || '').trim() || 'Expense', Number(data.amount)]
       );
       if (!res.rows[0]) return null;
       const r = res.rows[0];
@@ -3265,6 +3270,7 @@ function postgresStore() {
         id: r.id,
         date: normalizeISODateText(r.date),
         party: r.party || 'narayan',
+        expenseType: r.expense_type || '',
         description: r.description || '',
         amount: Number(r.amount),
         createdAt: r.created_at
@@ -5721,7 +5727,7 @@ app.get('/api/expenses', auth, requirePermission('expenses:view'), async (req, r
 });
 
 app.post('/api/expenses', auth, requirePermission('expenses:create'), async (req, res) => {
-  const { date, party, description, amount } = req.body;
+  const { date, party, expenseType, description, amount } = req.body;
   if (!date || !party || amount == null) {
     return res.status(400).json({ error: 'date, party and amount are required' });
   }
@@ -5733,7 +5739,7 @@ app.post('/api/expenses', auth, requirePermission('expenses:create'), async (req
     return res.status(400).json({ error: 'party must be narayan or maa_vaishno' });
   }
   try {
-    const row = await store.createExpense({ date, party, description, amount: numAmount });
+    const row = await store.createExpense({ date, party, expenseType, description, amount: numAmount });
     return res.status(201).json(row);
   } catch (err) {
     console.error(err);
@@ -5742,7 +5748,7 @@ app.post('/api/expenses', auth, requirePermission('expenses:create'), async (req
 });
 
 app.put('/api/expenses/:id', auth, requirePermission('expenses:update'), async (req, res) => {
-  const { date, party, description, amount } = req.body;
+  const { date, party, expenseType, description, amount } = req.body;
   if (!date || !party || amount == null) {
     return res.status(400).json({ error: 'date, party and amount are required' });
   }
@@ -5754,7 +5760,7 @@ app.put('/api/expenses/:id', auth, requirePermission('expenses:update'), async (
     return res.status(400).json({ error: 'party must be narayan or maa_vaishno' });
   }
   try {
-    const row = await store.updateExpense(req.params.id, { date, party, description, amount: numAmount });
+    const row = await store.updateExpense(req.params.id, { date, party, expenseType, description, amount: numAmount });
     if (!row) return res.status(404).json({ error: 'Expense not found' });
     return res.json(row);
   } catch (err) {
@@ -7155,12 +7161,14 @@ app.get('/api/export/expenses.pdf', auth, requirePermission('expenses:view'), as
     const dateFrom = normalizeISODateText(req.query.dateFrom);
     const dateTo = normalizeISODateText(req.query.dateTo);
     const description = String(req.query.description || '').trim().toLowerCase();
+    const expenseType = String(req.query.expenseType || '').trim().toLowerCase();
 
     const rows = (await store.listExpenses({ dateFrom, dateTo }))
       .filter((r) => {
         const rowParty = truckPartyKey(r.party || 'narayan') || 'narayan';
         if (partyFilter && rowParty !== partyFilter) return false;
         if (description && !String(r.description || '').toLowerCase().includes(description)) return false;
+        if (expenseType && !String(r.expenseType || '').toLowerCase().includes(expenseType)) return false;
         return true;
       })
       .sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -7178,6 +7186,7 @@ app.get('/api/export/expenses.pdf', auth, requirePermission('expenses:view'), as
     if (dateFrom || dateTo) filters.push(`Date: ${dateFrom || '-'} to ${dateTo || '-'}`);
     if (partyFilter) filters.push(`Party: ${partyLabel}`);
     if (description) filters.push(`Description: ${description}`);
+    if (expenseType) filters.push(`Type: ${expenseType}`);
 
     const summary = [
       `Records: ${rows.length}`,
@@ -7188,6 +7197,7 @@ app.get('/api/export/expenses.pdf', auth, requirePermission('expenses:view'), as
     const reportRows = rows.map((r) => ({
       date: r.date || '-',
       party: (truckPartyKey(r.party || 'narayan') || 'narayan') === 'maa_vaishno' ? 'Maa Vaishno' : 'Narayan',
+      expenseType: r.expenseType || '-',
       description: r.description || '-',
       amount: moneyInr(r.amount || 0)
     }));
@@ -7200,8 +7210,9 @@ app.get('/api/export/expenses.pdf', auth, requirePermission('expenses:view'), as
       summary,
       columns: [
         { key: 'date', label: 'Date', width: 78 },
-        { key: 'party', label: 'Party', width: 92 },
-        { key: 'description', label: 'Description', width: 250 },
+        { key: 'party', label: 'Party', width: 80 },
+        { key: 'expenseType', label: 'Type', width: 100 },
+        { key: 'description', label: 'Description', width: 162 },
         { key: 'amount', label: 'Amount', width: 110, align: 'right' }
       ],
       rows: reportRows
