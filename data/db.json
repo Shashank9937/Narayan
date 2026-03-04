@@ -100,6 +100,12 @@
       "userId": "user_admin",
       "createdAt": "2026-02-26T16:59:25.478Z",
       "expiresAt": "2026-02-27T04:59:25.478Z"
+    },
+    {
+      "token": "token_1772280176411_82556",
+      "userId": "user_admin",
+      "createdAt": "2026-02-28T12:02:56.411Z",
+      "expiresAt": "2026-03-01T00:02:56.411Z"
     }
   ],
   "salaryLedgers": [],
