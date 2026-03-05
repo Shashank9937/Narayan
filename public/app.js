@@ -205,9 +205,9 @@ function setToken(value) {
 }
 
 function initDarkMode() {
-  const isDark = localStorage.getItem('ops_dark') === '1';
+  const stored = localStorage.getItem('ops_dark');
+  const isDark = stored === null ? true : stored === '1';
   document.body.classList.toggle('dark-mode', isDark);
-  darkModeToggle.textContent = isDark ? '☀' : '🌙';
 }
 
 function formatLastRefreshed() {
@@ -4098,7 +4098,6 @@ brandLink.addEventListener('click', (e) => {
 darkModeToggle.addEventListener('click', () => {
   const isDark = !document.body.classList.contains('dark-mode');
   document.body.classList.toggle('dark-mode', isDark);
-  darkModeToggle.textContent = isDark ? '☀' : '🌙';
   localStorage.setItem('ops_dark', isDark ? '1' : '0');
 });
 
