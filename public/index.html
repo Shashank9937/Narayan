@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
   <meta name="description"
     content="Narayan Enterprises Operations Control Center — Manage employees, attendance, salary, trucks, expenses, investments, suppliers, and billing in one enterprise dashboard." />
-  <meta name="theme-color" content="#08090A" />
+  <meta name="theme-color" content="#060612" />
   <title>Narayan Enterprises — Operations Control Center</title>
 
   <!-- Preconnect to Google Fonts -->
@@ -25,7 +25,7 @@
 
   <link rel="icon" type="image/png" href="/logo.png" />
 
-  <link rel="stylesheet" href="/styles.css?v=3" />
+  <link rel="stylesheet" href="/styles.css?v=4" />
 </head>
 
 <body class="dark-mode">
@@ -1269,31 +1269,23 @@
   <!-- Premium micro-interactions -->
   <script>
     (function () {
-      // Sticky header scroll state
-      const header = document.querySelector('.site-header');
-      let ticking = false;
-      window.addEventListener('scroll', function () {
-        if (!ticking) {
-          requestAnimationFrame(function () {
-            header.classList.toggle('scrolled', window.scrollY > 24);
-            ticking = false;
-          });
-          ticking = true;
-        }
-      }, { passive: true });
+      'use strict';
 
-      // Back to top
-      const btn = document.getElementById('backToTopBtn');
-      window.addEventListener('scroll', function () {
-        btn.classList.toggle('visible', window.scrollY > 400);
-      }, { passive: true });
-      btn.addEventListener('click', function () {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      });
+      /* ── Back to top ── */
+      var btn = document.getElementById('backToTopBtn');
+      var scrollArea = document.querySelector('.content-scroll-area');
+      if (scrollArea && btn) {
+        scrollArea.addEventListener('scroll', function () {
+          btn.classList.toggle('visible', scrollArea.scrollTop > 400);
+        }, { passive: true });
+        btn.addEventListener('click', function () {
+          scrollArea.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+      }
 
-      // Scroll reveal for panels & cards
+      /* ── Scroll reveal via IntersectionObserver ── */
       if ('IntersectionObserver' in window) {
-        const observer = new IntersectionObserver(function (entries) {
+        var observer = new IntersectionObserver(function (entries) {
           entries.forEach(function (entry) {
             if (entry.isIntersecting) {
               entry.target.classList.add('revealed');
@@ -1302,25 +1294,114 @@
           });
         }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
 
-        document.querySelectorAll('.panel, .card, .summary-stat, .employee-card, .party-total').forEach(function (el) {
-          el.classList.add('reveal');
-          observer.observe(el);
-        });
+        function observeElements() {
+          document.querySelectorAll('.panel, .card, .summary-stat, .employee-card, .party-total').forEach(function (el) {
+            if (!el.classList.contains('revealed')) {
+              el.classList.add('reveal');
+              observer.observe(el);
+            }
+          });
+        }
 
-        // Re-observe when sections change
-        const navBtns = document.querySelectorAll('.nav-btn');
-        navBtns.forEach(function (b) {
+        observeElements();
+
+        // Re-observe when nav sections change
+        document.querySelectorAll('.nav-btn').forEach(function (b) {
           b.addEventListener('click', function () {
-            setTimeout(function () {
-              document.querySelectorAll('.panel, .card, .summary-stat, .employee-card, .party-total').forEach(function (el) {
-                if (!el.classList.contains('reveal')) {
-                  observer.observe(el);
-                }
-              });
-            }, 50);
+            setTimeout(observeElements, 80);
           });
         });
       }
+
+      /* ── Staggered entrance delay for stat cards and table rows ── */
+      function assignStagger() {
+        document.querySelectorAll('.cards').forEach(function (grid) {
+          grid.querySelectorAll('.card').forEach(function (card, i) {
+            card.style.transitionDelay = (i * 50) + 'ms';
+          });
+        });
+        document.querySelectorAll('tbody').forEach(function (tbody) {
+          Array.from(tbody.rows).slice(0, 20).forEach(function (row, i) {
+            row.style.transitionDelay = (i * 30) + 'ms';
+          });
+        });
+      }
+
+      document.querySelectorAll('.nav-btn').forEach(function (b) {
+        b.addEventListener('click', function () {
+          setTimeout(assignStagger, 100);
+        });
+      });
+
+      /* ── Number count-up for stat card values ── */
+      function countUp(el, target, duration) {
+        var start = 0;
+        var startTime = null;
+        var isRupee = target.toString().indexOf('₹') === 0;
+        var numStr = target.toString().replace(/[₹,\s]/g, '');
+        var num = parseFloat(numStr);
+        if (isNaN(num) || num === 0) return;
+
+        function step(timestamp) {
+          if (!startTime) startTime = timestamp;
+          var progress = Math.min((timestamp - startTime) / duration, 1);
+          var eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+          var current = Math.round(num * eased);
+          el.textContent = isRupee
+            ? '₹' + current.toLocaleString('en-IN')
+            : current.toLocaleString('en-IN');
+          if (progress < 1) requestAnimationFrame(step);
+          else el.textContent = target;
+        }
+
+        requestAnimationFrame(step);
+      }
+
+      // Trigger count-up after data loads
+      var countUpObserver = new MutationObserver(function () {
+        document.querySelectorAll('.card .value').forEach(function (el) {
+          if (el.dataset.counted) return;
+          el.dataset.counted = '1';
+          var text = el.textContent;
+          countUp(el, text, 800);
+        });
+      });
+
+      var cardsContainer = document.getElementById('cards');
+      if (cardsContainer) {
+        countUpObserver.observe(cardsContainer, { childList: true, subtree: true });
+      }
+
+      /* ── Ripple effect on button clicks ── */
+      document.addEventListener('click', function (e) {
+        var button = e.target.closest('button');
+        if (!button || button.disabled) return;
+
+        var rect = button.getBoundingClientRect();
+        var ripple = document.createElement('span');
+        ripple.className = 'ripple';
+        var size = Math.max(rect.width, rect.height);
+        ripple.style.width = ripple.style.height = size + 'px';
+        ripple.style.left = (e.clientX - rect.left - size / 2) + 'px';
+        ripple.style.top = (e.clientY - rect.top - size / 2) + 'px';
+        button.appendChild(ripple);
+
+        setTimeout(function () {
+          ripple.remove();
+        }, 600);
+      });
+
+      /* ── Theme toggle flash ── */
+      var darkModeBtn = document.getElementById('darkModeToggle');
+      if (darkModeBtn) {
+        darkModeBtn.addEventListener('click', function () {
+          var flash = document.createElement('div');
+          flash.className = 'theme-flash';
+          document.body.appendChild(flash);
+          setTimeout(function () { flash.remove(); }, 200);
+        });
+      }
+
     })();
   </script>
 </body>
