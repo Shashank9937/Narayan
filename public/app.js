@@ -619,6 +619,23 @@ function renderCards(data) {
   const totalInvestStatus = Array.isArray(investmentsCache) ? investmentsCache.reduce((sum, r) => sum + toNumber(r.amount, 0), 0) : 0;
   const supplierCount = Array.isArray(suppliersCache) ? suppliersCache.length : 0;
 
+  // Supplier totals
+  const supplierTotalMaterial = Array.isArray(suppliersCache) ? suppliersCache.reduce((sum, s) => sum + toNumber(s.totalMaterial, 0), 0) : 0;
+  const supplierTotalPaid = Array.isArray(suppliersCache) ? suppliersCache.reduce((sum, s) => sum + toNumber(s.totalPaid, 0), 0) : 0;
+  const supplierPending = Array.isArray(suppliersCache) ? suppliersCache.reduce((sum, s) => sum + toNumber(s.pendingBalance, 0), 0) : 0;
+
+  // Land totals
+  const landCount = Array.isArray(landRecordsCache) ? landRecordsCache.length : 0;
+  const landTotalPaid = Array.isArray(landRecordsCache) ? landRecordsCache.reduce((sum, r) => sum + toNumber(r.amountPaid, 0), 0) : 0;
+  const landTotalToGive = Array.isArray(landRecordsCache) ? landRecordsCache.reduce((sum, r) => sum + toNumber(r.amountToBeGiven, 0), 0) : 0;
+
+  // Vehicle count
+  const vehicleCount = Array.isArray(vehiclesCache) ? vehiclesCache.length : 0;
+
+  // Billing company count
+  const billingCompanyCount = Array.isArray(billingCompaniesCache) ? billingCompaniesCache.length : 0;
+  const billCount = Array.isArray(billsCache) ? billsCache.length : 0;
+
   const sections = [
     {
       title: 'Workforce & Operations',
@@ -626,26 +643,57 @@ function renderCards(data) {
         ['Active Employees', data.totalEmployees || employeesCache.length],
         ['Present Today', data.presentToday],
         ['Total Salary Setup', money(data.totalSalary)],
+        ['Attendance Marked', data.attendanceMarked || '—'],
       ]
     },
     {
-      title: 'Financials (Current/All-Time)',
+      title: 'Payroll & Advances',
       items: [
         ['Advances (Month)', money(data.totalAdvances)],
         ['Remaining Payable', money(data.totalRemaining)],
-        ['Global Expenses', money(totalExpenseAmount)],
-        ['Total Billed', money(totalBills)],
       ]
     },
     {
-      title: 'Assets & Logistics',
+      title: 'Expenses & Investments',
+      items: [
+        ['Global Expenses', money(totalExpenseAmount)],
+        ['Capital Investments', money(totalInvestStatus)],
+        ['Chini Mill Expenses', money(totalChini)],
+      ]
+    },
+    {
+      title: 'Trucks & Logistics',
       items: [
         ['Trucks (Month)', data.truckCountThisMonth],
-        ['Truck Quantity', data.truckQuantityThisMonth + ' Qtnl'],
-        ['Chini Expenses', money(totalChini)],
-        ['Capital Investments', money(totalInvestStatus)],
+        ['Truck Qty', data.truckQuantityThisMonth + ' Qtnl'],
+        ['Vehicles Registered', vehicleCount],
       ]
-    }
+    },
+    {
+      title: 'Suppliers & Procurement',
+      items: [
+        ['Total Suppliers', supplierCount],
+        ['Material Value', money(supplierTotalMaterial)],
+        ['Paid to Suppliers', money(supplierTotalPaid)],
+        ['Supplier Pending', money(supplierPending)],
+      ]
+    },
+    {
+      title: 'Billing & Invoicing',
+      items: [
+        ['Total Bills', billCount],
+        ['Billed Amount', money(totalBills)],
+        ['Companies', billingCompanyCount],
+      ]
+    },
+    {
+      title: 'Land & Property',
+      items: [
+        ['Land Records', landCount],
+        ['Amount Paid', money(landTotalPaid)],
+        ['Amount Due', money(landTotalToGive)],
+      ]
+    },
   ];
 
   cardsEl.innerHTML = sections.map(sec => `
