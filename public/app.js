@@ -2114,6 +2114,7 @@ function renderExpenseRows(rows) {
           <td class="money">${money(e.amount)}</td>
           <td>
             <div class="actions">
+              ${canEdit ? `<button type="button" class="small accent exp-add" data-id="${e.id}" title="Add amount to this expense">➕ Add</button>` : ''}
               ${canEdit ? `<button type="button" class="small warn exp-edit" data-id="${e.id}">Edit</button>` : ''}
               ${canDelete ? `<button type="button" class="small danger exp-del" data-id="${e.id}">Delete</button>` : ''}
               ${!canEdit && !canDelete ? '-' : ''}
@@ -2126,6 +2127,52 @@ function renderExpenseRows(rows) {
 
   renderExpenseTable(expenseNarayanTbody, narayanRows);
   renderExpenseTable(expenseMaaVaishnoTbody, maaVaishnoRows);
+
+  // ── Add Amount handler ──
+  if (canEdit) {
+    document.querySelectorAll('.exp-add').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        const current = expensesCache.find((e) => String(e.id) === String(id));
+        if (!current) {
+          showToast('Expense not found', 'error');
+          return;
+        }
+
+        const currentAmount = Number(current.amount || 0);
+        const addStr = prompt(
+          `Current amount: ${money(currentAmount)}\n` +
+          `Type: ${current.expenseType || '-'}\n` +
+          `Description: ${current.description || '-'}\n\n` +
+          `Enter additional amount to add:`
+        );
+
+        if (!addStr || addStr.trim() === '') return;
+        const addAmount = Number(addStr);
+        if (isNaN(addAmount) || addAmount <= 0) {
+          showToast('Please enter a valid positive number', 'error');
+          return;
+        }
+
+        const newTotal = currentAmount + addAmount;
+        if (!confirm(`Add ${money(addAmount)} to this expense?\n\nOld: ${money(currentAmount)}\nNew Total: ${money(newTotal)}`)) return;
+
+        try {
+          await api(`/api/expenses/${id}`, 'PUT', {
+            date: current.date,
+            party: current.party,
+            expenseType: current.expenseType,
+            description: current.description,
+            amount: newTotal
+          });
+          await refresh();
+          showToast(`Added ${money(addAmount)} → New total: ${money(newTotal)}`);
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    });
+  }
 
   if (canEdit) {
     document.querySelectorAll('.exp-edit').forEach((btn) => {
