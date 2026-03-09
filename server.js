@@ -2225,13 +2225,10 @@ function postgresStore() {
 
         CREATE TABLE IF NOT EXISTS land_records (
           id TEXT PRIMARY KEY,
-          date DATE NOT NULL,
-          type TEXT NOT NULL,
-          description TEXT NOT NULL,
+          area TEXT NOT NULL,
+          owner_name TEXT NOT NULL,
           amount_paid NUMERIC(12,2) NOT NULL,
           amount_to_be_given NUMERIC(12,2) NOT NULL,
-          other_expense NUMERIC(12,2) NOT NULL,
-          amount_received NUMERIC(12,2) NOT NULL,
           created_at TIMESTAMPTZ NOT NULL
         );
 
@@ -2242,13 +2239,6 @@ function postgresStore() {
           title TEXT,
           note TEXT,
           filename TEXT,
-          created_at TIMESTAMPTZ NOT NULL
-        );
-          id TEXT PRIMARY KEY,
-          area TEXT NOT NULL,
-          owner_name TEXT NOT NULL,
-          amount_paid NUMERIC(12,2) NOT NULL,
-          amount_to_be_given NUMERIC(12,2) NOT NULL,
           created_at TIMESTAMPTZ NOT NULL
         );
 
