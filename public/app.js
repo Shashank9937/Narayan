@@ -161,6 +161,7 @@ let vehiclesCache = [];
 let suppliersCache = [];
 let billingCompaniesCache = [];
 let billsCache = [];
+let slipsCache = [];
 let activeSupplierId = null;
 let salaryRowsCache = [];
 let salaryLedgersCache = [];
@@ -2901,6 +2902,13 @@ async function refresh() {
     renderSuppliers(suppliersCache);
     renderAttendanceReportRows(attendanceReportCache.rows || []);
 
+    if (hasPermission('slips:view')) {
+      safeLoad('slips', api('/api/slips'), []).then(slips => {
+        slipsCache = Array.isArray(slips) ? slips : slipsCache;
+        renderSlips();
+      }).catch(console.error);
+    }
+
     if (activeSupplierId && supplierDetailPanel && !supplierDetailPanel.classList.contains('hidden')) {
       const sup = suppliersCache.find((s) => s.id === activeSupplierId);
       if (sup) {
@@ -4201,3 +4209,133 @@ if (manualRefreshBtn) {
 }
 
 bootstrapSession().catch((err) => showToast(err.message, 'error'));
+
+/* ── Slips Frontend Logic ── */
+const slipForm = document.getElementById('slipForm');
+const slipTableTbody = document.querySelector('#slipTable tbody');
+const slipSearchInput = document.getElementById('slipSearchInput');
+const slipCancelEditBtn = document.getElementById('slipCancelEditBtn');
+const slipPdfInput = document.getElementById('slipPdfInput');
+
+function renderSlips() {
+  if (!slipTableTbody) return;
+  const q = String(slipSearchInput?.value || '').toLowerCase();
+  slipTableTbody.innerHTML = '';
+  slipsCache.forEach(slip => {
+    if (q && !slip.title.toLowerCase().includes(q) && !(slip.note || '').toLowerCase().includes(q)) return;
+    const tr = document.createElement('tr');
+
+    // View PDF
+    const viewBtn = document.createElement('button');
+    viewBtn.className = 'small';
+    viewBtn.textContent = 'View PDF';
+    viewBtn.onclick = () => window.open(`/api/slips/${slip.id}/pdf?token=${token()}`);
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'small';
+    editBtn.textContent = 'Edit';
+    editBtn.disabled = !hasPermission('slips:update');
+    editBtn.onclick = () => editSlip(slip);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'small warn';
+    delBtn.textContent = 'Del';
+    delBtn.disabled = !hasPermission('slips:delete');
+    delBtn.onclick = async () => {
+      if (!confirm('Delete this slip?')) return;
+      try {
+        await api(`/api/slips/${slip.id}`, 'DELETE');
+        showToast('Slip deleted');
+        refresh(); // Refresh everything or just slips
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    };
+
+    const actionTd = document.createElement('td');
+    actionTd.className = 'actions';
+    actionTd.style.whiteSpace = 'nowrap';
+    actionTd.append(viewBtn, editBtn, delBtn);
+
+    const dateTd = document.createElement('td'); dateTd.textContent = slip.date;
+    const partyTd = document.createElement('td'); partyTd.textContent = slip.party === 'maa_vaishno' ? 'Maa Vaishno' : 'Narayan';
+    const titleTd = document.createElement('td'); titleTd.textContent = slip.title;
+    const noteTd = document.createElement('td'); noteTd.textContent = slip.note;
+
+    tr.append(dateTd, partyTd, titleTd, noteTd, actionTd);
+    slipTableTbody.appendChild(tr);
+  });
+}
+
+if (slipSearchInput) {
+  slipSearchInput.addEventListener('input', renderSlips);
+}
+
+function editSlip(slip) {
+  if (!slipForm) return;
+  slipForm.elements['slipId'].value = slip.id;
+  slipForm.elements['date'].value = slip.date;
+  slipForm.elements['party'].value = slip.party;
+  slipForm.elements['title'].value = slip.title;
+  slipForm.elements['note'].value = slip.note;
+  slipPdfInput.removeAttribute('required'); // PDF optional for update
+  document.getElementById('slipFormTitle').textContent = 'Update Slip';
+  document.getElementById('slipSubmitBtn').textContent = 'Update Slip';
+  if (slipCancelEditBtn) slipCancelEditBtn.classList.remove('hidden');
+  document.getElementById('slipPanel').scrollIntoView({ behavior: 'smooth' });
+}
+
+if (slipCancelEditBtn) {
+  slipCancelEditBtn.addEventListener('click', () => {
+    slipForm.reset();
+    slipForm.elements['slipId'].value = '';
+    slipPdfInput.setAttribute('required', 'true');
+    document.getElementById('slipFormTitle').textContent = 'Upload Party Slip (PDF)';
+    document.getElementById('slipSubmitBtn').textContent = 'Upload Slip';
+    slipCancelEditBtn.classList.add('hidden');
+  });
+}
+
+if (slipForm) {
+  slipForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!hasPermission('slips:create')) return showToast('No permission', 'error');
+
+    const id = slipForm.elements['slipId'].value;
+    const formData = new FormData(slipForm);
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? `/api/slips/${id}` : '/api/slips';
+
+    const tokenStr = token();
+    const headers = {};
+    if (tokenStr) headers.Authorization = `Bearer ${tokenStr}`;
+
+    try {
+      const btn = slipForm.querySelector('button[type="submit"]');
+      const ogText = btn.textContent;
+      btn.textContent = 'Uploading...';
+      btn.disabled = true;
+
+      const res = await fetch(url, {
+        method,
+        headers,
+        body: formData
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        let errMsg = 'Upload failed';
+        try { errMsg = JSON.parse(text).error; } catch (e) { }
+        throw new Error(errMsg);
+      }
+      showToast(id ? 'Slip updated' : 'Slip uploaded successfully');
+      slipCancelEditBtn?.click();
+      refresh(); // Reload to reflect changes
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      const btn = slipForm.querySelector('button[type="submit"]');
+      btn.textContent = id ? 'Update Slip' : 'Upload Slip';
+      btn.disabled = false;
+    }
+  });
+}

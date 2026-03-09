@@ -4,15 +4,23 @@ const path = require('path');
 const PDFDocument = require('pdfkit');
 const bcrypt = require('bcryptjs');
 const { Pool } = require('pg');
+const multer = require('multer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DB_PATH = path.join(__dirname, 'data', 'db.json');
 const DB_BACKUP_PATH = path.join(__dirname, 'data', 'db.backup.json');
+const UPLOADS_PATH = path.join(__dirname, 'data', 'uploads');
 const STORAGE_MODE = process.env.STORAGE_MODE === 'postgres' ? 'postgres' : 'json';
 const DATABASE_URL = process.env.DATABASE_URL;
 const APP_NAME = 'Narayan Enterprises';
 const STARTED_AT = new Date();
+
+if (!fs.existsSync(UPLOADS_PATH)) {
+  fs.mkdirSync(UPLOADS_PATH, { recursive: true });
+}
+
+const upload = multer({ dest: UPLOADS_PATH });
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -62,7 +70,11 @@ const ROLE_PERMISSIONS = {
     'billing:update',
     'billing:delete',
     'export:view',
-    'salaryslip:view'
+    'salaryslip:view',
+    'slips:view',
+    'slips:create',
+    'slips:update',
+    'slips:delete'
   ],
   manager: [
     'dashboard:view',
@@ -101,7 +113,11 @@ const ROLE_PERMISSIONS = {
     'billing:view',
     'billing:create',
     'billing:update',
-    'billing:delete'
+    'billing:delete',
+    'slips:view',
+    'slips:create',
+    'slips:update',
+    'slips:delete'
   ]
 };
 
@@ -725,6 +741,7 @@ function ensureDbShape(db) {
   if (!Array.isArray(db.sessions)) db.sessions = [];
   if (!Array.isArray(db.suppliers)) db.suppliers = [];
   if (!Array.isArray(db.supplierTransactions)) db.supplierTransactions = [];
+  if (!Array.isArray(db.slips)) db.slips = [];
 
   let changed = false;
   db.users = db.users.map((u) => {
@@ -1461,6 +1478,56 @@ function jsonStore() {
       writeJsonDb(db);
       return true;
     },
+    async listSlips(filter) {
+      const db = readJsonDb();
+      let rows = db.slips;
+      if (filter?.dateFrom) rows = rows.filter((i) => i.date >= filter.dateFrom);
+      if (filter?.dateTo) rows = rows.filter((i) => i.date <= filter.dateTo);
+      return rows.sort((a, b) => (a.date < b.date ? 1 : -1));
+    },
+    async getSlipById(id) {
+      const db = readJsonDb();
+      return db.slips.find((i) => i.id === id) || null;
+    },
+    async createSlip(data) {
+      const db = readJsonDb();
+      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
+        ? String(data.party).toLowerCase()
+        : null;
+      const row = {
+        id: uid('slp'),
+        date: data.date,
+        party: party || 'narayan',
+        title: String(data.title || '').trim(),
+        note: String(data.note || '').trim(),
+        filename: data.filename,
+        createdAt: new Date().toISOString()
+      };
+      db.slips.push(row);
+      writeJsonDb(db);
+      return row;
+    },
+    async updateSlip(id, data) {
+      const db = readJsonDb();
+      const slip = db.slips.find((s) => s.id === id);
+      if (!slip) return null;
+      if (data.date) slip.date = data.date;
+      if (data.party) slip.party = data.party;
+      if (data.title !== undefined) slip.title = String(data.title).trim();
+      if (data.note !== undefined) slip.note = String(data.note).trim();
+      if (data.filename) slip.filename = data.filename;
+      slip.updatedAt = new Date().toISOString();
+      writeJsonDb(db);
+      return slip;
+    },
+    async deleteSlip(id) {
+      const db = readJsonDb();
+      const before = db.slips.length;
+      db.slips = db.slips.filter((s) => s.id !== id);
+      if (before === db.slips.length) return false;
+      writeJsonDb(db);
+      return true;
+    },
     async listInvestments(filter) {
       const db = readJsonDb();
       let rows = db.investments;
@@ -2157,6 +2224,26 @@ function postgresStore() {
         );
 
         CREATE TABLE IF NOT EXISTS land_records (
+          id TEXT PRIMARY KEY,
+          date DATE NOT NULL,
+          type TEXT NOT NULL,
+          description TEXT NOT NULL,
+          amount_paid NUMERIC(12,2) NOT NULL,
+          amount_to_be_given NUMERIC(12,2) NOT NULL,
+          other_expense NUMERIC(12,2) NOT NULL,
+          amount_received NUMERIC(12,2) NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS slips (
+          id TEXT PRIMARY KEY,
+          date DATE NOT NULL,
+          party TEXT NOT NULL,
+          title TEXT,
+          note TEXT,
+          filename TEXT,
+          created_at TIMESTAMPTZ NOT NULL
+        );
           id TEXT PRIMARY KEY,
           area TEXT NOT NULL,
           owner_name TEXT NOT NULL,
@@ -3278,6 +3365,89 @@ function postgresStore() {
     },
     async deleteExpense(id) {
       const res = await pool.query('DELETE FROM expenses WHERE id = $1', [id]);
+      return res.rowCount > 0;
+    },
+    async listSlips(filter) {
+      const values = [];
+      let where = 'WHERE 1=1';
+      if (filter?.dateFrom) {
+        values.push(filter.dateFrom);
+        where += ` AND date >= $${values.length}`;
+      }
+      if (filter?.dateTo) {
+        values.push(filter.dateTo);
+        where += ` AND date <= $${values.length}`;
+      }
+      const res = await pool.query(`SELECT * FROM slips ${where} ORDER BY date DESC`, values);
+      return res.rows.map((r) => ({
+        id: r.id,
+        date: normalizeISODateText(r.date),
+        party: r.party || 'narayan',
+        title: r.title || '',
+        note: r.note || '',
+        filename: r.filename || '',
+        createdAt: r.created_at
+      }));
+    },
+    async getSlipById(id) {
+      const res = await pool.query('SELECT * FROM slips WHERE id = $1', [id]);
+      if (!res.rows[0]) return null;
+      const r = res.rows[0];
+      return {
+        id: r.id,
+        date: normalizeISODateText(r.date),
+        party: r.party || 'narayan',
+        title: r.title || '',
+        note: r.note || '',
+        filename: r.filename || '',
+        createdAt: r.created_at
+      };
+    },
+    async createSlip(data) {
+      const party = ['narayan', 'maa_vaishno'].includes(String(data.party || '').toLowerCase())
+        ? String(data.party).toLowerCase()
+        : 'narayan';
+      const row = {
+        id: uid('slp'),
+        date: data.date,
+        party,
+        title: String(data.title || '').trim(),
+        note: String(data.note || '').trim(),
+        filename: data.filename,
+        createdAt: new Date().toISOString()
+      };
+      await pool.query(
+        'INSERT INTO slips (id, date, party, title, note, filename, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [row.id, row.date, row.party, row.title, row.note, row.filename, row.createdAt]
+      );
+      return row;
+    },
+    async updateSlip(id, data) {
+      const res = await pool.query(
+        `UPDATE slips
+         SET date = COALESCE($2, date),
+             party = COALESCE($3, party),
+             title = COALESCE($4, title),
+             note = COALESCE($5, note),
+             filename = COALESCE($6, filename)
+         WHERE id = $1
+         RETURNING *`,
+        [id, data.date, data.party, data.title, data.note, data.filename]
+      );
+      if (!res.rows[0]) return null;
+      const r = res.rows[0];
+      return {
+        id: r.id,
+        date: normalizeISODateText(r.date),
+        party: r.party || 'narayan',
+        title: r.title || '',
+        note: r.note || '',
+        filename: r.filename || '',
+        createdAt: r.created_at
+      };
+    },
+    async deleteSlip(id) {
+      const res = await pool.query('DELETE FROM slips WHERE id = $1', [id]);
       return res.rowCount > 0;
     },
     async listInvestments(filter) {
@@ -5843,6 +6013,88 @@ app.delete('/api/investments/:id', auth, requirePermission('investments:delete')
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Unable to delete investment' });
+  }
+});
+
+app.get('/api/slips', auth, requirePermission('slips:view'), async (req, res) => {
+  try {
+    const rows = await store.listSlips({ dateFrom: req.query.dateFrom, dateTo: req.query.dateTo });
+    return res.json(rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to fetch slips' });
+  }
+});
+
+app.post('/api/slips', auth, requirePermission('slips:create'), upload.single('pdf'), async (req, res) => {
+  const { date, party, title, note } = req.body;
+  const pdfFile = req.file;
+  if (!date || !party || !title) {
+    return res.status(400).json({ error: 'date, party and title are required' });
+  }
+  if (!pdfFile) {
+    return res.status(400).json({ error: 'pdf file is required' });
+  }
+  try {
+    const row = await store.createSlip({
+      date,
+      party,
+      title,
+      note,
+      filename: pdfFile.filename
+    });
+    return res.status(201).json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to create slip' });
+  }
+});
+
+app.put('/api/slips/:id', auth, requirePermission('slips:update'), upload.single('pdf'), async (req, res) => {
+  const { date, party, title, note } = req.body;
+  const pdfFile = req.file;
+  try {
+    const dataToUpdate = { date, party, title, note };
+    if (pdfFile) {
+      dataToUpdate.filename = pdfFile.filename;
+    }
+    const row = await store.updateSlip(req.params.id, dataToUpdate);
+    if (!row) return res.status(404).json({ error: 'Slip not found' });
+    return res.json(row);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to update slip' });
+  }
+});
+
+app.delete('/api/slips/:id', auth, requirePermission('slips:delete'), async (req, res) => {
+  try {
+    const slip = await store.getSlipById(req.params.id);
+    const deleted = await store.deleteSlip(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Slip not found' });
+
+    if (slip && slip.filename) {
+      const pdfPath = path.join(UPLOADS_PATH, slip.filename);
+      fs.unlink(pdfPath, () => { });
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Unable to delete slip' });
+  }
+});
+
+app.get('/api/slips/:id/pdf', auth, requirePermission('slips:view'), async (req, res) => {
+  try {
+    const slip = await store.getSlipById(req.params.id);
+    if (!slip || !slip.filename) return res.status(404).json({ error: 'PDF not found' });
+    const pdfPath = path.join(UPLOADS_PATH, slip.filename);
+    if (!fs.existsSync(pdfPath)) return res.status(404).json({ error: 'PDF file missing' });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    return res.sendFile(pdfPath);
+  } catch (err) {
+    return res.status(500).json({ error: 'Unable to send PDF' });
   }
 });
 
