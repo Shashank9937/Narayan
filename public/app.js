@@ -4297,45 +4297,52 @@ if (slipCancelEditBtn) {
 }
 
 if (slipForm) {
-  slipForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (!hasPermission('slips:create')) return showToast('No permission', 'error');
+  const slipSubmitBtn = document.getElementById('slipSubmitBtn');
+  if (slipSubmitBtn) {
+    slipSubmitBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
 
-    const id = slipForm.elements['slipId'].value;
-    const formData = new FormData(slipForm);
-    const method = id ? 'PUT' : 'POST';
-    const url = id ? `/api/slips/${id}` : '/api/slips';
+      if (!slipForm.reportValidity()) return;
+      if (!hasPermission('slips:create')) return showToast('No permission', 'error');
 
-    const tokenStr = token();
-    const headers = {};
-    if (tokenStr) headers.Authorization = `Bearer ${tokenStr}`;
+      const id = slipForm.elements['slipId'].value;
+      const formData = new FormData(slipForm);
+      const method = id ? 'PUT' : 'POST';
+      const url = id ? `/api/slips/${id}` : '/api/slips';
 
-    try {
-      const btn = slipForm.querySelector('button[type="submit"]');
-      const ogText = btn.textContent;
-      btn.textContent = 'Uploading...';
-      btn.disabled = true;
+      const tokenStr = token();
+      const headers = {};
+      if (tokenStr) headers.Authorization = `Bearer ${tokenStr}`;
 
-      const res = await fetch(url, {
-        method,
-        headers,
-        body: formData
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        let errMsg = 'Upload failed';
-        try { errMsg = JSON.parse(text).error; } catch (e) { }
-        throw new Error(errMsg);
+      try {
+        const ogText = slipSubmitBtn.textContent;
+        slipSubmitBtn.textContent = 'Uploading...';
+        slipSubmitBtn.disabled = true;
+
+        const res = await fetch(url, {
+          method,
+          headers,
+          body: formData
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          let errMsg = 'Upload failed';
+          try { errMsg = JSON.parse(text).error; } catch (e) { }
+          throw new Error(errMsg);
+        }
+
+        showToast(id ? 'Slip updated' : 'Slip uploaded successfully');
+        slipCancelEditBtn?.click();
+
+        // Let the toast be visible, and refresh silently
+        refresh();
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        slipSubmitBtn.textContent = id ? 'Update Slip' : 'Upload Slip';
+        slipSubmitBtn.disabled = false;
       }
-      showToast(id ? 'Slip updated' : 'Slip uploaded successfully');
-      slipCancelEditBtn?.click();
-      refresh(); // Reload to reflect changes
-    } catch (err) {
-      showToast(err.message, 'error');
-    } finally {
-      const btn = slipForm.querySelector('button[type="submit"]');
-      btn.textContent = id ? 'Update Slip' : 'Upload Slip';
-      btn.disabled = false;
-    }
-  });
+    });
+  }
 }
