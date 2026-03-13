@@ -2078,7 +2078,21 @@ function postgresStore() {
     throw new Error('DATABASE_URL is required when STORAGE_MODE=postgres');
   }
 
-  const pool = new Pool({ connectionString: DATABASE_URL });
+  let connectionString = DATABASE_URL;
+  if (connectionString.includes('+asyncpg')) {
+    connectionString = connectionString.replace('+asyncpg', '');
+  }
+
+  const pool = new Pool({
+    connectionString,
+    ssl: connectionString.includes('localhost') || connectionString.includes('127.0.0.1')
+      ? false
+      : { rejectUnauthorized: false }
+  });
+
+  pool.on('error', (err) => {
+    console.error('Unexpected error on idle client', err);
+  });
 
   return {
     mode: 'postgres',
