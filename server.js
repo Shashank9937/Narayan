@@ -12,7 +12,7 @@ const DB_PATH = path.join(__dirname, 'data', 'db.json');
 const DB_BACKUP_PATH = path.join(__dirname, 'data', 'db.backup.json');
 const UPLOADS_PATH = path.join(__dirname, 'data', 'uploads');
 const STORAGE_MODE = process.env.STORAGE_MODE === 'postgres' ? 'postgres' : 'json';
-const DATABASE_URL = process.env.DATABASE_URL;
+const DATABASE_URL = process.env.DATABASE_URL || process.env.SUPABASE_DATABASE_URL;
 const APP_NAME = 'Narayan Enterprises';
 const STARTED_AT = new Date();
 
@@ -2097,8 +2097,11 @@ function postgresStore() {
   return {
     mode: 'postgres',
     async init() {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS users (
+      let retries = 5;
+      while (retries > 0) {
+        try {
+          await pool.query(`
+            CREATE TABLE IF NOT EXISTS users (
           id TEXT PRIMARY KEY,
           username TEXT UNIQUE NOT NULL,
           password_hash TEXT NOT NULL,
@@ -2378,14 +2381,22 @@ function postgresStore() {
         );
       `);
 
-      const countRes = await pool.query('SELECT COUNT(*)::int AS c FROM users');
-      if (countRes.rows[0].c === 0) {
-        const users = defaultUsers();
-        for (const u of users) {
-          await pool.query(
-            'INSERT INTO users (id, username, password_hash, role) VALUES ($1, $2, $3, $4)',
-            [u.id, u.username, u.passwordHash, u.role]
-          );
+          const countRes = await pool.query('SELECT COUNT(*)::int AS c FROM users');
+          if (countRes.rows[0].c === 0) {
+            const users = defaultUsers();
+            for (const u of users) {
+              await pool.query(
+                'INSERT INTO users (id, username, password_hash, role) VALUES ($1, $2, $3, $4)',
+                [u.id, u.username, u.passwordHash, u.role]
+              );
+            }
+          }
+          return;
+        } catch (err) {
+          retries--;
+          console.error(`Database initialization attempt failed (retries left: ${retries}):`, err.message);
+          if (retries === 0) throw err;
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
       }
     },
