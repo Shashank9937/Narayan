@@ -13,7 +13,8 @@ import { TrendingSignals } from "@/components/dashboard/trending-signals";
 import { getAdminFilters, getDashboardOverview } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 import type { AdminFilters, DashboardOverview } from "@/lib/types";
-import { Sparkles, ArrowRight, Zap } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Sparkles, ArrowRight, Zap, RefreshCw } from "lucide-react";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -145,6 +146,32 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={async () => {
+              setIsLoading(true);
+              const supabase = createClient();
+              const { data: { session } } = await supabase.auth.getSession();
+              if (session) {
+                try {
+                  const [overviewData, filterData] = await Promise.all([
+                    getDashboardOverview(session.access_token),
+                    getAdminFilters(session.access_token).catch(() => null),
+                  ]);
+                  setOverview(overviewData);
+                  setFilters(filterData);
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : "Failed to refresh");
+                }
+              }
+              setIsLoading(false);
+            }}
+            disabled={isLoading}
+            className="glass px-4 py-2 rounded-xl flex items-center gap-2 hover:bg-white/[0.05] transition-all disabled:opacity-50"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5 text-white/40", isLoading && "animate-spin")} />
+            <span className="text-xs font-semibold text-white/60">Refresh</span>
+          </button>
+
           <div className="glass px-4 py-2 rounded-xl flex items-center gap-2">
             <span className="text-[10px] font-bold text-white/30 uppercase tracking-wider">Last scan</span>
             <span className="text-xs font-mono text-white/60">

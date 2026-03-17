@@ -50,32 +50,34 @@ class PipelineOrchestrator:
 
     async def recalculate_cluster_trends(self) -> None:
         await self.cluster_engine.refresh_cluster_rollups(self.db)
-        clusters_result = await self.db.execute(select(ProblemCluster))
-        clusters = list(clusters_result.scalars().all())
-
+        
         now = datetime.now(timezone.utc)
         seven_days_ago = now - timedelta(days=7)
         thirty_days_ago = now - timedelta(days=30)
 
-        for cluster in clusters:
-            trend7 = await self.db.execute(
-                select(func.count(ExtractedPain.id)).where(
-                    and_(
-                        ExtractedPain.cluster_id == cluster.id,
-                        ExtractedPain.created_at >= seven_days_ago,
-                    )
-                )
-            )
-            trend30 = await self.db.execute(
-                select(func.count(ExtractedPain.id)).where(
-                    and_(
-                        ExtractedPain.cluster_id == cluster.id,
-                        ExtractedPain.created_at >= thirty_days_ago,
-                    )
-                )
-            )
-            cluster.trend_7d = int(trend7.scalar() or 0)
-            cluster.trend_30d = int(trend30.scalar() or 0)
+        # Single query to get counts for all clusters for 7d and 30d
+        trend7_q = select(
+            ExtractedPain.cluster_id, 
+            func.count(ExtractedPain.id)
+        ).where(ExtractedPain.created_at >= seven_days_ago).group_by(ExtractedPain.cluster_id)
+        
+        trend30_q = select(
+            ExtractedPain.cluster_id, 
+            func.count(ExtractedPain.id)
+        ).where(ExtractedPain.created_at >= thirty_days_ago).group_by(ExtractedPain.cluster_id)
+
+        trend7_res, trend30_res = await asyncio.gather(
+            self.db.execute(trend7_q),
+            self.db.execute(trend30_q)
+        )
+        
+        counts7 = {row[0]: row[1] for row in trend7_res.all()}
+        counts30 = {row[0]: row[1] for row in trend30_res.all()}
+
+        clusters_result = await self.db.execute(select(ProblemCluster))
+        for cluster in clusters_result.scalars():
+            cluster.trend_7d = int(counts7.get(cluster.id, 0))
+            cluster.trend_30d = int(counts30.get(cluster.id, 0))
 
         await self.db.flush()
 
@@ -172,59 +174,69 @@ class PipelineOrchestrator:
         return created_posts
 
     async def _extract_pains(self, posts: list[Post], admin_filter: AdminFilter) -> int:
-        count = 0
-        for post in posts:
-            payload = await self.pain_extractor.extract(post)
-            pain = ExtractedPain(
-                post_id=post.id,
-                pain_point=payload.pain_point,
-                target_user=payload.target_user,
-                urgency_score=payload.urgency_score,
-                willingness_to_pay=payload.willingness_to_pay,
-                existing_solutions=payload.existing_solutions,
-                geo_scope=admin_filter.geo_scope,
-                industry=(admin_filter.industries[0] if admin_filter.industries else "SaaS"),
-            )
-            self.db.add(pain)
-            count += 1
+        if not posts:
+            return 0
+            
+        sem = asyncio.Semaphore(5)  # Limit concurrent AI extraction
 
+        async def _process_post(post: Post) -> int:
+            async with sem:
+                payload = await self.pain_extractor.extract(post)
+                pain = ExtractedPain(
+                    post_id=post.id,
+                    pain_point=payload.pain_point,
+                    target_user=payload.target_user,
+                    urgency_score=payload.urgency_score,
+                    willingness_to_pay=payload.willingness_to_pay,
+                    existing_solutions=payload.existing_solutions,
+                    geo_scope=admin_filter.geo_scope,
+                    industry=(admin_filter.industries[0] if admin_filter.industries else "SaaS"),
+                )
+                self.db.add(pain)
+                return 1
+
+        results = await asyncio.gather(*(_process_post(post) for post in posts))
         await self.db.flush()
-        return count
+        return sum(results)
 
     async def _generate_ideas_for_clusters(self, new_clusters: list[ProblemCluster]) -> None:
         if not new_clusters:
             return
 
-        for cluster in new_clusters:
-            pains_result = await self.db.execute(
-                select(ExtractedPain).where(ExtractedPain.cluster_id == cluster.id).order_by(ExtractedPain.created_at.desc())
-            )
-            pains = list(pains_result.scalars().all())
+        sem = asyncio.Semaphore(3)  # Idea generation is heavier, lower concurrency
 
-            generated = await self.idea_generator.generate_for_cluster(cluster, pains)
-            for item in generated:
-                scoring = self.validation.score(cluster, item)
-                idea = Idea(
-                    cluster_id=cluster.id,
-                    idea_type=item["idea_type"],
-                    idea_name=item["idea_name"],
-                    description=item["description"],
-                    icp=item["icp"],
-                    revenue_model=item["revenue_model"],
-                    mvp_features=item["mvp_features"],
-                    pricing_estimate=item["pricing_estimate"],
-                    execution_roadmap=item["execution_roadmap"],
-                    tech_stack=item["tech_stack"],
-                    gtm_strategy=item["gtm_strategy"],
-                    launch_plan_30d=item["launch_plan_30d"],
-                    pain_intensity=int(scoring["pain_intensity"]),
-                    frequency=int(scoring["frequency"]),
-                    budget_size=int(scoring["budget_size"]),
-                    competition_level=int(scoring["competition_level"]),
-                    speed_to_mvp=int(scoring["speed_to_mvp"]),
-                    scalability=int(scoring["scalability"]),
-                    final_score=float(scoring["final_score"]),
+        async def _process_cluster(cluster: ProblemCluster):
+            async with sem:
+                pains_result = await self.db.execute(
+                    select(ExtractedPain).where(ExtractedPain.cluster_id == cluster.id).order_by(ExtractedPain.created_at.desc())
                 )
-                self.db.add(idea)
+                pains = list(pains_result.scalars().all())
 
+                generated = await self.idea_generator.generate_for_cluster(cluster, pains)
+                for item in generated:
+                    scoring = self.validation.score(cluster, item)
+                    idea = Idea(
+                        cluster_id=cluster.id,
+                        idea_type=item["idea_type"],
+                        idea_name=item["idea_name"],
+                        description=item["description"],
+                        icp=item["icp"],
+                        revenue_model=item["revenue_model"],
+                        mvp_features=item["mvp_features"],
+                        pricing_estimate=item["pricing_estimate"],
+                        execution_roadmap=item["execution_roadmap"],
+                        tech_stack=item["tech_stack"],
+                        gtm_strategy=item["gtm_strategy"],
+                        launch_plan_30d=item["launch_plan_30d"],
+                        pain_intensity=int(scoring["pain_intensity"]),
+                        frequency=int(scoring["frequency"]),
+                        budget_size=int(scoring["budget_size"]),
+                        competition_level=int(scoring["competition_level"]),
+                        speed_to_mvp=int(scoring["speed_to_mvp"]),
+                        scalability=int(scoring["scalability"]),
+                        final_score=float(scoring["final_score"]),
+                    )
+                    self.db.add(idea)
+
+        await asyncio.gather(*(_process_cluster(cluster) for cluster in new_clusters))
         await self.db.flush()

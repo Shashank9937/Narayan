@@ -22,6 +22,7 @@ class ExtractedPain(Base):
         UUID(as_uuid=True),
         ForeignKey("problem_clusters.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
     )
     pain_point: Mapped[str] = mapped_column(Text, nullable=False)
     target_user: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -34,6 +35,7 @@ class ExtractedPain(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
+        index=True,
     )
 
     post = relationship("Post", back_populates="extracted_pain")

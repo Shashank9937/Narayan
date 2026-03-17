@@ -15,10 +15,10 @@ class ProblemCluster(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     summary: Mapped[str] = mapped_column(Text, default="", nullable=False)
     avg_urgency: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    post_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    trend_7d: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    post_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+    trend_7d: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
     trend_30d: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

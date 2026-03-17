@@ -24,7 +24,7 @@ export function IdeaTable({ ideas }: { ideas: Idea[] }) {
           key={idea.id}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: index * 0.08, ease: "easeOut" }}
+          transition={{ duration: 0.3, delay: Math.min(index, 5) * 0.04, ease: "easeOut" }}
           className="glass glass-hover p-6 rounded-2xl flex flex-col justify-between group relative overflow-hidden"
         >
           {/* Score accent */}

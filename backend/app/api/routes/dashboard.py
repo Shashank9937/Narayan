@@ -18,28 +18,45 @@ async def dashboard_overview(
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(get_current_user),
 ) -> DashboardOverview:
-    total_posts = int((await db.execute(select(func.count(Post.id)))).scalar() or 0)
-    total_pains = int((await db.execute(select(func.count(ExtractedPain.id)))).scalar() or 0)
-    total_clusters = int((await db.execute(select(func.count(ProblemCluster.id)))).scalar() or 0)
-    avg_validation = float((await db.execute(select(func.avg(Idea.final_score)))).scalar() or 0.0)
+    import asyncio
 
-    top_clusters_result = await db.execute(select(ProblemCluster).order_by(ProblemCluster.post_count.desc()).limit(6))
-    top_clusters = list(top_clusters_result.scalars().all())
-
-    trending_result = await db.execute(select(ProblemCluster).order_by(ProblemCluster.trend_7d.desc()).limit(6))
-    trending_clusters = list(trending_result.scalars().all())
-
-    top_ideas_result = await db.execute(select(Idea).order_by(Idea.final_score.desc()).limit(8))
-    top_ideas = list(top_ideas_result.scalars().all())
-
-    revenue_result = await db.execute(
-        select(Idea.revenue_model, func.count(Idea.id))
-        .group_by(Idea.revenue_model)
-        .order_by(func.count(Idea.id).desc())
-        .limit(6)
+    # Execute all independent count and aggregate queries in parallel
+    (
+        total_posts_res,
+        total_pains_res,
+        total_clusters_res,
+        avg_validation_res,
+        top_clusters_res,
+        trending_res,
+        top_ideas_res,
+        revenue_res,
+    ) = await asyncio.gather(
+        db.execute(select(func.count(Post.id))),
+        db.execute(select(func.count(ExtractedPain.id))),
+        db.execute(select(func.count(ProblemCluster.id))),
+        db.execute(select(func.avg(Idea.final_score))),
+        db.execute(select(ProblemCluster).order_by(ProblemCluster.post_count.desc()).limit(6)),
+        db.execute(select(ProblemCluster).order_by(ProblemCluster.trend_7d.desc()).limit(6)),
+        db.execute(select(Idea).order_by(Idea.final_score.desc()).limit(8)),
+        db.execute(
+            select(Idea.revenue_model, func.count(Idea.id))
+            .group_by(Idea.revenue_model)
+            .order_by(func.count(Idea.id).desc())
+            .limit(6)
+        ),
     )
+
+    total_posts = int(total_posts_res.scalar() or 0)
+    total_pains = int(total_pains_res.scalar() or 0)
+    total_clusters = int(total_clusters_res.scalar() or 0)
+    avg_validation = float(avg_validation_res.scalar() or 0.0)
+
+    top_clusters = list(top_clusters_res.scalars().all())
+    trending_clusters = list(trending_res.scalars().all())
+    top_ideas = list(top_ideas_res.scalars().all())
+    
     revenue_summary = [
-        RevenueModelSummary(revenue_model=row[0], idea_count=int(row[1])) for row in revenue_result.all()
+        RevenueModelSummary(revenue_model=row[0], idea_count=int(row[1])) for row in revenue_res.all()
     ]
 
     if top_ideas:

@@ -28,7 +28,7 @@ class Idea(Base):
     competition_level: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     speed_to_mvp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     scalability: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    final_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    final_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False, index=True)
 
     execution_roadmap: Mapped[str] = mapped_column(Text, default="", nullable=False)
     tech_stack: Mapped[str] = mapped_column(Text, default="", nullable=False)
