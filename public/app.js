@@ -2846,6 +2846,15 @@ function activateSection(sectionId) {
   });
   const scrollArea = document.querySelector('.content-scroll-area');
   if (scrollArea) scrollArea.scrollTop = 0;
+  // Force-reveal panels that IntersectionObserver missed while section was hidden
+  const activeEl = document.getElementById(sectionId);
+  if (activeEl) {
+    requestAnimationFrame(function () {
+      activeEl.querySelectorAll('.reveal:not(.revealed)').forEach(function (el) {
+        el.classList.add('revealed');
+      });
+    });
+  }
 }
 
 async function refresh() {
