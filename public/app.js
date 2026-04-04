@@ -196,6 +196,24 @@ function showToast(message, type = 'ok') {
   showToast.tid = setTimeout(() => toastEl.classList.remove('show'), 2200);
 }
 
+function normalizePartyKey(raw) {
+  const value = String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+  if (!value) return '';
+  if (value === 'n' || value.includes('narayan')) return 'narayan';
+  if (
+    value === 'm' ||
+    value.includes('maa') ||
+    value.includes('vaishno') ||
+    value.includes('maheshnu')
+  ) {
+    return 'maa_vaishno';
+  }
+  return '';
+}
+
 function token() {
   return localStorage.getItem('ops_token');
 }
@@ -1818,7 +1836,7 @@ function renderTruckRows(rows) {
   const canDelete = hasPermission('trucks:delete');
   const normalizedRows = (rows || []).map((row) => ({
     ...row,
-    party: row.party || 'narayan',
+    party: normalizePartyKey(row.party) || 'narayan',
     client: row.client || '',
     marked: Boolean(row.marked)
   }));
@@ -2089,8 +2107,13 @@ function renderExpenseRows(rows) {
     }
   }
 
-  const narayanRows = filtered.filter((e) => e.party === 'narayan');
-  const maaVaishnoRows = filtered.filter((e) => e.party === 'maa_vaishno');
+  const normalizedRows = filtered.map(e => ({
+    ...e,
+    party: normalizePartyKey(e.party) || 'narayan'
+  }));
+
+  const narayanRows = normalizedRows.filter((e) => e.party === 'narayan');
+  const maaVaishnoRows = normalizedRows.filter((e) => e.party === 'maa_vaishno');
   const narayanTotal = narayanRows.reduce((sum, e) => sum + Number(e.amount || 0), 0);
   const maaVaishnoTotal = maaVaishnoRows.reduce((sum, e) => sum + Number(e.amount || 0), 0);
   const total = narayanTotal + maaVaishnoTotal;
