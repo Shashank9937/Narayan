@@ -2927,7 +2927,6 @@ async function refresh() {
       const maaT = (trucksCache || []).filter(t => normalizePartyKey(t.party) === 'maa_vaishno').length;
       diags.innerHTML = `STORAGE: ${me?.storageMode || 'unknown'} | TRUCKS: ${(trucksCache || []).length} (N:${narayanT}, M:${maaT}) | EXPENSES: ${(expensesCache || []).length}`;
     }
-    await loadAdvancesForSelectedEmployee({ silent: true });
     safeRender('employees-render', () => renderEmployeeRows(filterEmployees(employeesCache)));
     safeRender('salary-render', () => renderSalaryRows(salaryRowsCache));
     safeRender('salary-summary-render', () => renderSalarySummaries(salaryRowsCache));
@@ -2943,6 +2942,12 @@ async function refresh() {
     safeRender('bill-render', () => renderBills(filterBills(billsCache)));
     safeRender('supplier-render', () => renderSuppliers(suppliersCache));
     safeRender('attendance-report-render', () => renderAttendanceReportRows(attendanceReportCache.rows || []));
+    if (hasPermission('advances:create')) {
+      await safeLoad('advances', loadAdvancesForSelectedEmployee({ silent: true }), []);
+    } else {
+      advanceRowsCache = [];
+      safeRender('advances-render', () => renderAdvanceRows([]));
+    }
 
     if (hasPermission('slips:view')) {
       safeLoad('slips', api('/api/slips'), []).then(slips => {
