@@ -76,6 +76,7 @@ const sectionNav = document.getElementById('sectionNav');
 const toastEl = document.getElementById('toast');
 
 const loginForm = document.getElementById('loginForm');
+const loginStatusEl = document.getElementById('loginStatus');
 const logoutBtn = document.getElementById('logoutBtn');
 const employeeForm = document.getElementById('employeeForm');
 const employeeFormTitle = document.getElementById('employeeFormTitle');
@@ -149,6 +150,7 @@ const expenseClearBtn = document.getElementById('expenseClearBtn');
 const expenseDownloadPdfBtn = document.getElementById('expenseDownloadPdfBtn');
 const investmentDownloadPdfBtn = document.getElementById('investmentDownloadPdfBtn');
 const landDownloadPdfBtn = document.getElementById('landDownloadPdfBtn');
+const loginSubmitBtn = loginForm?.querySelector('button[type="submit"]');
 
 let me = null;
 let employeesCache = [];
@@ -183,6 +185,7 @@ let lastRefreshErrorToastAt = 0;
 let salaryLedgerDetailEntriesCache = [];
 let salaryLedgerDetailEmployeeId = '';
 let advanceRowsCache = [];
+let serverWarmupPromise = null;
 const SALARY_LEDGER_CLOSING_ADJUSTMENT_PARTICULARS = 'Closing Balance Adjustment';
 const SALARY_LEDGER_CLOSING_ADJUSTMENT_NOTE_MARKER = '[AUTO_CLOSING_BALANCE]';
 const SALARY_LEDGER_CLOSING_ADJUSTMENT_NOTE = `Closing balance set manually ${SALARY_LEDGER_CLOSING_ADJUSTMENT_NOTE_MARKER}`;
@@ -194,6 +197,32 @@ function showToast(message, type = 'ok') {
   toastEl.classList.add('show');
   clearTimeout(showToast.tid);
   showToast.tid = setTimeout(() => toastEl.classList.remove('show'), 2200);
+}
+
+function setLoginStatus(message = '', type = 'hint') {
+  if (!loginStatusEl) return;
+  loginStatusEl.textContent = message;
+  loginStatusEl.classList.toggle('hidden', !message);
+  loginStatusEl.classList.toggle('error-text', type === 'error');
+}
+
+function setLoginBusy(isBusy, message = '') {
+  if (loginSubmitBtn) {
+    loginSubmitBtn.disabled = isBusy;
+    loginSubmitBtn.textContent = isBusy ? 'Connecting...' : 'Login';
+  }
+  setLoginStatus(message, 'hint');
+}
+
+function prewarmServer() {
+  if (serverWarmupPromise) return serverWarmupPromise;
+  serverWarmupPromise = fetch('/healthz', { cache: 'no-store' }).catch(() => null);
+  return serverWarmupPromise;
+}
+
+function renderTableLoadingState(tbody, colSpan, message) {
+  if (!tbody || tbody.children.length > 0) return;
+  tbody.innerHTML = `<tr><td colspan="${colSpan}">${escapeHtml(message)}</td></tr>`;
 }
 
 function normalizePartyKey(raw) {
@@ -2840,6 +2869,15 @@ async function refresh() {
       }
     };
 
+    if (hasPermission('trucks:view') && (!trucksCache || trucksCache.length === 0)) {
+      renderTableLoadingState(truckNarayanTbody, 14, 'Loading truck entries...');
+      renderTableLoadingState(truckMaaVaishnoTbody, 14, 'Loading truck entries...');
+    }
+    if (hasPermission('expenses:view') && (!expensesCache || expensesCache.length === 0)) {
+      renderTableLoadingState(expenseNarayanTbody, 6, 'Loading expense entries...');
+      renderTableLoadingState(expenseMaaVaishnoTbody, 6, 'Loading expense entries...');
+    }
+
     const dashboardRequest = hasPermission('dashboard:view')
       ? safeLoad('dashboard', api(`/api/dashboard?month=${month}&today=${todayISO()}`), dashboardCache)
       : Promise.resolve(null);
@@ -3053,6 +3091,7 @@ async function bootstrapSession() {
 loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(loginForm);
+  setLoginBusy(true, 'Connecting to the dashboard. First login can take up to 20 seconds while the server wakes up.');
 
   try {
     const result = await api('/api/login', 'POST', {
@@ -3072,8 +3111,10 @@ loginForm.addEventListener('submit', async (e) => {
     await refresh();
     ensureAutoRefresh();
     loginForm.reset();
+    setLoginBusy(false, '');
     showToast('Welcome to Narayan Enterprises dashboard');
   } catch (err) {
+    setLoginBusy(false, err.message || 'Login failed');
     showToast(err.message, 'error');
   }
 });
@@ -4283,6 +4324,7 @@ landDownloadPdfBtn?.addEventListener('click', () => {
 activateSection('overviewSection');
 setDefaultDates();
 initDarkMode();
+prewarmServer();
 
 brandLink?.addEventListener('click', (e) => {
   e.preventDefault();
