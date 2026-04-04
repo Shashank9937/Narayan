@@ -2840,40 +2840,52 @@ async function refresh() {
       }
     };
 
-    const requests = [
-      hasPermission('dashboard:view')
-        ? safeLoad('dashboard', api(`/api/dashboard?month=${month}&today=${todayISO()}`), dashboardCache)
-        : Promise.resolve(null),
-      hasPermission('employees:view')
-        ? safeLoad('employees', api('/api/employees'), employeesCache)
-        : Promise.resolve([]),
-      hasPermission('salary:view')
-        ? safeLoad('salary', api(`/api/salary-summary?month=${month}`), { rows: salaryRowsCache })
-        : Promise.resolve({ rows: [] }),
-      hasPermission('salaryledger:view')
-        ? safeLoad('salary-ledgers', api('/api/salary-ledgers'), salaryLedgersCache)
-        : Promise.resolve([]),
-      hasPermission('trucks:view') ? safeLoad('trucks', api('/api/trucks'), trucksCache) : Promise.resolve([]),
-      hasPermission('expenses:view') ? safeLoad('expenses', api('/api/expenses'), expensesCache) : Promise.resolve([]),
-      hasPermission('investments:view')
-        ? safeLoad('investments', api('/api/investments'), investmentsCache)
-        : Promise.resolve([]),
-      hasPermission('chini:view') ? safeLoad('chini', api('/api/chini-expenses'), chiniExpensesCache) : Promise.resolve([]),
-      hasPermission('land:view') ? safeLoad('land', api('/api/lands'), landRecordsCache) : Promise.resolve([]),
-      hasPermission('vehicles:view') ? safeLoad('vehicles', api('/api/vehicles'), vehiclesCache) : Promise.resolve([]),
-      hasPermission('billing:view')
-        ? safeLoad('billing-companies', api('/api/billing/companies'), billingCompaniesCache)
-        : Promise.resolve([]),
-      hasPermission('billing:view') ? safeLoad('bills', api('/api/bills'), billsCache) : Promise.resolve([]),
-      hasPermission('suppliers:view') ? safeLoad('suppliers', api('/api/suppliers'), suppliersCache) : Promise.resolve([]),
-      hasPermission('attendance:report')
-        ? safeLoad(
-          'attendance-report',
-          api(`/api/attendance-report?month=${attendanceMonthInput.value || month}`),
-          attendanceReportCache
-        )
-        : Promise.resolve({ rows: [] })
-    ];
+    const dashboardRequest = hasPermission('dashboard:view')
+      ? safeLoad('dashboard', api(`/api/dashboard?month=${month}&today=${todayISO()}`), dashboardCache)
+      : Promise.resolve(null);
+    const employeesRequest = hasPermission('employees:view')
+      ? safeLoad('employees', api('/api/employees'), employeesCache)
+      : Promise.resolve([]);
+    const salaryRequest = hasPermission('salary:view')
+      ? safeLoad('salary', api(`/api/salary-summary?month=${month}`), { rows: salaryRowsCache })
+      : Promise.resolve({ rows: [] });
+    const salaryLedgersRequest = hasPermission('salaryledger:view')
+      ? safeLoad('salary-ledgers', api('/api/salary-ledgers'), salaryLedgersCache)
+      : Promise.resolve([]);
+    const trucksRequest = hasPermission('trucks:view')
+      ? safeLoad('trucks', api('/api/trucks'), trucksCache)
+      : Promise.resolve([]);
+    const expensesRequest = hasPermission('expenses:view')
+      ? safeLoad('expenses', api('/api/expenses'), expensesCache)
+      : Promise.resolve([]);
+    const investmentsRequest = hasPermission('investments:view')
+      ? safeLoad('investments', api('/api/investments'), investmentsCache)
+      : Promise.resolve([]);
+    const chiniExpensesRequest = hasPermission('chini:view')
+      ? safeLoad('chini', api('/api/chini-expenses'), chiniExpensesCache)
+      : Promise.resolve([]);
+    const landRecordsRequest = hasPermission('land:view')
+      ? safeLoad('land', api('/api/lands'), landRecordsCache)
+      : Promise.resolve([]);
+    const vehiclesRequest = hasPermission('vehicles:view')
+      ? safeLoad('vehicles', api('/api/vehicles'), vehiclesCache)
+      : Promise.resolve([]);
+    const billingCompaniesRequest = hasPermission('billing:view')
+      ? safeLoad('billing-companies', api('/api/billing/companies'), billingCompaniesCache)
+      : Promise.resolve([]);
+    const billsRequest = hasPermission('billing:view')
+      ? safeLoad('bills', api('/api/bills'), billsCache)
+      : Promise.resolve([]);
+    const suppliersRequest = hasPermission('suppliers:view')
+      ? safeLoad('suppliers', api('/api/suppliers'), suppliersCache)
+      : Promise.resolve([]);
+    const attendanceReportRequest = hasPermission('attendance:report')
+      ? safeLoad(
+        'attendance-report',
+        api(`/api/attendance-report?month=${attendanceMonthInput.value || month}`),
+        attendanceReportCache
+      )
+      : Promise.resolve({ rows: [] });
 
     const [
       dashboard,
@@ -2882,15 +2894,16 @@ async function refresh() {
       salaryLedgers,
       trucks,
       expenses,
-      investments,
-      chiniExpenses,
-      landRecords,
-      vehicles,
-      billingCompanies,
-      bills,
-      suppliers,
       attendanceReport
-    ] = await Promise.all(requests);
+    ] = await Promise.all([
+      dashboardRequest,
+      employeesRequest,
+      salaryRequest,
+      salaryLedgersRequest,
+      trucksRequest,
+      expensesRequest,
+      attendanceReportRequest
+    ]);
 
     if (dashboard && hasPermission('dashboard:view')) {
       dashboardCache = dashboard;
@@ -2905,13 +2918,6 @@ async function refresh() {
     employeesCache = Array.isArray(employees) ? employees : employeesCache;
     trucksCache = Array.isArray(trucks) ? trucks : trucksCache;
     expensesCache = Array.isArray(expenses) ? expenses : expensesCache;
-    investmentsCache = Array.isArray(investments) ? investments : investmentsCache;
-    chiniExpensesCache = Array.isArray(chiniExpenses) ? chiniExpenses : chiniExpensesCache;
-    landRecordsCache = Array.isArray(landRecords) ? landRecords : landRecordsCache;
-    vehiclesCache = Array.isArray(vehicles) ? vehicles : vehiclesCache;
-    billingCompaniesCache = Array.isArray(billingCompanies) ? billingCompanies : billingCompaniesCache;
-    billsCache = Array.isArray(bills) ? bills : billsCache;
-    suppliersCache = Array.isArray(suppliers) ? suppliers : suppliersCache;
     salaryRowsCache = salary && Array.isArray(salary.rows) ? salary.rows : salaryRowsCache;
     salaryLedgersCache = Array.isArray(salaryLedgers) ? salaryLedgers : salaryLedgersCache;
     attendanceReportCache = attendanceReport && Array.isArray(attendanceReport.rows)
@@ -2948,6 +2954,44 @@ async function refresh() {
       advanceRowsCache = [];
       safeRender('advances-render', () => renderAdvanceRows([]));
     }
+
+    const [
+      investments,
+      chiniExpenses,
+      landRecords,
+      vehicles,
+      billingCompanies,
+      bills,
+      suppliers
+    ] = await Promise.all([
+      investmentsRequest,
+      chiniExpensesRequest,
+      landRecordsRequest,
+      vehiclesRequest,
+      billingCompaniesRequest,
+      billsRequest,
+      suppliersRequest
+    ]);
+
+    investmentsCache = Array.isArray(investments) ? investments : investmentsCache;
+    chiniExpensesCache = Array.isArray(chiniExpenses) ? chiniExpenses : chiniExpensesCache;
+    landRecordsCache = Array.isArray(landRecords) ? landRecords : landRecordsCache;
+    vehiclesCache = Array.isArray(vehicles) ? vehicles : vehiclesCache;
+    billingCompaniesCache = Array.isArray(billingCompanies) ? billingCompanies : billingCompaniesCache;
+    billsCache = Array.isArray(bills) ? bills : billsCache;
+    suppliersCache = Array.isArray(suppliers) ? suppliers : suppliersCache;
+
+    if (dashboardCache && hasPermission('dashboard:view')) {
+      renderCards(dashboardCache);
+    }
+    safeRender('investment-render', () => renderInvestmentRows(investmentsCache));
+    safeRender('investment-summary-render', () => renderInvestmentSummary());
+    safeRender('chini-render', () => renderChiniRows(chiniExpensesCache));
+    safeRender('land-render', () => renderLandRows(landRecordsCache));
+    safeRender('vehicle-render', () => renderVehicleRows(vehiclesCache));
+    safeRender('billing-company-render', () => renderBillingCompanies(billingCompaniesCache));
+    safeRender('bill-render', () => renderBills(filterBills(billsCache)));
+    safeRender('supplier-render', () => renderSuppliers(suppliersCache));
 
     if (hasPermission('slips:view')) {
       safeLoad('slips', api('/api/slips'), []).then(slips => {
