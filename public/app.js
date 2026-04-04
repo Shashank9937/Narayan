@@ -2908,6 +2908,12 @@ async function refresh() {
       : attendanceReportCache;
 
     renderEmployeeOptions(employeesCache);
+
+    // Update diagnostic bar
+    const diags = document.getElementById('debugBar');
+    if (diags) {
+      diags.innerHTML = `STORAGE: ${me?.storageMode || 'unknown'} | TRUCKS: ${(trucksCache || []).length} | EXPENSES: ${(expensesCache || []).length}`;
+    }
     await loadAdvancesForSelectedEmployee({ silent: true });
     renderEmployeeRows(filterEmployees(employeesCache));
     renderSalaryRows(salaryRowsCache);
