@@ -2910,7 +2910,9 @@ async function refresh() {
     // Update diagnostic bar
     const diags = document.getElementById('debugBar');
     if (diags) {
-      diags.innerHTML = `STORAGE: ${me?.storageMode || 'unknown'} | TRUCKS: ${(trucksCache || []).length} | EXPENSES: ${(expensesCache || []).length}`;
+      const narayanT = (trucksCache || []).filter(t => normalizePartyKey(t.party) === 'narayan' || normalizePartyKey(t.party) === '').length;
+      const maaT = (trucksCache || []).filter(t => normalizePartyKey(t.party) === 'maa_vaishno').length;
+      diags.innerHTML = `STORAGE: ${me?.storageMode || 'unknown'} | TRUCKS: ${(trucksCache || []).length} (N:${narayanT}, M:${maaT}) | EXPENSES: ${(expensesCache || []).length}`;
     }
     await loadAdvancesForSelectedEmployee({ silent: true });
     renderEmployeeRows(filterEmployees(employeesCache));
