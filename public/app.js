@@ -1947,7 +1947,7 @@ function renderTruckRows(rows) {
       .join('');
   };
 
-  const narayanRows = normalizedRows.filter((t) => t.party === 'narayan');
+  const narayanRows = normalizedRows.filter((t) => t.party === 'narayan' || t.party === '');
   const maaVaishnoRows = normalizedRows.filter((t) => t.party === 'maa_vaishno');
   renderTruckTable(truckNarayanTbody, narayanRows);
   renderTruckTable(truckMaaVaishnoTbody, maaVaishnoRows);
@@ -2110,7 +2110,7 @@ function renderExpenseRows(rows) {
     party: normalizePartyKey(e.party) || 'narayan'
   }));
 
-  const narayanRows = normalizedRows.filter((e) => e.party === 'narayan');
+  const narayanRows = normalizedRows.filter((e) => e.party === 'narayan' || e.party === '');
   const maaVaishnoRows = normalizedRows.filter((e) => e.party === 'maa_vaishno');
   const narayanTotal = narayanRows.reduce((sum, e) => sum + Number(e.amount || 0), 0);
   const maaVaishnoTotal = maaVaishnoRows.reduce((sum, e) => sum + Number(e.amount || 0), 0);
