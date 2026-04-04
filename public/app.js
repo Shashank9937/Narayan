@@ -657,58 +657,58 @@ function renderCards(data) {
     {
       title: 'Workforce & Operations',
       items: [
-        ['Active Employees', data.totalEmployees || employeesCache.length],
-        ['Present Today', data.presentToday],
-        ['Total Salary Setup', money(data.totalSalary)],
-        ['Attendance Marked', data.attendanceMarked || '—'],
+        ['Active Employees', data.totalEmployees || employeesCache.length, 'employeeSection'],
+        ['Present Today', data.presentToday, 'attendanceSection'],
+        ['Total Salary Setup', money(data.totalSalary), 'salarySection'],
+        ['Attendance Marked', data.attendanceMarked || '—', 'attendanceSection'],
       ]
     },
     {
       title: 'Payroll & Advances',
       items: [
-        ['Advances (Month)', money(data.totalAdvances)],
-        ['Remaining Payable', money(data.totalRemaining)],
+        ['Advances (Month)', money(data.totalAdvances), 'advanceSection'],
+        ['Remaining Payable', money(data.totalRemaining), 'salarySection'],
       ]
     },
     {
       title: 'Expenses & Investments',
       items: [
-        ['Global Expenses', money(totalExpenseAmount)],
-        ['Capital Investments', money(totalInvestStatus)],
-        ['Chini Mill Expenses', money(totalChini)],
+        ['Global Expenses', money(totalExpenseAmount), 'expenseSection'],
+        ['Capital Investments', money(totalInvestStatus), 'investmentSection'],
+        ['Chini Mill Expenses', money(totalChini), 'chiniSection'],
       ]
     },
     {
       title: 'Trucks & Logistics',
       items: [
-        ['Trucks (Month)', data.truckCountThisMonth],
-        ['Truck Qty', data.truckQuantityThisMonth + ' Qtnl'],
-        ['Vehicles Registered', vehicleCount],
+        ['Trucks (Month)', data.truckCountThisMonth, 'truckSection'],
+        ['Truck Qty', data.truckQuantityThisMonth + ' Qtnl', 'truckSection'],
+        ['Vehicles Registered', vehicleCount, 'vehicleSection'],
       ]
     },
     {
       title: 'Suppliers & Procurement',
       items: [
-        ['Total Suppliers', supplierCount],
-        ['Material Value', money(supplierTotalMaterial)],
-        ['Paid to Suppliers', money(supplierTotalPaid)],
-        ['Supplier Pending', money(supplierPending)],
+        ['Total Suppliers', supplierCount, 'supplierSection'],
+        ['Material Value', money(supplierTotalMaterial), 'supplierSection'],
+        ['Paid to Suppliers', money(supplierTotalPaid), 'supplierSection'],
+        ['Supplier Pending', money(supplierPending), 'supplierSection'],
       ]
     },
     {
       title: 'Billing & Invoicing',
       items: [
-        ['Total Bills', billCount],
-        ['Billed Amount', money(totalBills)],
-        ['Companies', billingCompanyCount],
+        ['Total Bills', billCount, 'billingSection'],
+        ['Billed Amount', money(totalBills), 'billingSection'],
+        ['Companies', billingCompanyCount, 'billingSection'],
       ]
     },
     {
       title: 'Land & Property',
       items: [
-        ['Land Records', landCount],
-        ['Amount Paid', money(landTotalPaid)],
-        ['Amount Due', money(landTotalToGive)],
+        ['Land Records', landCount, 'landSection'],
+        ['Amount Paid', money(landTotalPaid), 'landSection'],
+        ['Amount Due', money(landTotalToGive), 'landSection'],
       ]
     },
   ];
@@ -717,8 +717,12 @@ function renderCards(data) {
     <div class="dashboard-segment">
       <h3 class="dashboard-segment-title">${sec.title}</h3>
       <div class="cards">
-        ${sec.items.map(([label, value]) => `
-          <div class="card"><div class="label">${label}</div><div class="value">${value}</div></div>
+        ${sec.items.map(([label, value, target]) => `
+          <div class="card" ${target ? `onclick="activateSection('${target}')" style="cursor:pointer;"` : ''}>
+            <div class="label">${label}</div>
+            <div class="value">${value}</div>
+            ${target ? '<div class="record-subtext" style="color:var(--indigo-bright);margin-top:8px;">View Breakup →</div>' : ''}
+          </div>
         `).join('')}
       </div>
     </div>
