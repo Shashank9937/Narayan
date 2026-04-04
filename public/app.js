@@ -2844,6 +2844,8 @@ function activateSection(sectionId) {
       if (titleEl) titleEl.textContent = btn.textContent.trim();
     }
   });
+  const scrollArea = document.querySelector('.content-scroll-area');
+  if (scrollArea) scrollArea.scrollTop = 0;
 }
 
 async function refresh() {
