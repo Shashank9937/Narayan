@@ -487,9 +487,7 @@ function setDefaultDates() {
   activeSalaryMonth = getActiveSalaryMonth();
   if (expenseDateToInput && !expenseDateToInput.value) expenseDateToInput.value = todayISO();
   if (expenseDateFromInput && !expenseDateFromInput.value) {
-    const d = new Date();
-    d.setDate(1);
-    expenseDateFromInput.value = d.toISOString().slice(0, 10);
+    expenseDateFromInput.value = '2026-01-01';
   }
   const joiningInput = document.getElementById('employeeJoiningDate');
   if (joiningInput && !joiningInput.value) joiningInput.value = todayISO();
