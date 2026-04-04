@@ -1953,8 +1953,9 @@ function renderTruckRows(rows) {
 
   const narayanRows = normalizedRows.filter((t) => t.party === 'narayan' || t.party === '');
   const maaVaishnoRows = normalizedRows.filter((t) => t.party === 'maa_vaishno');
-  renderTruckTable(truckNarayanTbody, narayanRows);
-  renderTruckTable(truckMaaVaishnoTbody, maaVaishnoRows);
+
+  if (truckNarayanTbody) renderTruckTable(truckNarayanTbody, narayanRows);
+  if (truckMaaVaishnoTbody) renderTruckTable(truckMaaVaishnoTbody, maaVaishnoRows);
 
   if (canEdit) {
     document.querySelectorAll('.truck-material-select').forEach((select) => {
@@ -2830,6 +2831,14 @@ async function refresh() {
         return fallback;
       }
     };
+    const safeRender = (label, fn) => {
+      try {
+        fn();
+      } catch (err) {
+        console.error(`[render:${label}]`, err);
+        refreshErrors.push(`${label}: ${err.message}`);
+      }
+    };
 
     const requests = [
       hasPermission('dashboard:view')
@@ -2919,21 +2928,21 @@ async function refresh() {
       diags.innerHTML = `STORAGE: ${me?.storageMode || 'unknown'} | TRUCKS: ${(trucksCache || []).length} (N:${narayanT}, M:${maaT}) | EXPENSES: ${(expensesCache || []).length}`;
     }
     await loadAdvancesForSelectedEmployee({ silent: true });
-    renderEmployeeRows(filterEmployees(employeesCache));
-    renderSalaryRows(salaryRowsCache);
-    renderSalarySummaries(salaryRowsCache);
-    renderSalaryLedgers(salaryLedgersCache);
-    renderVisibleTrucks();
-    renderExpenseRows(expensesCache);
-    renderInvestmentRows(investmentsCache);
-    renderInvestmentSummary();
-    renderChiniRows(chiniExpensesCache);
-    renderLandRows(landRecordsCache);
-    renderVehicleRows(vehiclesCache);
-    renderBillingCompanies(billingCompaniesCache);
-    renderBills(filterBills(billsCache));
-    renderSuppliers(suppliersCache);
-    renderAttendanceReportRows(attendanceReportCache.rows || []);
+    safeRender('employees-render', () => renderEmployeeRows(filterEmployees(employeesCache)));
+    safeRender('salary-render', () => renderSalaryRows(salaryRowsCache));
+    safeRender('salary-summary-render', () => renderSalarySummaries(salaryRowsCache));
+    safeRender('salary-ledger-render', () => renderSalaryLedgers(salaryLedgersCache));
+    safeRender('truck-render', () => renderVisibleTrucks());
+    safeRender('expense-render', () => renderExpenseRows(expensesCache));
+    safeRender('investment-render', () => renderInvestmentRows(investmentsCache));
+    safeRender('investment-summary-render', () => renderInvestmentSummary());
+    safeRender('chini-render', () => renderChiniRows(chiniExpensesCache));
+    safeRender('land-render', () => renderLandRows(landRecordsCache));
+    safeRender('vehicle-render', () => renderVehicleRows(vehiclesCache));
+    safeRender('billing-company-render', () => renderBillingCompanies(billingCompaniesCache));
+    safeRender('bill-render', () => renderBills(filterBills(billsCache)));
+    safeRender('supplier-render', () => renderSuppliers(suppliersCache));
+    safeRender('attendance-report-render', () => renderAttendanceReportRows(attendanceReportCache.rows || []));
 
     if (hasPermission('slips:view')) {
       safeLoad('slips', api('/api/slips'), []).then(slips => {
@@ -4226,12 +4235,12 @@ activateSection('overviewSection');
 setDefaultDates();
 initDarkMode();
 
-brandLink.addEventListener('click', (e) => {
+brandLink?.addEventListener('click', (e) => {
   e.preventDefault();
   if (token()) activateSection('overviewSection');
 });
 
-darkModeToggle.addEventListener('click', () => {
+darkModeToggle?.addEventListener('click', () => {
   const isDark = !document.body.classList.contains('dark-mode');
   document.body.classList.toggle('dark-mode', isDark);
   localStorage.setItem('ops_dark', isDark ? '1' : '0');
