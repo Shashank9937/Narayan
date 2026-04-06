@@ -690,13 +690,13 @@ body:not(.dark-mode) .theme-toggle .icon-moon {
 
 #truckSection > .grid,
 #expenseSection > .grid {
-  order: 2;
+  order: 1;
   margin-bottom: 0;
 }
 
 #truckReportPanel,
 #expenseReportPanel {
-  order: 1;
+  order: 2;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -2606,4 +2606,313 @@ body:not(.dark-mode) .panel h2 {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(108, 92, 231, 0.3);
+}
+
+/* ═══════════════════════════════════════════════
+   UNICORN UPGRADE — Dashboard Hero Bar
+   ═══════════════════════════════════════════════ */
+
+.dashboard-hero {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  background: linear-gradient(135deg, rgba(108, 92, 231, 0.1) 0%, rgba(0, 210, 255, 0.05) 100%);
+  border: 1px solid rgba(108, 92, 231, 0.2);
+  border-radius: var(--radius-xl);
+  padding: var(--space-5) var(--space-6);
+  margin-bottom: var(--space-5);
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-hero::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: var(--gradient-rule);
+}
+
+.hero-stat {
+  flex: 1;
+  min-width: 0;
+}
+
+.hero-stat + .hero-stat {
+  padding-left: var(--space-6);
+  border-left: 1px solid var(--border);
+}
+
+.hero-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+  margin-bottom: var(--space-1);
+}
+
+.hero-value {
+  font-family: var(--font-mono);
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--text-1);
+  line-height: 1.1;
+}
+
+.hero-value.positive { color: var(--emerald); }
+.hero-value.negative { color: var(--rose); }
+
+.hero-sub {
+  font-size: 0.75rem;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+
+/* ═══════════════════════════════════════════════
+   UNICORN UPGRADE — KPI Card Enhancements
+   ═══════════════════════════════════════════════ */
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--space-3);
+}
+
+.card-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  background: rgba(108, 92, 231, 0.12);
+  border: 1px solid rgba(108, 92, 231, 0.15);
+  flex-shrink: 0;
+}
+
+.trend {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.trend.up   { color: var(--emerald); background: rgba(0, 184, 148, 0.12); }
+.trend.down { color: var(--rose);    background: rgba(255, 118, 117, 0.12); }
+.trend.flat { color: var(--text-3);  background: rgba(255, 255, 255, 0.05); }
+
+.sparkline {
+  display: block;
+  width: 100%;
+  height: 44px;
+  margin-top: var(--space-3);
+  opacity: 0.75;
+}
+
+.card .value {
+  line-height: 1.1;
+}
+
+.card .label {
+  margin-top: var(--space-2);
+}
+
+/* ═══════════════════════════════════════════════
+   UNICORN UPGRADE — Dashboard Segment Titles
+   ═══════════════════════════════════════════════ */
+
+.dashboard-segment-title {
+  font-size: 0.7rem !important;
+  font-weight: 800 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-3) !important;
+  background: none !important;
+  -webkit-text-fill-color: var(--text-3) !important;
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-4) !important;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.dashboard-segment-title::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gradient-hero);
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════
+   UNICORN UPGRADE — Party Badges
+   ═══════════════════════════════════════════════ */
+
+.party-badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.party-narayan {
+  color: var(--indigo-bright);
+  background: rgba(108, 92, 231, 0.15);
+  border: 1px solid rgba(108, 92, 231, 0.2);
+}
+
+.party-maa {
+  color: var(--cyan-bright);
+  background: rgba(0, 210, 255, 0.1);
+  border: 1px solid rgba(0, 210, 255, 0.2);
+}
+
+/* ═══════════════════════════════════════════════
+   UNICORN UPGRADE — Material Badges
+   ═══════════════════════════════════════════════ */
+
+.mat-badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.mat-pellet {
+  color: var(--emerald);
+  background: rgba(0, 184, 148, 0.12);
+  border: 1px solid rgba(0, 184, 148, 0.2);
+}
+
+.mat-briquette {
+  color: var(--amber);
+  background: rgba(253, 203, 110, 0.1);
+  border: 1px solid rgba(253, 203, 110, 0.2);
+}
+
+.mat-other {
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+}
+
+/* ═══════════════════════════════════════════════
+   UNICORN UPGRADE — Marked Status Pill
+   ═══════════════════════════════════════════════ */
+
+.mark-pill {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.mark-pill.is-marked {
+  color: var(--emerald);
+  background: rgba(0, 184, 148, 0.12);
+  border: 1px solid rgba(0, 184, 148, 0.2);
+}
+
+.mark-pill.is-unmarked {
+  color: var(--text-3);
+  background: transparent;
+}
+
+/* ═══════════════════════════════════════════════
+   UNICORN UPGRADE — Expense Type Badge
+   ═══════════════════════════════════════════════ */
+
+.exp-type-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  color: var(--badge-clr, var(--text-2));
+  background: var(--badge-bg, rgba(255,255,255,0.05));
+  border: 1px solid var(--badge-border, var(--border));
+  white-space: nowrap;
+}
+
+/* ═══════════════════════════════════════════════
+   UNICORN UPGRADE — Table Row Stagger Animation
+   ═══════════════════════════════════════════════ */
+
+@keyframes rowSlideIn {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.truck-table tbody tr,
+table tbody tr {
+  animation: rowSlideIn 0.22s var(--ease-out) both;
+}
+
+.truck-table tbody tr:nth-child(1),  table tbody tr:nth-child(1)  { animation-delay:   0ms; }
+.truck-table tbody tr:nth-child(2),  table tbody tr:nth-child(2)  { animation-delay:  25ms; }
+.truck-table tbody tr:nth-child(3),  table tbody tr:nth-child(3)  { animation-delay:  50ms; }
+.truck-table tbody tr:nth-child(4),  table tbody tr:nth-child(4)  { animation-delay:  75ms; }
+.truck-table tbody tr:nth-child(5),  table tbody tr:nth-child(5)  { animation-delay: 100ms; }
+.truck-table tbody tr:nth-child(6),  table tbody tr:nth-child(6)  { animation-delay: 125ms; }
+.truck-table tbody tr:nth-child(7),  table tbody tr:nth-child(7)  { animation-delay: 150ms; }
+.truck-table tbody tr:nth-child(8),  table tbody tr:nth-child(8)  { animation-delay: 175ms; }
+.truck-table tbody tr:nth-child(9),  table tbody tr:nth-child(9)  { animation-delay: 200ms; }
+.truck-table tbody tr:nth-child(10), table tbody tr:nth-child(10) { animation-delay: 225ms; }
+
+/* ═══════════════════════════════════════════════
+   UNICORN UPGRADE — Panel h2 Gradient Underline
+   ═══════════════════════════════════════════════ */
+
+.panel > h2::after,
+.panel > .row > h2::after {
+  content: '';
+  display: block;
+  height: 1px;
+  margin-top: var(--space-3);
+  background: var(--gradient-rule);
+  opacity: 0.6;
+}
+
+/* Party table headings */
+.party-table-grid .truck-table caption,
+.party-table-grid table caption {
+  caption-side: top;
+  padding: var(--space-2) var(--space-4);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  text-align: left;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Light mode overrides for new components */
+body:not(.dark-mode) .dashboard-hero {
+  background: linear-gradient(135deg, rgba(108, 92, 231, 0.06) 0%, rgba(0, 210, 255, 0.03) 100%);
+}
+
+body:not(.dark-mode) .card-icon {
+  background: rgba(108, 92, 231, 0.08);
+}
+
+body:not(.dark-mode) .dashboard-segment-title {
+  -webkit-text-fill-color: var(--text-3) !important;
 }
