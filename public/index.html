@@ -705,19 +705,7 @@
               </section>
             </div>
 
-            <section class="panel" id="expenseReportPanel">
-              <div class="row wrap">
-                <h2>Daily Expense Report (Party + Date Range)</h2>
-                <div class="row">
-                  <input id="expenseDateFrom" type="date" />
-                  <input id="expenseDateTo" type="date" />
-                  <input id="expenseSearchInput" type="text" placeholder="Search by description" />
-                  <input id="expenseTypeFilterInput" type="text" list="expenseTypesList" placeholder="Filter by type" />
-                  <button id="expenseFilterBtn" class="small" type="button">Apply</button>
-                  <button id="expenseClearBtn" class="small warn" type="button">Clear</button>
-                  <button id="expenseDownloadPdfBtn" class="small" type="button">Download PDF</button>
-                </div>
-              </div>
+            <section class="panel" id="expenseSummaryPanel">
               <div class="summary-stat-grid">
                 <div class="summary-stat">
                   <div class="label">Narayan Expense</div>
@@ -732,7 +720,21 @@
                   <div id="expenseTotal" class="value">₹0</div>
                 </div>
               </div>
+            </section>
 
+            <section class="panel" id="expenseReportPanel">
+              <div class="row wrap">
+                <h2>Daily Expense Report (Party + Date Range)</h2>
+                <div class="row">
+                  <input id="expenseDateFrom" type="date" />
+                  <input id="expenseDateTo" type="date" />
+                  <input id="expenseSearchInput" type="text" placeholder="Search by description" />
+                  <input id="expenseTypeFilterInput" type="text" list="expenseTypesList" placeholder="Filter by type" />
+                  <button id="expenseFilterBtn" class="small" type="button">Apply</button>
+                  <button id="expenseClearBtn" class="small warn" type="button">Clear</button>
+                  <button id="expenseDownloadPdfBtn" class="small" type="button">Download PDF</button>
+                </div>
+              </div>
               <div class="party-table-grid">
                 <div>
                   <h3>Narayan Expenses</h3>

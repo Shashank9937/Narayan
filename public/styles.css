@@ -694,7 +694,8 @@ body:not(.dark-mode) .theme-toggle .icon-moon {
   margin-bottom: 0;
 }
 
-#truckSummaryPanel {
+#truckSummaryPanel,
+#expenseSummaryPanel {
   order: 2;
 }
 
